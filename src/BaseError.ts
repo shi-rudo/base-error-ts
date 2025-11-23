@@ -34,6 +34,12 @@ export class BaseError<T extends string> extends Error {
    */
   protected readonly __brand!: this;
 
+  /**
+   * Discriminant tag for type narrowing - automatically set to constructor name.
+   * Ensures type safety across boundaries, even after instanceof checks.
+   */
+  public readonly _tag!: string;
+
   public readonly name: T;
 
   /** Epoch-ms timestamp (numeric) */
@@ -62,6 +68,9 @@ export class BaseError<T extends string> extends Error {
 
     // Automatically infer the error name from the constructor name
     this.name = this.constructor.name as T;
+
+    // Set discriminant tag for type safety
+    this._tag = this.constructor.name;
 
     // Handle cause with native support when available, fallback otherwise
     if (cause !== undefined) {
