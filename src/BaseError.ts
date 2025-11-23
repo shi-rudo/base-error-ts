@@ -30,9 +30,9 @@ export class BaseError<T extends string> extends Error {
   /**
    * Nominal type brand - makes each subclass structurally distinct at compile time.
    * Using 'this' ensures every subclass gets its own unique type identity.
-   * The 'declare' keyword means this exists only for type-checking (no runtime overhead).
+   * @internal - This property is for type-checking only, never use it directly.
    */
-  private declare readonly __brand: this;
+  protected readonly __brand!: this;
 
   public readonly name: T;
 
