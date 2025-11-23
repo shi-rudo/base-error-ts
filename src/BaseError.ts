@@ -36,9 +36,16 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Discriminant tag for type narrowing - automatically set to constructor name.
-   * Ensures type safety across boundaries, even after instanceof checks.
+   * Subclasses can override this with a literal type for stricter type safety.
+   *
+   * @example
+   * ```ts
+   * class MyError extends BaseError<'MyError'> {
+   *   readonly _tag = 'MyError' as const; // Override with literal type
+   * }
+   * ```
    */
-  public readonly _tag!: string;
+  public readonly _tag: string = this.constructor.name;
 
   public readonly name: T;
 
@@ -68,9 +75,6 @@ export class BaseError<T extends string> extends Error {
 
     // Automatically infer the error name from the constructor name
     this.name = this.constructor.name as T;
-
-    // Set discriminant tag for type safety
-    this._tag = this.constructor.name;
 
     // Handle cause with native support when available, fallback otherwise
     if (cause !== undefined) {
