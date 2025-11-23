@@ -15,6 +15,9 @@ type ErrorCode =
 
 // Base class for all user-related errors with automatic name inference
 class UserError<T extends ErrorCode> extends BaseError<T> {
+  /** Discriminant for type safety - ensures this error is distinct from other error types */
+  public readonly _tag = "UserError" as const;
+
   constructor(
     public readonly code: T,
     message: string,
