@@ -27,6 +27,13 @@ interface V8ErrorConstructor {
  * ```
  */
 export class BaseError<T extends string> extends Error {
+  /**
+   * Nominal type brand - makes each subclass structurally distinct at compile time.
+   * Using 'this' ensures every subclass gets its own unique type identity.
+   * The 'declare' keyword means this exists only for type-checking (no runtime overhead).
+   */
+  private declare readonly __brand: this;
+
   public readonly name: T;
 
   /** Epoch-ms timestamp (numeric) */

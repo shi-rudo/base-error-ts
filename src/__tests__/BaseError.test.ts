@@ -671,6 +671,81 @@ describe("BaseError", () => {
     });
   });
 
+  describe("Nominal Typing", () => {
+    // Two structurally identical error classes
+    class UserNotFoundError extends BaseError<"UserNotFoundError"> {
+      constructor(userId: string) {
+        super(`User ${userId} not found`);
+      }
+    }
+
+    class ProductNotFoundError extends BaseError<"ProductNotFoundError"> {
+      constructor(productId: string) {
+        super(`Product ${productId} not found`);
+      }
+    }
+
+    it("should prevent assignment between structurally identical error types", () => {
+      const userError = new UserNotFoundError("123");
+      const productError = new ProductNotFoundError("456");
+
+      // Runtime: Both errors work correctly with their own types
+      expect(userError).toBeInstanceOf(UserNotFoundError);
+      expect(productError).toBeInstanceOf(ProductNotFoundError);
+      expect(userError.name).toBe("UserNotFoundError");
+      expect(productError.name).toBe("ProductNotFoundError");
+
+      // Compile-time: TypeScript should reject cross-assignments
+      // @ts-expect-error - UserNotFoundError cannot be assigned to ProductNotFoundError (nominal typing)
+      const shouldFail1: UserNotFoundError = productError;
+
+      // @ts-expect-error - ProductNotFoundError cannot be assigned to UserNotFoundError (nominal typing)
+      const shouldFail2: ProductNotFoundError = userError;
+
+      // Verify variables exist at runtime (they will be assigned despite type errors in dev)
+      expect(shouldFail1).toBeDefined();
+      expect(shouldFail2).toBeDefined();
+    });
+
+    it("should allow correct type assignments", () => {
+      const userError1 = new UserNotFoundError("123");
+      const userError2 = new UserNotFoundError("456");
+
+      // Same type assignments should work fine
+      const assigned1: UserNotFoundError = userError1;
+      const assigned2: UserNotFoundError = userError2;
+
+      expect(assigned1).toBe(userError1);
+      expect(assigned2).toBe(userError2);
+    });
+
+    it("should work with BaseError base type", () => {
+      const userError = new UserNotFoundError("123");
+      const productError = new ProductNotFoundError("456");
+
+      // Both can be assigned to BaseError (base type)
+      const base1: BaseError<"UserNotFoundError"> = userError;
+      const base2: BaseError<"ProductNotFoundError"> = productError;
+
+      expect(base1).toBe(userError);
+      expect(base2).toBe(productError);
+    });
+
+    it("should verify runtime instanceof checks still work correctly", () => {
+      const userError = new UserNotFoundError("123");
+      const productError = new ProductNotFoundError("456");
+
+      // Runtime instanceof should work correctly
+      expect(userError).toBeInstanceOf(BaseError);
+      expect(userError).toBeInstanceOf(UserNotFoundError);
+      expect(userError).not.toBeInstanceOf(ProductNotFoundError);
+
+      expect(productError).toBeInstanceOf(BaseError);
+      expect(productError).toBeInstanceOf(ProductNotFoundError);
+      expect(productError).not.toBeInstanceOf(UserNotFoundError);
+    });
+  });
+
   describe("Edge Cases and Implementation Details", () => {
     it("should ensure cause property is non-enumerable", () => {
       const cause = new Error("Test cause");
