@@ -329,6 +329,137 @@ function handleUserError(error: unknown): void {
 }
 ```
 
+### Structured Errors with ErrorOptions
+
+For applications that need comprehensive error metadata, `StructuredError` extends `BaseError` with standardized fields for error codes, categories, retryability flags, and structured details:
+
+```typescript
+import { StructuredError } from "@shirudo/base-error";
+
+// Create a structured error with full metadata
+const error = new StructuredError({
+  code: "VALIDATION_FAILED",
+  category: "CLIENT_ERROR",
+  retryable: false,
+  message: "Email format is invalid",
+  details: { field: "email", value: "not-an-email" }
+});
+
+// All fields are strongly typed and accessible
+console.log(error.code);       // "VALIDATION_FAILED"
+console.log(error.category);   // "CLIENT_ERROR"
+console.log(error.retryable);  // false
+console.log(error.details);    // { field: "email", value: "not-an-email" }
+
+// All BaseError features work seamlessly
+error.withUserMessage("Please enter a valid email address");
+console.log(JSON.stringify(error, null, 2));
+```
+
+#### Field Descriptions
+
+- **code**: A unique identifier for the error type (e.g., `"USER_NOT_FOUND"`, `"DATABASE_TIMEOUT"`)
+- **category**: Groups related errors together (e.g., `"AUTH"`, `"VALIDATION"`, `"INFRASTRUCTURE"`)
+- **retryable**: Boolean flag indicating if the operation can be retried
+- **details**: Optional structured data providing additional context
+- **message**: Human-readable technical message (inherited from BaseError)
+- **cause**: Optional underlying error (inherited from BaseError)
+
+#### Creating Domain-Specific Error Classes
+
+```typescript
+import { StructuredError } from "@shirudo/base-error";
+
+// Define your error codes and categories
+type DatabaseErrorCode = "CONNECTION_FAILED" | "QUERY_TIMEOUT" | "DEADLOCK";
+type DatabaseCategory = "CONNECTION" | "EXECUTION" | "CONCURRENCY";
+
+interface DatabaseErrorDetails {
+  query?: string;
+  duration?: number;
+  connectionId?: string;
+}
+
+class DatabaseError extends StructuredError<
+  DatabaseErrorCode,
+  DatabaseCategory,
+  DatabaseErrorDetails
+> {
+  constructor(
+    code: DatabaseErrorCode,
+    message: string,
+    details?: DatabaseErrorDetails,
+    cause?: unknown
+  ) {
+    const category =
+      code === "CONNECTION_FAILED" ? "CONNECTION" :
+      code === "QUERY_TIMEOUT" ? "EXECUTION" : "CONCURRENCY";
+
+    super({
+      code,
+      category,
+      retryable: code !== "DEADLOCK",
+      message,
+      details,
+      cause,
+    });
+  }
+}
+
+// Usage with full type safety
+try {
+  throw new DatabaseError(
+    "QUERY_TIMEOUT",
+    "Query exceeded 30 second timeout",
+    { query: "SELECT * FROM users", duration: 30000 }
+  );
+} catch (error) {
+  if (error instanceof DatabaseError) {
+    console.log(`Database error: ${error.code}`);
+    console.log(`Category: ${error.category}`);
+    console.log(`Can retry: ${error.retryable}`);
+    console.log(`Query: ${error.details?.query}`);
+  }
+}
+```
+
+#### Integration with Retry Logic
+
+```typescript
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxAttempts: number = 3
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      // Check if error is retryable
+      if (error instanceof StructuredError && error.retryable && attempt < maxAttempts) {
+        console.log(`Attempt ${attempt} failed, retrying...`);
+        await sleep(1000 * attempt); // Exponential backoff
+        continue;
+      }
+
+      // Non-retryable or last attempt
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
+// Usage
+const result = await withRetry(async () => {
+  // This might throw a retryable StructuredError
+  return await fetchUserFromDatabase(userId);
+});
+```
+
 ### Type Narrowing with instanceof
 
 ```typescript

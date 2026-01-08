@@ -47,7 +47,7 @@ export class BaseError<T extends string> extends Error {
    */
   public readonly _tag: string = this.constructor.name;
 
-  public readonly name: T;
+  public override readonly name: T;
 
   /** Epoch-ms timestamp (numeric) */
   public readonly timestamp: number = Date.now();
@@ -56,7 +56,7 @@ export class BaseError<T extends string> extends Error {
   public readonly timestampIso: string = new Date().toISOString();
 
   /** Rich, filtered stack where the host supports it. */
-  public readonly stack?: string;
+  public override readonly stack?: string;
 
   // --- Properties for user-friendly messages ---
   private _defaultUserMessage?: string;
@@ -185,7 +185,7 @@ export class BaseError<T extends string> extends Error {
   }
 
   /** Readable one-liner plus optional nested cause. */
-  public toString(): string {
+  public override toString(): string {
     const cause = (this as unknown as Record<string, unknown>).cause;
     return `[${this.name}] ${this.message}${
       cause ? `\nCaused by: ${cause}` : ""
@@ -291,7 +291,9 @@ export class BaseError<T extends string> extends Error {
     // Simple runtime detection without constructor testing
     // Check if we're in Node.js 16.9+ or modern browser environment
     if (typeof process !== "undefined" && process.versions?.node) {
-      const [major, minor] = process.versions.node.split(".").map(Number);
+      const [major = 0, minor = 0] = process.versions.node
+        .split(".")
+        .map(Number);
       return major > 16 || (major === 16 && minor >= 9);
     }
 
@@ -354,6 +356,11 @@ export class BaseError<T extends string> extends Error {
     // Filter out internal frames
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
+
+      // Skip undefined lines (shouldn't happen, but satisfy TypeScript)
+      if (!line) {
+        continue;
+      }
 
       // Skip internal BaseError frames
       if (
