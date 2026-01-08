@@ -1,6 +1,6 @@
 {
   "name": "@shirudo/base-error",
-  "version": "4.0.5",
+  "version": "4.1.0",
   "description": "A simple error base class for TypeScript",
   "repository": {
     "type": "git",
@@ -37,8 +37,7 @@
   "files": [
     "dist",
     "LICENSE",
-    "README.md",
-    "MIGRATION-v2-to-v3.md"
+    "README.md"
   ],
   "type": "module",
   "exports": {
