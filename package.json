@@ -49,12 +49,13 @@
   },
   "scripts": {
     "test": "vitest",
+    "test:run": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write .",
-    "build": "npm run lint:fix && tsup",
+    "build": "npm run test:run && npm run lint:fix && tsup",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
