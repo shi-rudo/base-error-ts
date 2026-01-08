@@ -346,9 +346,7 @@ describe("StructuredError", () => {
       });
 
       expect(error.retryable).toBe(true);
-      expect((error as unknown as Record<string, unknown>).cause).toBe(
-        dbError,
-      );
+      expect((error as unknown as Record<string, unknown>).cause).toBe(dbError);
     });
   });
 });

@@ -14,11 +14,7 @@ type OrderErrorCode =
   | "INVALID_SHIPPING_ADDRESS"
   | "ORDER_NOT_FOUND";
 
-type OrderErrorCategory =
-  | "INVENTORY"
-  | "PAYMENT"
-  | "VALIDATION"
-  | "NOT_FOUND";
+type OrderErrorCategory = "INVENTORY" | "PAYMENT" | "VALIDATION" | "NOT_FOUND";
 
 interface OrderErrorDetails {
   orderId?: string;
