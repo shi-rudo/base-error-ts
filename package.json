@@ -52,8 +52,9 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint . --ext .ts",
+    "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write .",
-    "build": "tsup",
+    "build": "npm run lint:fix && tsup",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
