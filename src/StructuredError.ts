@@ -74,12 +74,6 @@ export class StructuredError<
   TCategory extends string,
   TDetails extends Record<string, unknown> = Record<string, unknown>,
 > extends BaseError<`${TCode}`> {
-  /**
-   * Discriminant tag for type narrowing - set to "StructuredError".
-   * Subclasses can override this with a literal type for stricter type safety.
-   */
-  public override readonly _tag = "StructuredError" as const;
-
   /** Error code for programmatic error handling */
   public readonly code: TCode;
 
