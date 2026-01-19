@@ -197,45 +197,30 @@ export class BaseError<T extends string> extends Error {
   // ————————————————————————————————————————————————————————————————
 
   /**
-   * Sets the cause property using native support when available, with fallback.
-   * This provides better compatibility across different JavaScript environments.
+   * Sets the cause property as non-enumerable (like native Error.cause).
+   *
+   * Uses Object.defineProperty instead of native `new Error(msg, { cause })`
+   * for universal compatibility. This approach works across all runtimes
+   * (Node.js 14+, Deno, Cloudflare Workers, browsers) without version detection,
+   * since Object.defineProperty is ES5 and universally supported.
    */
   /*#__PURE__*/ #setCause(cause: unknown): void {
-    // Try to use native cause support if available
-    if (BaseError.#hasNativeCauseSupport()) {
-      // For environments with native cause support, we need to reconstruct
-      // the error with cause. Since we can't do this in the constructor due to
-      // TypeScript limitations, we'll set it manually but make it look native.
-      try {
-        Object.defineProperty(this, "cause", {
-          value: cause,
-          configurable: true,
-          writable: true,
-          enumerable: false, // Keep it non-enumerable like native cause
-        });
-      } catch {
-        // Fallback if defineProperty fails
-        (this as unknown as Record<string, unknown>).cause = cause;
-      }
-    } else {
-      // For older environments, set cause manually
-      try {
-        Object.defineProperty(this, "cause", {
-          value: cause,
-          configurable: true,
-          writable: true,
-          enumerable: false,
-        });
-      } catch {
-        // Final fallback for very old environments
-        (this as unknown as Record<string, unknown>).cause = cause;
-      }
+    try {
+      Object.defineProperty(this, "cause", {
+        value: cause,
+        configurable: true,
+        writable: true,
+        enumerable: false,
+      });
+    } catch {
+      // Fallback for environments where defineProperty fails
+      (this as unknown as Record<string, unknown>).cause = cause;
     }
   }
 
   /**
    * Intelligently serializes the cause for JSON output.
-   * Preserves stack traces and nested data instead of just toString().
+   * Preserves stack traces, StructuredError fields, and nested data.
    */
   /*#__PURE__*/ #serializeCause(cause: unknown): unknown {
     if (cause === undefined || cause === null) {
@@ -243,16 +228,26 @@ export class BaseError<T extends string> extends Error {
     }
 
     if (cause instanceof Error) {
-      // For Error objects, preserve stack and nested cause
-      return {
+      const serialized: Record<string, unknown> = {
         name: cause.name,
         message: cause.message,
         stack: cause.stack,
-        // Recursively serialize nested causes
-        cause: this.#serializeCause(
-          (cause as unknown as Record<string, unknown>).cause,
-        ),
       };
+
+      // Preserve StructuredError fields if present (duck-typing)
+      // This avoids circular dependency between BaseError and StructuredError
+      const errorRecord = cause as unknown as Record<string, unknown>;
+      if ("code" in cause) serialized.code = errorRecord.code;
+      if ("category" in cause) serialized.category = errorRecord.category;
+      if ("retryable" in cause) serialized.retryable = errorRecord.retryable;
+      if ("details" in cause) serialized.details = errorRecord.details;
+
+      // Recursively serialize nested causes
+      if ("cause" in cause && errorRecord.cause !== undefined) {
+        serialized.cause = this.#serializeCause(errorRecord.cause);
+      }
+
+      return serialized;
     }
 
     if (typeof cause === "object" && cause !== null) {
@@ -281,25 +276,6 @@ export class BaseError<T extends string> extends Error {
     const moreKeys = Object.keys(obj).length > 5 ? "..." : "";
 
     return `[Circular ${type}${keyInfo}${moreKeys}]`;
-  }
-
-  /**
-   * Detects if the runtime supports native Error cause option.
-   * Available in Node.js 16.9+ and modern browsers.
-   */
-  static /*#__PURE__*/ #hasNativeCauseSupport(): boolean {
-    // Simple runtime detection without constructor testing
-    // Check if we're in Node.js 16.9+ or modern browser environment
-    if (typeof process !== "undefined" && process.versions?.node) {
-      const [major = 0, minor = 0] = process.versions.node
-        .split(".")
-        .map(Number);
-      return major > 16 || (major === 16 && minor >= 9);
-    }
-
-    // For browser environments, assume modern browsers support it
-    // This is a conservative approach that works with current TypeScript
-    return typeof window !== "undefined" && "cause" in Error.prototype;
   }
 
   /**

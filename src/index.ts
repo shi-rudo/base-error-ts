@@ -28,6 +28,11 @@ export {
 } from "./response/factories.js";
 
 // ────────────────────────────────────────────────────────────────
-// Utilities
+// Utilities & Type Guards
 // ────────────────────────────────────────────────────────────────
 export { guard } from "./utils/guard.js";
+export {
+  isBaseError,
+  isStructuredError,
+  isRetryable,
+} from "./errors/guards.js";

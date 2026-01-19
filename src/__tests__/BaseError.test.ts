@@ -23,7 +23,7 @@ class TestError extends BaseError<"TestError"> {
     super(message, cause);
   }
 
-  toJSON() {
+  override toJSON() {
     // Call parent toJSON to include user messages, then add custom logic
     const baseJson = super.toJSON();
     return {
@@ -194,9 +194,10 @@ describe("BaseError", () => {
           name: "Error",
           message: "Root cause",
           stack: expect.any(String),
-          cause: undefined,
         },
       });
+      // cause should not have a nested cause property when undefined
+      expect((json.cause as Record<string, unknown>).cause).toBeUndefined();
 
       if ("stack" in json) {
         expect(typeof json.stack).toBe("string");
@@ -550,8 +551,9 @@ describe("BaseError", () => {
         name: "Error",
         message: "Database connection failed",
         stack: expect.any(String),
-        cause: undefined,
       });
+      // cause should not have a nested cause property when undefined
+      expect((json.cause as Record<string, unknown>).cause).toBeUndefined();
 
       // Verify the stack trace is preserved
       expect((json.cause as Record<string, unknown>).stack).toContain(
@@ -565,19 +567,25 @@ describe("BaseError", () => {
       const topError = new AutoNamedError("Service error", middleCause);
 
       const json = topError.toJSON();
+      const middleCauseSerialized = json.cause as Record<string, unknown>;
+      const rootCauseSerialized = middleCauseSerialized.cause as Record<
+        string,
+        unknown
+      >;
 
       // Check the nested structure
-      expect(json.cause).toMatchObject({
+      expect(middleCauseSerialized).toMatchObject({
         name: "AutoNamedError",
         message: "Database error",
         stack: expect.any(String),
-        cause: {
-          name: "Error",
-          message: "Network timeout",
-          stack: expect.any(String),
-          cause: undefined,
-        },
       });
+      expect(rootCauseSerialized).toMatchObject({
+        name: "Error",
+        message: "Network timeout",
+        stack: expect.any(String),
+      });
+      // Root cause should not have a nested cause property when undefined
+      expect(rootCauseSerialized.cause).toBeUndefined();
     });
 
     it("should handle non-Error object causes", () => {
@@ -876,8 +884,8 @@ describe("BaseError", () => {
         expect(headerLine).toBe("AutoNamedError: Header test message");
 
         // Should start with the correct error name, not generic "Error:"
-        expect(headerLine.startsWith("AutoNamedError:")).toBe(true);
-        expect(headerLine.startsWith("Error:")).toBe(false);
+        expect(headerLine?.startsWith("AutoNamedError:")).toBe(true);
+        expect(headerLine?.startsWith("Error:")).toBe(false);
       }
     });
 

@@ -27,7 +27,6 @@ It provides rich, filterable stack traces and advanced features **without pollut
 npm install @shirudo/base-error
 ```
 
-
 ## Usage
 
 ### Basic Usage
@@ -131,15 +130,27 @@ import { BaseError } from "@shirudo/base-error";
 class UserNotFoundError extends BaseError<"UserNotFoundError"> {
   constructor(userId: string) {
     super(`User with id ${userId} not found in database lookup`); // Technical message
-    
+
     // Set user-friendly message
     this.withUserMessage(`User ${userId} was not found.`);
-    
+
     // Add localized messages
-    this.addLocalizedMessage("en", "User not found. Please check the user ID and try again.")
-        .addLocalizedMessage("es", "Usuario no encontrado. Verifique el ID de usuario e inténtelo de nuevo.")
-        .addLocalizedMessage("fr", "Utilisateur introuvable. Veuillez vérifier l'ID utilisateur et réessayer.")
-        .addLocalizedMessage("de", "Benutzer nicht gefunden. Bitte überprüfen Sie die Benutzer-ID und versuchen Sie es erneut.");
+    this.addLocalizedMessage(
+      "en",
+      "User not found. Please check the user ID and try again.",
+    )
+      .addLocalizedMessage(
+        "es",
+        "Usuario no encontrado. Verifique el ID de usuario e inténtelo de nuevo.",
+      )
+      .addLocalizedMessage(
+        "fr",
+        "Utilisateur introuvable. Veuillez vérifier l'ID utilisateur et réessayer.",
+      )
+      .addLocalizedMessage(
+        "de",
+        "Benutzer nicht gefunden. Bitte überprüfen Sie die Benutzer-ID und versuchen Sie es erneut.",
+      );
   }
 }
 
@@ -149,12 +160,12 @@ try {
 } catch (error) {
   if (error instanceof UserNotFoundError) {
     // Get localized message based on user preference
-    const userMessage = error.getUserMessage({ 
-      preferredLang: "es", 
-      fallbackLang: "en" 
+    const userMessage = error.getUserMessage({
+      preferredLang: "es",
+      fallbackLang: "en",
     });
     console.log("User message:", userMessage); // "Usuario no encontrado..."
-    
+
     // Technical message for logging
     console.log("Technical message:", error.message); // "User with id user-123 not found..."
   }
@@ -176,13 +187,19 @@ import { BaseError } from "@shirudo/base-error";
 class ValidationError extends BaseError<"ValidationError"> {
   constructor(field: string, technicalReason: string) {
     super(`Validation failed for field '${field}': ${technicalReason}`);
-    
+
     // Chain method calls for fluent API
     this.withUserMessage("Please check your input and try again.")
-        .addLocalizedMessage("en", "Please check your input and try again.")
-        .addLocalizedMessage("es", "Por favor, revise su entrada e inténtelo de nuevo.")
-        .addLocalizedMessage("fr", "Veuillez vérifier votre saisie et réessayer.")
-        .addLocalizedMessage("de", "Bitte überprüfen Sie Ihre Eingabe und versuchen Sie es erneut.");
+      .addLocalizedMessage("en", "Please check your input and try again.")
+      .addLocalizedMessage(
+        "es",
+        "Por favor, revise su entrada e inténtelo de nuevo.",
+      )
+      .addLocalizedMessage("fr", "Veuillez vérifier votre saisie et réessayer.")
+      .addLocalizedMessage(
+        "de",
+        "Bitte überprüfen Sie Ihre Eingabe und versuchen Sie es erneut.",
+      );
   }
 }
 
@@ -243,13 +260,14 @@ The `getUserMessage()` method uses a three-tier fallback strategy:
 const error = new ValidationError("email", "invalid format");
 
 // Only set some languages
-error.withUserMessage("Default message")
-     .addLocalizedMessage("en", "English message")
-     .addLocalizedMessage("fr", "French message");
+error
+  .withUserMessage("Default message")
+  .addLocalizedMessage("en", "English message")
+  .addLocalizedMessage("fr", "French message");
 
 // Fallback examples
 error.getUserMessage({ preferredLang: "fr" }); // → "French message"
-error.getUserMessage({ preferredLang: "es", fallbackLang: "en" }); // → "English message" 
+error.getUserMessage({ preferredLang: "es", fallbackLang: "en" }); // → "English message"
 error.getUserMessage({ preferredLang: "es", fallbackLang: "de" }); // → "Default message"
 error.getUserMessage({ preferredLang: "es" }); // → "Default message"
 ```
@@ -342,14 +360,14 @@ const error = new StructuredError({
   category: "CLIENT_ERROR",
   retryable: false,
   message: "Email format is invalid",
-  details: { field: "email", value: "not-an-email" }
+  details: { field: "email", value: "not-an-email" },
 });
 
 // All fields are strongly typed and accessible
-console.log(error.code);       // "VALIDATION_FAILED"
-console.log(error.category);   // "CLIENT_ERROR"
-console.log(error.retryable);  // false
-console.log(error.details);    // { field: "email", value: "not-an-email" }
+console.log(error.code); // "VALIDATION_FAILED"
+console.log(error.category); // "CLIENT_ERROR"
+console.log(error.retryable); // false
+console.log(error.details); // { field: "email", value: "not-an-email" }
 
 // All BaseError features work seamlessly
 error.withUserMessage("Please enter a valid email address");
@@ -389,11 +407,14 @@ class DatabaseError extends StructuredError<
     code: DatabaseErrorCode,
     message: string,
     details?: DatabaseErrorDetails,
-    cause?: unknown
+    cause?: unknown,
   ) {
     const category =
-      code === "CONNECTION_FAILED" ? "CONNECTION" :
-      code === "QUERY_TIMEOUT" ? "EXECUTION" : "CONCURRENCY";
+      code === "CONNECTION_FAILED"
+        ? "CONNECTION"
+        : code === "QUERY_TIMEOUT"
+          ? "EXECUTION"
+          : "CONCURRENCY";
 
     super({
       code,
@@ -408,11 +429,10 @@ class DatabaseError extends StructuredError<
 
 // Usage with full type safety
 try {
-  throw new DatabaseError(
-    "QUERY_TIMEOUT",
-    "Query exceeded 30 second timeout",
-    { query: "SELECT * FROM users", duration: 30000 }
-  );
+  throw new DatabaseError("QUERY_TIMEOUT", "Query exceeded 30 second timeout", {
+    query: "SELECT * FROM users",
+    duration: 30000,
+  });
 } catch (error) {
   if (error instanceof DatabaseError) {
     console.log(`Database error: ${error.code}`);
@@ -428,7 +448,7 @@ try {
 ```typescript
 async function withRetry<T>(
   fn: () => Promise<T>,
-  maxAttempts: number = 3
+  maxAttempts: number = 3,
 ): Promise<T> {
   let lastError: unknown;
 
@@ -439,7 +459,11 @@ async function withRetry<T>(
       lastError = error;
 
       // Check if error is retryable
-      if (error instanceof StructuredError && error.retryable && attempt < maxAttempts) {
+      if (
+        error instanceof StructuredError &&
+        error.retryable &&
+        attempt < maxAttempts
+      ) {
         console.log(`Attempt ${attempt} failed, retrying...`);
         await sleep(1000 * attempt); // Exponential backoff
         continue;
@@ -559,6 +583,28 @@ The `guard` function:
 - Works with any truthy/falsy values, not just booleans
 - Maintains the full error context and stack trace
 
+## Examples
+
+This package includes comprehensive examples demonstrating various use cases:
+
+| Example                                                                         | Description                                                    |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [basic-usage.ts](examples/basic-usage.ts)                                       | Create custom error classes extending BaseError                |
+| [error-handling.ts](examples/error-handling.ts)                                 | Error handling patterns with BaseError                         |
+| [structured-errors-example.ts](examples/structured-errors-example.ts)           | Using StructuredError with codes, categories, and retryability |
+| [error-codes-example.ts](examples/error-codes-example.ts)                       | Type-safe error codes with union types                         |
+| [domain-errors-example.ts](examples/domain-errors-example.ts)                   | Domain error hierarchy with instanceof handling                |
+| [automatic-name-example.ts](examples/automatic-name-example.ts)                 | Automatic name inference feature                               |
+| [problem-details-example.ts](examples/problem-details-example.ts)               | RFC 9457 compliant error responses with `toProblemDetails()`   |
+| [error-response-builder-example.ts](examples/error-response-builder-example.ts) | Type-safe error responses with the builder pattern             |
+
+Run an example:
+
+```bash
+npx tsx examples/basic-usage.ts
+npx tsx examples/problem-details-example.ts
+```
+
 ## API
 
 ### `BaseError<T extends string>`
@@ -577,14 +623,14 @@ class BaseError<T extends string> extends Error {
 
   // Methods
   toJSON(): Record<string, unknown>; // Serialize to JSON
-  
+
   // User Message Methods (v2.1+)
   withUserMessage(message: string): this; // Set default user-friendly message
   addLocalizedMessage(lang: string, message: string): this; // Add localized message (prevents duplicates)
   updateLocalizedMessage(lang: string, message: string): this; // Update/set localized message (allows overwriting)
-  getUserMessage(options?: { 
-    preferredLang?: string; 
-    fallbackLang?: string; 
+  getUserMessage(options?: {
+    preferredLang?: string;
+    fallbackLang?: string;
   }): string | undefined; // Get appropriate user message
 }
 ```

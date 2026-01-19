@@ -174,6 +174,76 @@ describe("StructuredError", () => {
 
       expect(json.cause).toBeDefined();
     });
+
+    it("should preserve StructuredError fields when serializing cause", () => {
+      const innerError = new StructuredError({
+        code: "INNER_ERROR",
+        category: "INNER_CAT",
+        retryable: true,
+        message: "Inner error message",
+        details: { innerKey: "innerValue" },
+      });
+
+      const outerError = new StructuredError({
+        code: "OUTER_ERROR",
+        category: "OUTER_CAT",
+        retryable: false,
+        message: "Outer error message",
+        cause: innerError,
+      });
+
+      const json = outerError.toJSON();
+      const causeSerialized = json.cause as Record<string, unknown>;
+
+      expect(causeSerialized).toBeDefined();
+      expect(causeSerialized.name).toBe("INNER_ERROR");
+      expect(causeSerialized.message).toBe("Inner error message");
+      expect(causeSerialized.code).toBe("INNER_ERROR");
+      expect(causeSerialized.category).toBe("INNER_CAT");
+      expect(causeSerialized.retryable).toBe(true);
+      expect(causeSerialized.details).toEqual({ innerKey: "innerValue" });
+    });
+
+    it("should preserve StructuredError fields in deeply nested causes", () => {
+      const level3 = new StructuredError({
+        code: "LEVEL_3",
+        category: "CAT_3",
+        retryable: false,
+        message: "Level 3",
+        details: { level: 3 },
+      });
+
+      const level2 = new StructuredError({
+        code: "LEVEL_2",
+        category: "CAT_2",
+        retryable: true,
+        message: "Level 2",
+        cause: level3,
+      });
+
+      const level1 = new StructuredError({
+        code: "LEVEL_1",
+        category: "CAT_1",
+        retryable: false,
+        message: "Level 1",
+        cause: level2,
+      });
+
+      const json = level1.toJSON();
+      const cause1 = json.cause as Record<string, unknown>;
+      const cause2 = cause1.cause as Record<string, unknown>;
+
+      // Level 2
+      expect(cause1.code).toBe("LEVEL_2");
+      expect(cause1.category).toBe("CAT_2");
+      expect(cause1.retryable).toBe(true);
+
+      // Level 3
+      expect(cause2.code).toBe("LEVEL_3");
+      expect(cause2.category).toBe("CAT_3");
+      expect(cause2.retryable).toBe(false);
+      expect(cause2.details).toEqual({ level: 3 });
+    });
   });
 
   describe("User Messages Integration", () => {

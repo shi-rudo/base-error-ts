@@ -1,6 +1,7 @@
 import { BaseError } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
 import type { ProblemDetails } from "../response/ProblemDetails.js";
+import type { ErrorResponse, LocalizedMessage } from "../response/types.js";
 
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
@@ -191,5 +192,69 @@ export class StructuredError<
       ...(traceId !== undefined && { traceId }),
       ...this.details,
     } as ProblemDetails<TCode, TCategory, TDetails>;
+  }
+
+  /**
+   * Converts the error to an ErrorResponse object for API responses.
+   *
+   * This method provides a standardized format for RPC and HTTP error responses
+   * with full context including HTTP status, messages, and localization.
+   *
+   * @param options - Configuration for the error response
+   * @returns An ErrorResponse object ready for API response serialization
+   *
+   * @example
+   * ```ts
+   * const error = new StructuredError({
+   *   code: "USER_NOT_FOUND",
+   *   category: "NOT_FOUND",
+   *   retryable: false,
+   *   message: "User with id 123 not found",
+   *   details: { userId: "123" }
+   * });
+   *
+   * const response = error.toErrorResponse({
+   *   httpStatusCode: 404,
+   *   messageLocalized: { locale: "en", message: "User not found" },
+   *   traceId: "trace-abc-123"
+   * });
+   * ```
+   */
+  public toErrorResponse(
+    options: {
+      /** HTTP status code */
+      httpStatusCode?: number;
+      /** Localized message for client display */
+      messageLocalized?: LocalizedMessage;
+      /** Trace ID for distributed tracing */
+      traceId?: string;
+    } = {},
+  ): ErrorResponse<
+    TCode,
+    TCategory,
+    {
+      httpStatusCode?: number;
+      message: string;
+      messageLocalized?: LocalizedMessage;
+    },
+    TDetails extends undefined ? Record<string, never> : TDetails
+  > {
+    const { httpStatusCode, messageLocalized, traceId } = options;
+
+    return {
+      isSuccess: false,
+      code: this.code,
+      category: this.category,
+      retryable: this.retryable,
+      ...(traceId !== undefined && { traceId }),
+      ctx: {
+        ...(httpStatusCode !== undefined && { httpStatusCode }),
+        message: this.message,
+        ...(messageLocalized !== undefined && { messageLocalized }),
+      },
+      details: (this.details ?? {}) as TDetails extends undefined
+        ? Record<string, never>
+        : TDetails,
+    };
   }
 }
