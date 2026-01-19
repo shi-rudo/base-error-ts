@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BaseError } from "../BaseError.js";
-import { guard } from "../utils/guard.js";
+import { BaseError, guard } from "../index.js";
 
 // Test error class for invariant tests
 class TestInvariantError extends BaseError<"TestInvariantError"> {

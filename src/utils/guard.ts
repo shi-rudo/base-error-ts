@@ -1,4 +1,4 @@
-import type { BaseError } from "@/BaseError.js";
+import type { BaseError } from "../errors/BaseError.js";
 
 /**
  * Asserts that a condition is truthy, throwing the provided error if it's falsy.

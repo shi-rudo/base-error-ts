@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { BaseError } from "../BaseError.js";
-import { StructuredError } from "../StructuredError.js";
+import { BaseError, StructuredError } from "../index.js";
 
 describe("StructuredError", () => {
   const mockDate = new Date("2025-01-01T00:00:00.000Z");
@@ -346,6 +345,171 @@ describe("StructuredError", () => {
 
       expect(error.retryable).toBe(true);
       expect((error as unknown as Record<string, unknown>).cause).toBe(dbError);
+    });
+  });
+
+  describe("toProblemDetails", () => {
+    it("should convert to minimal ProblemDetails", () => {
+      const error = new StructuredError({
+        code: "USER_NOT_FOUND",
+        category: "NOT_FOUND",
+        retryable: false,
+        message: "User with id 123 not found",
+      });
+
+      const problem = error.toProblemDetails();
+
+      expect(problem.code).toBe("USER_NOT_FOUND");
+      expect(problem.category).toBe("NOT_FOUND");
+      expect(problem.retryable).toBe(false);
+      expect(problem.detail).toBe("User with id 123 not found");
+      expect(problem.status).toBeUndefined();
+      expect(problem.type).toBeUndefined();
+      expect(problem.title).toBeUndefined();
+      expect(problem.instance).toBeUndefined();
+      expect(problem.traceId).toBeUndefined();
+    });
+
+    it("should include status when provided", () => {
+      const error = new StructuredError({
+        code: "USER_NOT_FOUND",
+        category: "NOT_FOUND",
+        retryable: false,
+        message: "User not found",
+      });
+
+      const problem = error.toProblemDetails({ status: 404 });
+
+      expect(problem.status).toBe(404);
+    });
+
+    it("should include all RFC 9457 fields when provided", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Email format is invalid",
+      });
+
+      const problem = error.toProblemDetails({
+        status: 400,
+        type: "https://api.example.com/errors/validation-failed",
+        title: "Validation Failed",
+        instance: "/users/123/email",
+        traceId: "trace-abc-123",
+      });
+
+      expect(problem.status).toBe(400);
+      expect(problem.type).toBe(
+        "https://api.example.com/errors/validation-failed",
+      );
+      expect(problem.title).toBe("Validation Failed");
+      expect(problem.instance).toBe("/users/123/email");
+      expect(problem.traceId).toBe("trace-abc-123");
+      expect(problem.detail).toBe("Email format is invalid");
+      expect(problem.code).toBe("VALIDATION_FAILED");
+      expect(problem.category).toBe("VALIDATION");
+      expect(problem.retryable).toBe(false);
+    });
+
+    it("should spread details as extension members", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Validation failed",
+        details: {
+          field: "email",
+          constraint: "format",
+          value: "not-an-email",
+        },
+      });
+
+      const problem = error.toProblemDetails({ status: 400 });
+
+      expect(problem.field).toBe("email");
+      expect(problem.constraint).toBe("format");
+      expect(problem.value).toBe("not-an-email");
+    });
+
+    it("should preserve type safety for codes and categories", () => {
+      type MyCode = "ERROR_A" | "ERROR_B";
+      type MyCategory = "CAT_1" | "CAT_2";
+
+      const error = new StructuredError<MyCode, MyCategory>({
+        code: "ERROR_A",
+        category: "CAT_1",
+        retryable: true,
+        message: "Test",
+      });
+
+      const problem = error.toProblemDetails();
+
+      // TypeScript compile-time check
+      const code: MyCode = problem.code;
+      const category: MyCategory = problem.category;
+
+      expect(code).toBe("ERROR_A");
+      expect(category).toBe("CAT_1");
+    });
+
+    it("should preserve type safety for details extensions", () => {
+      interface MyDetails {
+        userId: string;
+        attemptCount: number;
+      }
+
+      const error = new StructuredError<string, string, MyDetails>({
+        code: "AUTH_FAILED",
+        category: "AUTH",
+        retryable: false,
+        message: "Authentication failed",
+        details: { userId: "user-123", attemptCount: 3 },
+      });
+
+      const problem = error.toProblemDetails({ status: 401 });
+
+      // TypeScript compile-time check - details are spread as extensions
+      expect(problem.userId).toBe("user-123");
+      expect(problem.attemptCount).toBe(3);
+    });
+
+    it("should work with empty options object", () => {
+      const error = new StructuredError({
+        code: "TEST",
+        category: "TEST",
+        retryable: false,
+        message: "Test message",
+      });
+
+      const problem = error.toProblemDetails({});
+
+      expect(problem.code).toBe("TEST");
+      expect(problem.detail).toBe("Test message");
+    });
+
+    it("should be serializable to JSON", () => {
+      const error = new StructuredError({
+        code: "API_ERROR",
+        category: "EXTERNAL",
+        retryable: true,
+        message: "External API failed",
+        details: { endpoint: "/api/users", statusCode: 503 },
+      });
+
+      const problem = error.toProblemDetails({
+        status: 502,
+        type: "https://example.com/errors/api-error",
+        traceId: "req-xyz",
+      });
+
+      const json = JSON.stringify(problem);
+      const parsed = JSON.parse(json);
+
+      expect(parsed.status).toBe(502);
+      expect(parsed.code).toBe("API_ERROR");
+      expect(parsed.endpoint).toBe("/api/users");
+      expect(parsed.traceId).toBe("req-xyz");
     });
   });
 });

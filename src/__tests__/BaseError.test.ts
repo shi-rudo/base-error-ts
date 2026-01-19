@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BaseError } from "../BaseError.js";
+import { BaseError } from "../index.js";
 
 // Add the same local interface here for tests
 interface V8ErrorConstructor {

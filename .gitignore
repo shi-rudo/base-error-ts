@@ -15,6 +15,7 @@ tmp
 
 # Build
 public/css/main.css
+dist/
 
 # Coverage reports
 coverage
@@ -39,3 +40,7 @@ dist/**/*
 
 # ignore yarn.lock
 yarn.lock
+
+# ai agents
+.cursor/
+.claude/

@@ -1,5 +1,6 @@
 import { BaseError } from "./BaseError.js";
-import type { ErrorOptions } from "./utils/ErrorOptions.js";
+import type { ErrorOptions } from "./ErrorOptions.js";
+import type { ProblemDetails } from "../response/ProblemDetails.js";
 
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
@@ -120,5 +121,75 @@ export class StructuredError<
       retryable: this.retryable,
       ...(this.details !== undefined && { details: this.details }),
     };
+  }
+
+  /**
+   * Converts the error to an RFC 9457 Problem Details object.
+   *
+   * This method provides a standardized format for HTTP API error responses.
+   * The `details` object is spread into the result as extension members.
+   *
+   * @param options - Optional configuration for the Problem Details response
+   * @returns A ProblemDetails object ready for HTTP response serialization
+   *
+   * @example
+   * ```ts
+   * const error = new StructuredError({
+   *   code: "USER_NOT_FOUND",
+   *   category: "NOT_FOUND",
+   *   retryable: false,
+   *   message: "User with id 123 not found",
+   *   details: { userId: "123" }
+   * });
+   *
+   * // Basic conversion
+   * const problem = error.toProblemDetails({ status: 404 });
+   * // {
+   * //   status: 404,
+   * //   detail: "User with id 123 not found",
+   * //   code: "USER_NOT_FOUND",
+   * //   category: "NOT_FOUND",
+   * //   retryable: false,
+   * //   userId: "123"
+   * // }
+   *
+   * // With full RFC 9457 fields
+   * const problem = error.toProblemDetails({
+   *   status: 404,
+   *   type: "https://api.example.com/errors/user-not-found",
+   *   title: "User Not Found",
+   *   instance: "/users/123",
+   *   traceId: "trace-abc-123"
+   * });
+   * ```
+   */
+  public toProblemDetails(
+    options: {
+      /** HTTP status code */
+      status?: number;
+      /** URI reference identifying the problem type */
+      type?: string;
+      /** Short, human-readable summary */
+      title?: string;
+      /** URI reference identifying this specific occurrence */
+      instance?: string;
+      /** Trace ID for distributed tracing */
+      traceId?: string;
+    } = {},
+  ): ProblemDetails<TCode, TCategory, TDetails> {
+    const { status, type, title, instance, traceId } = options;
+
+    return {
+      ...(type !== undefined && { type }),
+      ...(title !== undefined && { title }),
+      ...(status !== undefined && { status }),
+      detail: this.message,
+      ...(instance !== undefined && { instance }),
+      code: this.code,
+      category: this.category,
+      retryable: this.retryable,
+      ...(traceId !== undefined && { traceId }),
+      ...this.details,
+    } as ProblemDetails<TCode, TCategory, TDetails>;
   }
 }
