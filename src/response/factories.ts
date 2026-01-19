@@ -45,20 +45,22 @@ type ErrorResponseInput<TCode extends string, TCategory extends string> = {
  * }).build();
  * ```
  */
+/* eslint-disable @typescript-eslint/no-empty-object-type */
+// Using Record<string, {}> for consistency with ErrorResponse/ApiResponse defaults
 export function errorResponse<TCode extends string, TCategory extends string>(
   options: ErrorResponseInput<TCode, TCategory>,
 ): ErrorResponseBuilder<
   TCode,
   TCategory,
-  Record<string, never>,
-  Record<string, never>
+  Record<string, {}>,
+  Record<string, {}>
 > {
   return new ErrorResponseBuilder({
     code: options.code,
     category: options.category,
     retryable: options.retryable ?? false,
-    ctx: {} as Record<string, never>,
-    details: {} as Record<string, never>,
+    ctx: {} as Record<string, {}>,
+    details: {} as Record<string, {}>,
   });
 }
 
@@ -90,21 +92,8 @@ export function successResponse<TData>(
   };
 }
 
-/** Input type for createErrorResponse - only code and category are required */
-type CreateErrorResponseInput<
-  TCode extends string,
-  TCategory extends string,
-  TCtx extends Record<string, unknown> | undefined = undefined,
-  TDetails extends Record<string, unknown> | undefined = undefined,
-> = {
-  code: TCode;
-  category: TCategory;
-  /** Whether the operation can be retried. Defaults to false. */
-  retryable?: boolean;
-  traceId?: string;
-  ctx?: TCtx;
-  details?: TDetails;
-};
+/* eslint-disable @typescript-eslint/no-empty-object-type */
+// Using Record<string, {}> as default for consistency with ErrorResponse/ApiResponse
 
 /**
  * Create an error response directly from an object.
@@ -148,16 +137,16 @@ type CreateErrorResponseInput<
 export function createErrorResponse<
   TCode extends string,
   TCategory extends string,
-  TCtx extends Record<string, unknown> | undefined = undefined,
-  TDetails extends Record<string, unknown> | undefined = undefined,
->(
-  input: CreateErrorResponseInput<TCode, TCategory, TCtx, TDetails>,
-): ErrorResponse<
-  TCode,
-  TCategory,
-  TCtx extends undefined ? Record<string, never> : TCtx,
-  TDetails extends undefined ? Record<string, never> : TDetails
-> {
+  TCtx extends Record<string, unknown> = Record<string, {}>,
+  TDetails extends Record<string, unknown> = Record<string, {}>,
+>(input: {
+  code: TCode;
+  category: TCategory;
+  retryable?: boolean;
+  traceId?: string;
+  ctx?: TCtx;
+  details?: TDetails;
+}): ErrorResponse<TCode, TCategory, TCtx, TDetails> {
   return {
     isSuccess: false,
     error: {
@@ -165,12 +154,8 @@ export function createErrorResponse<
       category: input.category,
       retryable: input.retryable ?? false,
       ...(input.traceId !== undefined && { traceId: input.traceId }),
-      ctx: (input.ctx ?? {}) as TCtx extends undefined
-        ? Record<string, never>
-        : TCtx,
-      details: (input.details ?? {}) as TDetails extends undefined
-        ? Record<string, never>
-        : TDetails,
+      ctx: (input.ctx ?? {}) as TCtx,
+      details: (input.details ?? {}) as TDetails,
     },
   };
 }

@@ -239,7 +239,7 @@ export class StructuredError<
       message: string;
       messageLocalized?: LocalizedMessage;
     },
-    TDetails extends undefined ? Record<string, never> : TDetails
+    TDetails
   > {
     const { httpStatusCode, messageLocalized, traceId } = options;
 
@@ -255,9 +255,7 @@ export class StructuredError<
           message: this.message,
           ...(messageLocalized !== undefined && { messageLocalized }),
         },
-        details: (this.details ?? {}) as TDetails extends undefined
-          ? Record<string, never>
-          : TDetails,
+        details: (this.details ?? {}) as TDetails,
       },
     };
   }
