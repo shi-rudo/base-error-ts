@@ -115,7 +115,11 @@ function mapErrorToErrorResponse(error: unknown, method: string, path: string) {
     "code" in error &&
     "category" in error
   ) {
-    return errorResponse(error.code, error.category, error.retryable)
+    return errorResponse({
+      code: error.code,
+      category: error.category,
+      retryable: error.retryable,
+    })
       .httpStatus(HTTP_STATUS[error.code] || 500)
       .message(error.message)
       .localized("en", error.message)
@@ -132,7 +136,11 @@ function mapErrorToErrorResponse(error: unknown, method: string, path: string) {
   }
 
   if (error instanceof DatabaseError) {
-    return errorResponse("DATABASE_ERROR", "DATABASE", error.retryable)
+    return errorResponse({
+      code: "DATABASE_ERROR",
+      category: "DATABASE",
+      retryable: error.retryable,
+    })
       .httpStatus(503)
       .message(error.message)
       .localized("en", "Database service temporarily unavailable")
@@ -149,7 +157,11 @@ function mapErrorToErrorResponse(error: unknown, method: string, path: string) {
 
   const message = error instanceof Error ? error.message : String(error);
 
-  return errorResponse("INTERNAL_ERROR", "INFRASTRUCTURE", false)
+  return errorResponse({
+    code: "INTERNAL_ERROR",
+    category: "INFRASTRUCTURE",
+    retryable: false,
+  })
     .httpStatus(500)
     .message(message)
     .localized("en", "An unexpected error occurred")
@@ -177,7 +189,7 @@ async function handleRpcCall<T>(
     return { data: result };
   } catch (error) {
     const response = mapErrorToErrorResponse(error, method, endpoint);
-    return { status: response.ctx.httpStatusCode || 500, body: response };
+    return { status: response.error.ctx.httpStatusCode || 500, body: response };
   }
 }
 
@@ -216,7 +228,11 @@ async function main() {
   console.log("Example 3: Builder pattern with all options");
   console.log("=".repeat(60));
 
-  const builtError = errorResponse("USER_NOT_FOUND", "NOT_FOUND", false)
+  const builtError = errorResponse({
+    code: "USER_NOT_FOUND",
+    category: "NOT_FOUND",
+    retryable: false,
+  })
     .httpStatus(404)
     .message("User with id 123 not found")
     .localized("en", "User not found")
@@ -280,11 +296,11 @@ async function main() {
   ];
 
   for (const errorConfig of errorExamples) {
-    const error = errorResponse(
-      errorConfig.code,
-      errorConfig.category,
-      errorConfig.retryable,
-    )
+    const error = errorResponse({
+      code: errorConfig.code,
+      category: errorConfig.category,
+      retryable: errorConfig.retryable,
+    })
       .httpStatus(HTTP_STATUS[errorConfig.code])
       .message(errorConfig.message)
       .localized("en", errorConfig.message)

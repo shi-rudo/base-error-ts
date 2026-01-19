@@ -105,10 +105,11 @@ describe("StructuredError", () => {
     });
 
     it("should enforce details type", () => {
-      interface TestDetails {
+      type TestDetails = {
         userId: string;
         timestamp: number;
-      }
+        [key: string]: unknown;
+      };
 
       const error = new StructuredError<string, string, TestDetails>({
         code: "TEST",
@@ -524,10 +525,11 @@ describe("StructuredError", () => {
     });
 
     it("should preserve type safety for details extensions", () => {
-      interface MyDetails {
+      type MyDetails = {
         userId: string;
         attemptCount: number;
-      }
+        [key: string]: unknown;
+      };
 
       const error = new StructuredError<string, string, MyDetails>({
         code: "AUTH_FAILED",

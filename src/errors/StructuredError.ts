@@ -74,7 +74,9 @@ import type { ErrorResponse, LocalizedMessage } from "../response/types.js";
 export class StructuredError<
   TCode extends string,
   TCategory extends string,
-  TDetails extends Record<string, unknown> = Record<string, unknown>,
+  // Using Record<string, {}> as default for better compatibility with strict frameworks
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  TDetails extends Record<string, unknown> = Record<string, {}>,
 > extends BaseError<`${TCode}`> {
   /** Error code for programmatic error handling */
   public readonly code: TCode;
@@ -243,18 +245,20 @@ export class StructuredError<
 
     return {
       isSuccess: false,
-      code: this.code,
-      category: this.category,
-      retryable: this.retryable,
-      ...(traceId !== undefined && { traceId }),
-      ctx: {
-        ...(httpStatusCode !== undefined && { httpStatusCode }),
-        message: this.message,
-        ...(messageLocalized !== undefined && { messageLocalized }),
+      error: {
+        code: this.code,
+        category: this.category,
+        retryable: this.retryable,
+        ...(traceId !== undefined && { traceId }),
+        ctx: {
+          ...(httpStatusCode !== undefined && { httpStatusCode }),
+          message: this.message,
+          ...(messageLocalized !== undefined && { messageLocalized }),
+        },
+        details: (this.details ?? {}) as TDetails extends undefined
+          ? Record<string, never>
+          : TDetails,
       },
-      details: (this.details ?? {}) as TDetails extends undefined
-        ? Record<string, never>
-        : TDetails,
     };
   }
 }

@@ -11,6 +11,7 @@ export type { ErrorOptions } from "./errors/ErrorOptions.js";
 export type {
   LocalizedMessage,
   SuccessResponse,
+  ErrorDetails,
   ErrorResponse,
   ApiResponse,
 } from "./response/types.js";

@@ -46,7 +46,9 @@
 export type ErrorOptions<
   TCode extends string,
   TCategory extends string,
-  TDetails extends Record<string, unknown> = Record<string, unknown>,
+  // Using Record<string, {}> as default for better compatibility with strict frameworks
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  TDetails extends Record<string, unknown> = Record<string, {}>,
 > = {
   /**
    * Unique identifier for the error type.

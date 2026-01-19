@@ -139,12 +139,16 @@ export class ErrorResponseBuilder<
   build(): ErrorResponse<TCode, TCategory, TCtx, TDetails> {
     return {
       isSuccess: false,
-      code: this.state.code,
-      category: this.state.category,
-      retryable: this.state.retryable,
-      ...(this.state.traceId !== undefined && { traceId: this.state.traceId }),
-      ctx: this.state.ctx,
-      details: this.state.details,
+      error: {
+        code: this.state.code,
+        category: this.state.category,
+        retryable: this.state.retryable,
+        ...(this.state.traceId !== undefined && {
+          traceId: this.state.traceId,
+        }),
+        ctx: this.state.ctx,
+        details: this.state.details,
+      },
     };
   }
 }
