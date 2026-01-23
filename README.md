@@ -73,6 +73,100 @@ try {
 }
 ```
 
+### Cause Chain Traversal
+
+When errors are wrapped multiple times, you can traverse the cause chain to inspect nested errors and make informed retry decisions:
+
+```typescript
+import {
+  StructuredError,
+  getRootCause,
+  getRootCauseRetryable,
+  isChainRetryable,
+  findInCauseChain,
+} from "@shirudo/base-error";
+
+// Create a chain of errors
+const rootCause = new StructuredError({
+  code: "NETWORK_TIMEOUT",
+  category: "NETWORK",
+  retryable: true,
+  message: "Connection timed out",
+});
+
+const middleError = new StructuredError({
+  code: "SERVICE_ERROR",
+  category: "SERVICE",
+  retryable: false,
+  message: "Service temporarily unavailable",
+  cause: rootCause,
+});
+
+const topError = new StructuredError({
+  code: "FETCH_USER_FAILED",
+  category: "CLIENT",
+  retryable: false,
+  message: "Could not fetch user data",
+  cause: middleError,
+});
+
+// Traverse to the root cause
+const root = getRootCause(topError);
+console.log(root); // The NETWORK_TIMEOUT error
+
+// Check if root cause is retryable (most specific retry decision)
+const shouldRetryRoot = getRootCauseRetryable(topError);
+console.log(shouldRetryRoot); // true
+
+// Check if ANY error in the chain is retryable
+const hasRetryable = isChainRetryable(topError);
+console.log(hasRetryable); // true
+
+// Find a specific error in the chain
+const networkError = findInCauseChain(
+  topError,
+  (e): e is StructuredError =>
+    typeof e === "object" &&
+    e !== null &&
+    "code" in e &&
+    e.code === "NETWORK_TIMEOUT",
+);
+console.log(networkError); // The NETWORK_TIMEOUT error
+```
+
+#### Retry Pattern with Cause Chain
+
+```typescript
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 3,
+): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt === maxRetries) break;
+
+      // Check cause chain for retryable errors
+      if (isChainRetryable(error)) {
+        const delay = Math.pow(2, attempt) * 100;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        continue;
+      }
+
+      // Non-retryable error, give up immediately
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+```
+
 ### Automatic Name Inference
 
 BaseError automatically infers the error name from the class name, eliminating the need to specify it twice:

@@ -37,3 +37,8 @@ export {
   isStructuredError,
   isRetryable,
 } from "./errors/guards.js";
+
+// ────────────────────────────────────────────────────────────────
+// Cause Chain Traversal
+// ────────────────────────────────────────────────────────────────
+export * from "./traversal/index.js";

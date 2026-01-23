@@ -28,10 +28,14 @@ export function isBaseError(value: unknown): value is BaseError<string> {
 }
 
 /**
- * Type guard to check if a value is a StructuredError instance.
+ * Type guard to check if a value is a StructuredError.
+ *
+ * Uses a two-phase check:
+ * 1. Fast path: `instanceof` check for real StructuredError instances
+ * 2. Fallback: Duck-typing for cross-realm objects, serialized errors, or plain objects
  *
  * @param value - The value to check
- * @returns True if the value is a StructuredError instance
+ * @returns True if the value is a StructuredError or has the StructuredError shape
  *
  * @example
  * ```ts
@@ -53,7 +57,18 @@ export function isBaseError(value: unknown): value is BaseError<string> {
 export function isStructuredError(
   value: unknown,
 ): value is StructuredError<string, string> {
-  return value instanceof StructuredError;
+  // Fast path: instanceof check
+  if (value instanceof StructuredError) return true;
+
+  // Fallback: duck-typing for cross-realm or serialized errors
+  if (typeof value !== "object" || value === null) return false;
+
+  const err = value as Record<string, unknown>;
+  return (
+    typeof err.code === "string" &&
+    typeof err.category === "string" &&
+    typeof err.retryable === "boolean"
+  );
 }
 
 /**
