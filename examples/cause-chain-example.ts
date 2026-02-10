@@ -62,7 +62,19 @@ async function fetchUserData(
 async function getUserWithProfile(
   userId: string,
 ): Promise<{ user: { name: string }; profile: { bio: string } }> {
-  const user = await fetchUserData(userId);
+  let user: { name: string; email: string };
+  try {
+    user = await fetchUserData(userId);
+  } catch (error) {
+    throw new AppError({
+      code: "NETWORK_ERROR",
+      category: "NETWORK",
+      retryable: true,
+      message: "Failed to fetch user data for profile lookup",
+      details: { endpoint: `/users/${userId}` },
+      cause: error,
+    });
+  }
 
   const profileResponse = await fetch(
     `https://api.example.com/users/${userId}/profile`,
@@ -78,7 +90,6 @@ async function getUserWithProfile(
         endpoint: `/users/${userId}/profile`,
         statusCode: profileResponse.status,
       },
-      cause: user,
     });
   }
 

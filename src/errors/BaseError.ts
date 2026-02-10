@@ -170,7 +170,7 @@ export class BaseError<T extends string> extends Error {
       timestamp,
       timestampIso,
       stack,
-      cause: this.#serializeCause(cause),
+      cause: this.#serializeCause(cause, new Set()),
     };
 
     // Add user messages to the JSON output for logging if they exist
@@ -184,12 +184,34 @@ export class BaseError<T extends string> extends Error {
     return json;
   }
 
-  /** Readable one-liner plus optional nested cause. */
+  /** Readable one-liner plus full nested cause chain. */
   public override toString(): string {
-    const cause = (this as unknown as Record<string, unknown>).cause;
-    return `[${this.name}] ${this.message}${
-      cause ? `\nCaused by: ${cause}` : ""
-    }`;
+    const parts: string[] = [];
+    let current: unknown = this as unknown;
+    const seen = new Set<unknown>();
+
+    while (current != null) {
+      if (seen.has(current)) {
+        parts.push("[Circular cause chain]");
+        break;
+      }
+      seen.add(current);
+
+      if (current instanceof BaseError) {
+        parts.push(`[${current.name}] ${current.message}`);
+      } else if (current instanceof Error) {
+        parts.push(`${current.name}: ${current.message}`);
+      } else {
+        parts.push(String(current));
+      }
+
+      current =
+        typeof current === "object" && current !== null && "cause" in current
+          ? (current as Record<string, unknown>).cause
+          : undefined;
+    }
+
+    return parts.join("\nCaused by: ");
   }
 
   // ————————————————————————————————————————————————————————————————
@@ -221,13 +243,19 @@ export class BaseError<T extends string> extends Error {
   /**
    * Intelligently serializes the cause for JSON output.
    * Preserves stack traces, StructuredError fields, and nested data.
+   * Uses a seen set to detect circular cause chains.
    */
-  /*#__PURE__*/ #serializeCause(cause: unknown): unknown {
+  /*#__PURE__*/ #serializeCause(cause: unknown, seen: Set<unknown>): unknown {
     if (cause === undefined || cause === null) {
       return cause;
     }
 
     if (cause instanceof Error) {
+      if (seen.has(cause)) {
+        return "[Circular cause chain]";
+      }
+      seen.add(cause);
+
       const serialized: Record<string, unknown> = {
         name: cause.name,
         message: cause.message,
@@ -244,7 +272,7 @@ export class BaseError<T extends string> extends Error {
 
       // Recursively serialize nested causes
       if ("cause" in cause && errorRecord.cause !== undefined) {
-        serialized.cause = this.#serializeCause(errorRecord.cause);
+        serialized.cause = this.#serializeCause(errorRecord.cause, seen);
       }
 
       return serialized;

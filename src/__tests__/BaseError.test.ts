@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { BaseError } from "../index.js";
+import { BaseError, StructuredError } from "../index.js";
 
 // Add the same local interface here for tests
 interface V8ErrorConstructor {
@@ -951,6 +951,102 @@ describe("BaseError", () => {
           Error.captureStackTrace = originalCaptureStackTrace;
         }
       }
+    });
+  });
+
+  describe("toString cause chain", () => {
+    it("should show circular cause chain", () => {
+      const errorA = new AutoNamedError("A");
+      const errorB = new AutoNamedError("B", errorA);
+      // Manually create circular reference
+      (errorA as unknown as Record<string, unknown>).cause = errorB;
+
+      const str = errorA.toString();
+      expect(str).toContain("[AutoNamedError] A");
+      expect(str).toContain("[AutoNamedError] B");
+      expect(str).toContain("[Circular cause chain]");
+    });
+
+    it("should show primitive causes", () => {
+      const error = new AutoNamedError("wrapper", "string cause");
+      const str = error.toString();
+      expect(str).toContain("[AutoNamedError] wrapper");
+      expect(str).toContain("Caused by: string cause");
+    });
+
+    it("should show numeric causes", () => {
+      const error = new AutoNamedError("wrapper", 42);
+      expect(error.toString()).toContain("Caused by: 42");
+    });
+  });
+
+  describe("toJSON cause serialization", () => {
+    it("should detect circular Error cause chains", () => {
+      const errorA = new AutoNamedError("A");
+      const errorB = new AutoNamedError("B", errorA);
+      (errorA as unknown as Record<string, unknown>).cause = errorB;
+
+      const json = errorA.toJSON();
+      // Should serialize without infinite recursion
+      // A -> B -> A(seen) -> "[Circular cause chain]"
+      const causeB = json.cause as Record<string, unknown>;
+      expect(causeB.message).toBe("B");
+      const causeA = causeB.cause as Record<string, unknown>;
+      expect(causeA.message).toBe("A");
+      expect(causeA.cause).toBe("[Circular cause chain]");
+    });
+
+    it("should serialize StructuredError fields in cause via duck-typing", () => {
+      const structuredCause = new StructuredError({
+        code: "DB_ERROR",
+        category: "DATABASE",
+        retryable: true,
+        message: "connection lost",
+        details: { host: "db.local" },
+      });
+      const wrapper = new AutoNamedError("operation failed", structuredCause);
+
+      const json = wrapper.toJSON();
+      const cause = json.cause as Record<string, unknown>;
+      expect(cause.code).toBe("DB_ERROR");
+      expect(cause.category).toBe("DATABASE");
+      expect(cause.retryable).toBe(true);
+      expect(cause.details).toEqual({ host: "db.local" });
+    });
+  });
+
+  describe("serializeCircularObject edge cases", () => {
+    it("should handle objects without constructor", () => {
+      const noProto = Object.create(null);
+      noProto.a = 1;
+      noProto.self = noProto;
+
+      const error = new AutoNamedError("test", noProto);
+      const json = error.toJSON();
+      expect(json.cause).toContain("Object");
+      expect(json.cause).toContain("a");
+    });
+
+    it("should truncate objects with more than 5 keys", () => {
+      const bigObj: Record<string, unknown> = {};
+      for (let i = 0; i < 7; i++) bigObj[`key${i}`] = i;
+      bigObj.self = bigObj; // make circular
+
+      const error = new AutoNamedError("test", bigObj);
+      const json = error.toJSON();
+      expect(json.cause).toContain("...");
+    });
+
+    it("should handle objects with no keys", () => {
+      const emptyCircular: Record<string, unknown> = {};
+      emptyCircular.self = emptyCircular;
+
+      // Force through serializeCircularObject by using non-Error object
+      // JSON.stringify will fail on circular ref, falling through to serializeCircularObject
+      const error = new AutoNamedError("test", emptyCircular);
+      const json = error.toJSON();
+      expect(typeof json.cause).toBe("string");
+      expect(json.cause).toContain("Circular");
     });
   });
 });

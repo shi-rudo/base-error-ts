@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { BaseError, guard } from "../index.js";
+import {
+  BaseError,
+  StructuredError,
+  guard,
+  isBaseError,
+  isStructuredError,
+  isRetryable,
+} from "../index.js";
 
 // Test error class for invariant tests
 class TestInvariantError extends BaseError<"TestInvariantError"> {
@@ -98,5 +105,96 @@ describe("invariant", () => {
     expect(() => guard("", error)).toThrow(error);
     expect(() => guard(null, error)).toThrow(error);
     expect(() => guard(undefined, error)).toThrow(error);
+  });
+});
+
+describe("isBaseError", () => {
+  it("returns true for BaseError instances", () => {
+    const error = new TestInvariantError("test");
+    expect(isBaseError(error)).toBe(true);
+  });
+
+  it("returns true for BaseError subclasses", () => {
+    const error = new ValidationError("email");
+    expect(isBaseError(error)).toBe(true);
+  });
+
+  it("returns false for plain Error", () => {
+    expect(isBaseError(new Error("test"))).toBe(false);
+  });
+
+  it("returns false for non-errors", () => {
+    expect(isBaseError(null)).toBe(false);
+    expect(isBaseError(undefined)).toBe(false);
+    expect(isBaseError("string")).toBe(false);
+    expect(isBaseError(42)).toBe(false);
+    expect(isBaseError({ message: "fake" })).toBe(false);
+  });
+});
+
+describe("isStructuredError", () => {
+  it("returns true for StructuredError instances", () => {
+    const error = new StructuredError({
+      code: "TEST",
+      category: "TEST_CAT",
+      retryable: false,
+      message: "test",
+    });
+    expect(isStructuredError(error)).toBe(true);
+  });
+
+  it("returns true for duck-typed objects with matching shape", () => {
+    const duckTyped = { code: "ERR", category: "CAT", retryable: true };
+    expect(isStructuredError(duckTyped)).toBe(true);
+  });
+
+  it("returns false for incomplete duck-typed objects", () => {
+    expect(isStructuredError({ code: "ERR" })).toBe(false);
+    expect(isStructuredError({ code: "ERR", category: "CAT" })).toBe(false);
+    expect(isStructuredError({ code: 123, category: "CAT", retryable: true })).toBe(false);
+  });
+
+  it("returns false for non-objects", () => {
+    expect(isStructuredError(null)).toBe(false);
+    expect(isStructuredError(undefined)).toBe(false);
+    expect(isStructuredError("string")).toBe(false);
+    expect(isStructuredError(42)).toBe(false);
+  });
+});
+
+describe("isRetryable", () => {
+  it("returns true when retryable is true", () => {
+    const error = new StructuredError({
+      code: "NET",
+      category: "NETWORK",
+      retryable: true,
+      message: "timeout",
+    });
+    expect(isRetryable(error)).toBe(true);
+  });
+
+  it("returns false when retryable is false", () => {
+    const error = new StructuredError({
+      code: "AUTH",
+      category: "AUTH",
+      retryable: false,
+      message: "unauthorized",
+    });
+    expect(isRetryable(error)).toBe(false);
+  });
+
+  it("returns true for plain objects with retryable: true", () => {
+    expect(isRetryable({ retryable: true })).toBe(true);
+  });
+
+  it("returns false for plain objects with retryable: false", () => {
+    expect(isRetryable({ retryable: false })).toBe(false);
+  });
+
+  it("returns false for non-objects", () => {
+    expect(isRetryable(null)).toBe(false);
+    expect(isRetryable(undefined)).toBe(false);
+    expect(isRetryable("retryable")).toBe(false);
+    expect(isRetryable(42)).toBe(false);
   });
 });

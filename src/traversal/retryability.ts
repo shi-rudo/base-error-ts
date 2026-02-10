@@ -1,5 +1,9 @@
 import { isRetryableStructuredError } from "./guards.js";
-import { findInCauseChain, getRootCause } from "./cause-chain.js";
+import {
+  findInCauseChain,
+  getRootCause,
+  someCauseChain,
+} from "./cause-chain.js";
 
 type RetryableError = { retryable: true } & Record<string, unknown>;
 
@@ -18,11 +22,7 @@ type RetryableError = { retryable: true } & Record<string, unknown>;
  * ```
  */
 export function isChainRetryable(error: unknown): boolean {
-  return (
-    findInCauseChain(error, (e): e is RetryableError =>
-      isRetryableStructuredError(e),
-    ) !== undefined
-  );
+  return someCauseChain(error, isRetryableStructuredError);
 }
 
 /**
@@ -64,5 +64,5 @@ export function getFirstRetryableCause(
 ): RetryableError | undefined {
   return findInCauseChain(error, (e): e is RetryableError =>
     isRetryableStructuredError(e),
-  ) as RetryableError | undefined;
+  );
 }

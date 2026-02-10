@@ -7,6 +7,8 @@ import { isErrorWithCause } from "./guards.js";
  * @param error - The error to start traversing from
  * @param maxDepth - Maximum chain depth to traverse
  * @yields Each error in the cause chain, from outermost to innermost
+ *
+ * @throws Error - When a circular cause chain is detected
  */
 function* traverseCauseChain(
   error: unknown,
@@ -15,11 +17,13 @@ function* traverseCauseChain(
   let current: unknown = error;
   const seen = new Set<unknown>();
 
-  for (let depth = 0; depth < maxDepth; depth++) {
+  for (let depth = 0; depth <= maxDepth; depth++) {
     yield current;
 
     if (!isErrorWithCause(current)) break;
-    if (seen.has(current)) break;
+    if (seen.has(current)) {
+      throw new Error("Circular cause chain detected");
+    }
     seen.add(current);
     current = current.cause;
   }
@@ -43,20 +47,11 @@ function* traverseCauseChain(
  * ```
  */
 export function getRootCause(error: unknown, maxDepth: number = 100): unknown {
-  let current: unknown = error;
-  const seen = new Set<unknown>();
-
-  for (let depth = 0; depth < maxDepth; depth++) {
-    if (!isErrorWithCause(current)) break;
-
-    if (seen.has(current)) {
-      throw new Error("Circular cause chain detected");
-    }
-    seen.add(current);
-    current = current.cause;
+  let last: unknown = error;
+  for (const current of traverseCauseChain(error, maxDepth)) {
+    last = current;
   }
-
-  return current;
+  return last;
 }
 
 /**
@@ -75,6 +70,16 @@ export function getRootCause(error: unknown, maxDepth: number = 100): unknown {
  * );
  * ```
  */
+export function findInCauseChain<T>(
+  error: unknown,
+  predicate: (e: unknown) => e is T,
+  maxDepth?: number,
+): T | undefined;
+export function findInCauseChain(
+  error: unknown,
+  predicate: (e: unknown) => boolean,
+  maxDepth?: number,
+): unknown;
 export function findInCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
@@ -103,6 +108,16 @@ export function findInCauseChain(
  * );
  * ```
  */
+export function filterCauseChain<T>(
+  error: unknown,
+  predicate: (e: unknown) => e is T,
+  maxDepth?: number,
+): T[];
+export function filterCauseChain(
+  error: unknown,
+  predicate: (e: unknown) => boolean,
+  maxDepth?: number,
+): unknown[];
 export function filterCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,

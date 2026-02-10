@@ -200,7 +200,7 @@ describe("filterCauseChain", () => {
     }
 
     const result = filterCauseChain(errors[0], () => true, 3);
-    expect(result).toHaveLength(3);
+    expect(result).toHaveLength(4);
   });
 });
 

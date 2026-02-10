@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 /**
  * Problem Details Example
  *
@@ -210,7 +212,7 @@ function mapErrorToProblemDetails(
     ApiErrorDetails
   >["toProblemDetails"]
 > {
-  const traceId = crypto.randomUUID();
+  const traceId = randomUUID();
 
   if (error instanceof StructuredError) {
     return error.toProblemDetails({

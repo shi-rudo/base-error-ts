@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 /**
  * Error Response Builder Example
  *
@@ -107,7 +109,7 @@ async function withRetry<T>(
 }
 
 function mapErrorToErrorResponse(error: unknown, method: string, path: string) {
-  const traceId = crypto.randomUUID();
+  const traceId = randomUUID();
   const timestamp = new Date().toISOString();
 
   if (
@@ -305,7 +307,7 @@ async function main() {
       .message(errorConfig.message)
       .localized("en", errorConfig.message)
       .localized("ja", getJapaneseMessage(errorConfig.code))
-      .traceId(crypto.randomUUID())
+      .traceId(randomUUID())
       .withCtx({
         method: "POST",
         path: "/api/resource",
