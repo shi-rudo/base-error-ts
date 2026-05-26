@@ -79,10 +79,12 @@ When errors are wrapped multiple times, you can traverse the cause chain to insp
 
 ```typescript
 import {
+  BaseError,
   StructuredError,
   getRootCause,
   getRootCauseRetryable,
   isChainRetryable,
+  someChainRetryable,
   findInCauseChain,
 } from "@shirudo/base-error";
 
@@ -118,9 +120,19 @@ console.log(root); // The NETWORK_TIMEOUT error
 const shouldRetryRoot = getRootCauseRetryable(topError);
 console.log(shouldRetryRoot); // true
 
-// Check if ANY error in the chain is retryable
+// Check if ANY error in the chain is retryable (strict: requires full StructuredError shape)
 const hasRetryable = isChainRetryable(topError);
 console.log(hasRetryable); // true
+
+// Loose variant: matches ANY error with `retryable === true`, even bare BaseError subclasses
+// Use this when your hierarchy extends BaseError directly and signals retryability
+// via a plain `retryable: true` field (no code/category required).
+class ConcurrencyConflictError extends BaseError<"ConcurrencyConflictError"> {
+  readonly retryable = true as const;
+}
+const conflict = new ConcurrencyConflictError("version mismatch");
+console.log(isChainRetryable(conflict));   // false — no code/category
+console.log(someChainRetryable(conflict)); // true
 
 // Find a specific error in the chain
 const networkError = findInCauseChain(

@@ -151,7 +151,9 @@ describe("isStructuredError", () => {
   it("returns false for incomplete duck-typed objects", () => {
     expect(isStructuredError({ code: "ERR" })).toBe(false);
     expect(isStructuredError({ code: "ERR", category: "CAT" })).toBe(false);
-    expect(isStructuredError({ code: 123, category: "CAT", retryable: true })).toBe(false);
+    expect(
+      isStructuredError({ code: 123, category: "CAT", retryable: true }),
+    ).toBe(false);
   });
 
   it("returns false for non-objects", () => {
