@@ -1,13 +1,23 @@
 import { describe, it, expect } from "vitest";
 import {
+  BaseError,
   StructuredError,
   isChainRetryable,
+  someChainRetryable,
   getRootCauseRetryable,
   getFirstRetryableCause,
 } from "../index.js";
 
 interface ErrorWithCause extends Error {
   cause?: unknown;
+}
+
+class RetryableBaseError extends BaseError<"RetryableBaseError"> {
+  readonly retryable = true as const;
+}
+
+class NonRetryableBaseError extends BaseError<"NonRetryableBaseError"> {
+  readonly retryable = false as const;
 }
 
 describe("isChainRetryable", () => {
@@ -107,6 +117,98 @@ describe("isChainRetryable", () => {
     nativeError.cause = retryableStructured;
 
     expect(isChainRetryable(nativeError)).toBe(true);
+  });
+});
+
+describe("someChainRetryable", () => {
+  it("returns false for error without retryable flag", () => {
+    const error = new Error("test");
+    expect(someChainRetryable(error)).toBe(false);
+  });
+
+  it("returns true for BaseError subclass with retryable: true (no code/category)", () => {
+    const error = new RetryableBaseError("conflict");
+    expect(someChainRetryable(error)).toBe(true);
+  });
+
+  it("returns false for BaseError subclass with retryable: false", () => {
+    const error = new NonRetryableBaseError("bad request");
+    expect(someChainRetryable(error)).toBe(false);
+  });
+
+  it("returns true when retryable BaseError is wrapped by a non-retryable Error", () => {
+    const inner = new RetryableBaseError("conflict");
+    const outer = new Error("wrapped") as ErrorWithCause;
+    outer.cause = inner;
+
+    expect(someChainRetryable(outer)).toBe(true);
+  });
+
+  it("returns true for StructuredError with retryable: true (still works for strict shape)", () => {
+    const error = new StructuredError({
+      code: "TEST",
+      category: "TEST",
+      retryable: true,
+      message: "test",
+    });
+    expect(someChainRetryable(error)).toBe(true);
+  });
+
+  it("returns false for StructuredError with retryable: false", () => {
+    const error = new StructuredError({
+      code: "TEST",
+      category: "TEST",
+      retryable: false,
+      message: "test",
+    });
+    expect(someChainRetryable(error)).toBe(false);
+  });
+
+  it("returns true for mixed chain: native Error → StructuredError(false) → RetryableBaseError", () => {
+    const root = new RetryableBaseError("retryable root");
+    const middle = new StructuredError({
+      code: "MIDDLE",
+      category: "APP",
+      retryable: false,
+      message: "middle",
+      cause: root,
+    });
+    const top = new Error("top") as ErrorWithCause;
+    top.cause = middle;
+
+    expect(someChainRetryable(top)).toBe(true);
+  });
+
+  it("returns true when cause is a plain object with retryable: true", () => {
+    const error = new Error("test") as ErrorWithCause;
+    error.cause = { retryable: true };
+    expect(someChainRetryable(error)).toBe(true);
+  });
+
+  it("returns false when no error in chain is retryable", () => {
+    const inner = new NonRetryableBaseError("inner");
+    const outer = new Error("outer") as ErrorWithCause;
+    outer.cause = inner;
+
+    expect(someChainRetryable(outer)).toBe(false);
+  });
+
+  it("respects maxDepth and does not match retryable causes beyond the limit", () => {
+    const deep = new RetryableBaseError("deep");
+    const mid = new Error("mid") as ErrorWithCause;
+    mid.cause = deep;
+    const top = new Error("top") as ErrorWithCause;
+    top.cause = mid;
+
+    expect(someChainRetryable(top, 1)).toBe(false);
+    expect(someChainRetryable(top, 2)).toBe(true);
+  });
+
+  it("contrasts with isChainRetryable: loose helper matches bare BaseError, strict helper does not", () => {
+    const error = new RetryableBaseError("conflict");
+
+    expect(isChainRetryable(error)).toBe(false);
+    expect(someChainRetryable(error)).toBe(true);
   });
 });
 
