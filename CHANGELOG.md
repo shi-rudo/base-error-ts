@@ -7,6 +7,7 @@
 - `StructuredError.toProblemDetails()` and `StructuredError.toErrorResponse()` are safe by default. They no longer expose technical messages, internal codes, categories, or raw `details` unless public fields or explicit exposure options are used.
 - Safe-by-default is invariant: standard Problem Details members (`type`, `title`, `status`, `detail`, `instance`) and library members (`code`, `category`, `retryable`, `traceId`) always win over colliding extension keys. There is no override switch.
 - Raw `details` never cross into client responses. Surfacing details is always an explicit `mapDetails` projection on both `toProblemDetails()` and `toErrorResponse()`; full-fidelity details remain available for observability via `toLogObject()`.
+- The `_tag` discriminant and inferred `name` derive from a single resolved name (an explicit `name` option, otherwise the constructor name), so they never diverge and an explicit `name` stabilizes both. `StructuredError` fixes `_tag` to the stable literal `"StructuredError"`, making the discriminant minification-safe out of the box; subclasses inherit it (override with a literal for a distinct tag). Narrow on `code` to distinguish individual structured errors.
 - `typescript` is no longer a peer dependency. The package still ships TypeScript declarations.
 - Updated the package version from `4.7.0` to `5.0.0`.
 
@@ -19,13 +20,15 @@
 - Added `ProblemDetailsOptions` and exported it from the package root.
 - Added `detail` to `toProblemDetails()` options so boundary layers can provide a public, client-safe message separately from the technical error message.
 - Added `extensions` for explicit public Problem Details extension members.
-- Added `mapDetails` to `toProblemDetails()` and `toErrorResponse()` for DDD-friendly boundary mapping from raw domain/application details to public members — the only path for surfacing details to clients.
+- Added `mapDetails` to `toProblemDetails()` and `toErrorResponse()` for DDD-friendly boundary mapping from raw domain/application details to public members — the only path for surfacing details to clients. It is invoked only when the error carries `details` and receives a defined `TDetails`, so callbacks never have to guard against `undefined`.
 - Added `publicCategory` to `toProblemDetails()` for projecting a deliberate, client-safe category (symmetric with `toErrorResponse()`).
 - Added package metadata for `sideEffects`, `engines`, `packageManager`, homepage, and npm provenance.
 
 ### Fixed
 
 - `StructuredError` now captures stack headers with the configured error code instead of rewriting `name` after stack capture.
+- `toProblemDetails()` return type no longer falsely includes the raw `details` shape; it reflects only the mapped/explicit extensions actually present at runtime, so the type can no longer invite reading internal fields that are absent.
+- `mapDetails` is invoked only when the error carries `details`, so a naive mapper can no longer throw while serializing an error inside an error handler.
 - Build no longer runs `lint:fix`; it verifies lint deterministically.
 - CI now runs `pnpm test:run` explicitly.
 
