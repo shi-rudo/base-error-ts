@@ -38,6 +38,10 @@ Thumbs.db
 # Ignore built ts files
 dist/**/*
 
+# VitePress build artifacts
+docs/.vitepress/cache/
+docs/.vitepress/dist/
+
 # ignore yarn.lock
 yarn.lock
 
