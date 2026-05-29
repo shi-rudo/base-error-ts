@@ -71,17 +71,23 @@ export class BaseError<
   protected readonly __brand!: this;
 
   /**
-   * Discriminant tag for type narrowing - automatically set to constructor name.
-   * Subclasses can override this with a literal type for stricter type safety.
+   * Discriminant tag for type narrowing. Derived from the resolved error name
+   * (an explicit `name` option, otherwise the constructor name), so it never
+   * diverges from {@link name}.
+   *
+   * Because the fallback is `constructor.name`, a build that minifies class
+   * names will mangle it. For a stable discriminant either pass an explicit
+   * `name`, or override `_tag` with a literal — the latter also narrows the
+   * type:
    *
    * @example
    * ```ts
    * class MyError extends BaseError<'MyError'> {
-   *   readonly _tag = 'MyError' as const; // Override with literal type
+   *   readonly _tag = 'MyError' as const; // stable + strictly typed
    * }
    * ```
    */
-  public readonly _tag: string = this.constructor.name;
+  public readonly _tag: string;
 
   public override readonly name: T;
 
@@ -117,8 +123,13 @@ export class BaseError<
     // Always call super with just message for TypeScript compatibility
     super(message);
 
-    // Automatically infer the error name from the constructor name
-    this.name = (options.name ?? this.constructor.name) as T;
+    // Resolve the error's stable identity once. An explicit `name` wins;
+    // otherwise fall back to the constructor name. Both `name` and `_tag`
+    // derive from it so they can never diverge — and passing an explicit
+    // `name` stabilizes the discriminant under class-name minification.
+    const resolvedName = options.name ?? this.constructor.name;
+    this.name = resolvedName as T;
+    this._tag = resolvedName;
     this._publicCode = options.publicCode;
     this._publicMessage = options.publicMessage;
     this._expose = options.expose ?? false;
