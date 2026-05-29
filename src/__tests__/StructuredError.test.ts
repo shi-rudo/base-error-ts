@@ -339,7 +339,7 @@ describe("StructuredError", () => {
   });
 
   describe("Error Hierarchies", () => {
-    it("should allow subclassing StructuredError with automatic _tag", () => {
+    it("should keep a stable _tag and use code as the discriminant for subclasses", () => {
       class DatabaseError extends StructuredError<"DB_ERROR", "DATABASE"> {
         constructor(message: string, cause?: unknown) {
           super({
@@ -359,8 +359,27 @@ describe("StructuredError", () => {
       expect(error.code).toBe("DB_ERROR");
       expect(error.category).toBe("DATABASE");
       expect(error.retryable).toBe(true);
-      // _tag is now automatically inherited from constructor.name (like BaseError)
-      expect(error._tag).toBe("DatabaseError");
+      // _tag is the stable family literal (minification-safe). Narrow on `code`
+      // to distinguish individual structured errors, not on `_tag`.
+      expect(error._tag).toBe("StructuredError");
+      expect(error.code).toBe("DB_ERROR");
+    });
+
+    it("should let a subclass override _tag with its own stable literal", () => {
+      class DatabaseError extends StructuredError<"DB_ERROR", "DATABASE"> {
+        public override readonly _tag = "DatabaseError" as const;
+
+        constructor(message: string) {
+          super({
+            code: "DB_ERROR",
+            category: "DATABASE",
+            retryable: true,
+            message,
+          });
+        }
+      }
+
+      expect(new DatabaseError("boom")._tag).toBe("DatabaseError");
     });
   });
 

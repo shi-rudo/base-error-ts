@@ -87,6 +87,14 @@ export class StructuredError<
   TDetails extends Record<string, unknown> = Record<string, {}>,
   TPublicCode extends string = string,
 > extends BaseError<`${TCode}`, TPublicCode> {
+  /**
+   * Stable discriminant for the StructuredError family. Fixed as a literal so it
+   * survives class-name minification. Narrow on {@link code} to distinguish
+   * individual structured errors; subclasses that need their own tag override
+   * this with their own literal.
+   */
+  public override readonly _tag: string = "StructuredError";
+
   /** Error code for programmatic error handling */
   public readonly code: TCode;
 

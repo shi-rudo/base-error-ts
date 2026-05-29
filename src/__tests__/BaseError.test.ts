@@ -86,6 +86,10 @@ describe("BaseError", () => {
     expect(error.stack?.split("\n")[0]).toBe(
       "DOMAIN_RULE_BROKEN: Domain rule failed",
     );
+    // _tag derives from the resolved name, so an explicit name stabilizes the
+    // discriminant too (survives class-name minification) — no divergence.
+    expect(error._tag).toBe("DOMAIN_RULE_BROKEN");
+    expect(error._tag).toBe(error.name);
   });
 
   it("should include timestamps", () => {
