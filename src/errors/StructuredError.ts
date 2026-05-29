@@ -203,7 +203,7 @@ export class StructuredError<
   ): ProblemDetails<
     TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE,
     TCategory,
-    TDetails & TMappedExtensions & TExtensions
+    TMappedExtensions & TExtensions
   > {
     const {
       status,
@@ -244,9 +244,12 @@ export class StructuredError<
     };
 
     // Extension members are always an explicit projection chosen by the
-    // boundary layer — raw details never cross implicitly.
+    // boundary layer — raw details never cross implicitly. mapDetails runs only
+    // when details exist, so the callback never sees `undefined`.
     const extensionMembers = {
-      ...(mapDetails ? mapDetails(this.details) : undefined),
+      ...(mapDetails && this.details !== undefined
+        ? mapDetails(this.details)
+        : undefined),
       ...extensions,
     };
 
@@ -257,7 +260,7 @@ export class StructuredError<
     } as ProblemDetails<
       TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE,
       TCategory,
-      TDetails & TMappedExtensions & TExtensions
+      TMappedExtensions & TExtensions
     >;
   }
 
@@ -311,7 +314,7 @@ export class StructuredError<
        * explicit, reviewable projection. Raw details belong in observability
        * output (`toLogObject()`), not here.
        */
-      mapDetails?: (details: TDetails | undefined) => TMappedDetails;
+      mapDetails?: (details: TDetails) => TMappedDetails;
     } = {},
   ): ErrorResponse<
     TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE | string,
@@ -354,7 +357,9 @@ export class StructuredError<
           message: publicJson.message,
           ...(messageLocalized !== undefined && { messageLocalized }),
         },
-        details: (mapDetails ? mapDetails(this.details) : {}) as TMappedDetails,
+        details: (mapDetails && this.details !== undefined
+          ? mapDetails(this.details)
+          : {}) as TMappedDetails,
       },
     };
   }

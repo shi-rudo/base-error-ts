@@ -133,8 +133,12 @@ export type ProblemDetailsOptions<
    * only way to surface details in a client response: every exposure is an
    * explicit, reviewable projection. Library/standard members always win on
    * key collisions.
+   *
+   * Invoked only when the error actually carries `details`, so the callback
+   * receives a fully-populated `TDetails` and never has to guard against
+   * `undefined`. Derive constant members from `extensions` instead.
    */
-  mapDetails?: (details: TDetails | undefined) => TMappedExtensions;
+  mapDetails?: (details: TDetails) => TMappedExtensions;
 };
 
 export type ProblemDetails<
