@@ -568,6 +568,27 @@ describe("StructuredError", () => {
       expect(problem).not.toHaveProperty("value");
     });
 
+    it("should not invoke mapDetails when the error has no details", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Validation failed",
+        // no details
+      });
+
+      // A naive mapper that dereferences its argument must not be called, so
+      // serialization in an error handler never throws a second error.
+      const mapDetails = vi.fn((details: Record<string, unknown>) => ({
+        field: details.field,
+      }));
+
+      expect(() =>
+        error.toProblemDetails({ status: 400, mapDetails }),
+      ).not.toThrow();
+      expect(mapDetails).not.toHaveBeenCalled();
+    });
+
     it("should map raw details to public extension members", () => {
       const error = new StructuredError({
         code: "VALIDATION_FAILED",
