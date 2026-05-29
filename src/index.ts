@@ -25,7 +25,10 @@ export type {
   ErrorResponse,
   ApiResponse,
 } from "./response/types.js";
-export type { ProblemDetails } from "./response/ProblemDetails.js";
+export type {
+  ProblemDetails,
+  ProblemDetailsOptions,
+} from "./response/ProblemDetails.js";
 
 // ────────────────────────────────────────────────────────────────
 // API Response Builder & Factories

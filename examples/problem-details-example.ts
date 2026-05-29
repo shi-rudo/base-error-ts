@@ -74,6 +74,11 @@ class ApiError extends StructuredError<
       title: this.code.replace(/_/g, " ").toLowerCase(),
       instance: traceId ? `/api/requests/${traceId}` : undefined,
       traceId,
+      mapDetails: (details) => ({
+        ...(details?.field !== undefined && { field: details.field }),
+        ...(details?.resource !== undefined && { resource: details.resource }),
+        ...(details?.id !== undefined && { id: details.id }),
+      }),
     });
   }
 }
@@ -221,6 +226,11 @@ function mapErrorToProblemDetails(
       title: getJapaneseTitle(error.code as ApiErrorCode),
       instance: `${method} ${path}`,
       traceId,
+      mapDetails: (details) => ({
+        ...(details?.field !== undefined && { field: details.field }),
+        ...(details?.resource !== undefined && { resource: details.resource }),
+        ...(details?.id !== undefined && { id: details.id }),
+      }),
     });
   }
 

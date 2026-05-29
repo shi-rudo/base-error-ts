@@ -33,6 +33,22 @@ describe("StructuredError", () => {
       expect(error.details).toBeUndefined();
     });
 
+    it("should use the code consistently for the name and stack header", () => {
+      const error = new StructuredError({
+        code: "PAYMENT_DECLINED",
+        category: "BUSINESS_RULE",
+        retryable: false,
+        message: "Payment was declined by the provider",
+      });
+
+      expect(error.name).toBe("PAYMENT_DECLINED");
+      expect(error.stack).toBeDefined();
+      expect(error.stack?.split("\n")[0]).toBe(
+        "PAYMENT_DECLINED: Payment was declined by the provider",
+      );
+      expect(error.stack?.split("\n")[0]).not.toContain("StructuredError");
+    });
+
     it("should create a StructuredError with details", () => {
       const details = { userId: "123", field: "email" };
       const error = new StructuredError({
@@ -505,7 +521,7 @@ describe("StructuredError", () => {
       expect(problem.retryable).toBe(false);
     });
 
-    it("should not spread details as extension members by default", () => {
+    it("should not expose raw details as extension members by default", () => {
       const error = new StructuredError({
         code: "VALIDATION_FAILED",
         category: "VALIDATION",
@@ -520,9 +536,117 @@ describe("StructuredError", () => {
 
       const problem = error.toProblemDetails({ status: 400 });
 
-      expect(problem.field).toBeUndefined();
-      expect(problem.constraint).toBeUndefined();
-      expect(problem.value).toBeUndefined();
+      expect(problem).not.toHaveProperty("field");
+      expect(problem).not.toHaveProperty("constraint");
+      expect(problem).not.toHaveProperty("value");
+    });
+
+    it("should include raw details when explicitly requested", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Validation failed",
+        details: {
+          field: "email",
+          constraint: "format",
+          value: "not-an-email",
+        },
+      });
+
+      const problem = error.toProblemDetails({
+        status: 400,
+        includeDetails: true,
+      });
+
+      expect(problem.field).toBe("email");
+      expect(problem.constraint).toBe("format");
+      expect(problem.value).toBe("not-an-email");
+    });
+
+    it("should map raw details to public extension members", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Validation failed",
+        details: {
+          internalField: "users.email",
+          publicField: "email",
+          value: "not-an-email",
+        },
+      });
+
+      const problem = error.toProblemDetails({
+        status: 400,
+        mapDetails: (details) => ({
+          field: details?.publicField,
+        }),
+      });
+
+      expect(problem.field).toBe("email");
+      expect(problem).not.toHaveProperty("internalField");
+      expect(problem).not.toHaveProperty("value");
+    });
+
+    it("should include explicit public extensions", () => {
+      const error = new StructuredError({
+        code: "RATE_LIMITED",
+        category: "RATE_LIMIT",
+        retryable: true,
+        message: "Rate limit exceeded",
+      });
+
+      const problem = error.toProblemDetails({
+        status: 429,
+        extensions: { retryAfterSeconds: 60 },
+      });
+
+      expect(problem.retryAfterSeconds).toBe(60);
+    });
+
+    it("should keep standard members stable when extensions collide", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Technical validation message",
+        details: {
+          status: 200,
+          detail: "Unsafe detail",
+          code: "OVERRIDE",
+        },
+      });
+
+      const problem = error.toProblemDetails({
+        status: 400,
+        detail: "Public validation message",
+        includeDetails: true,
+      });
+
+      // Standard/library members always win over colliding extensions, and the
+      // code stays the safe public default unless explicitly exposed.
+      expect(problem.status).toBe(400);
+      expect(problem.detail).toBe("Public validation message");
+      expect(problem.code).toBe("INTERNAL_ERROR");
+    });
+
+    it("should allow explicit extension overrides for power users", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Technical validation message",
+      });
+
+      const problem = error.toProblemDetails({
+        status: 400,
+        extensions: { status: 422, detail: "Custom boundary detail" },
+        allowExtensionOverrides: true,
+      });
+
+      expect(problem.status).toBe(422);
+      expect(problem.detail).toBe("Custom boundary detail");
     });
 
     it("should map internal structured errors to configured public codes and messages", () => {
@@ -608,7 +732,7 @@ describe("StructuredError", () => {
       });
     });
 
-    it("should preserve internal codes and categories when exposed", () => {
+    it("should preserve type safety for codes and categories when exposed", () => {
       type MyCode = "ERROR_A" | "ERROR_B";
       type MyCategory = "CAT_1" | "CAT_2";
 
@@ -649,9 +773,12 @@ describe("StructuredError", () => {
         includeDetails: true,
       });
 
-      // TypeScript compile-time check - details are spread as extensions
-      expect(problem.userId).toBe("user-123");
-      expect(problem.attemptCount).toBe(3);
+      // TypeScript compile-time check - details are opt-in extensions
+      const userId: string = problem.userId;
+      const attemptCount: number = problem.attemptCount;
+
+      expect(userId).toBe("user-123");
+      expect(attemptCount).toBe(3);
     });
 
     it("should work with empty options object", () => {
@@ -688,7 +815,8 @@ describe("StructuredError", () => {
 
       expect(parsed.status).toBe(502);
       expect(parsed.code).toBe("INTERNAL_ERROR");
-      expect(parsed.endpoint).toBeUndefined();
+      expect(parsed).not.toHaveProperty("endpoint");
+      expect(parsed).not.toHaveProperty("statusCode");
       expect(parsed.traceId).toBe("req-xyz");
     });
   });

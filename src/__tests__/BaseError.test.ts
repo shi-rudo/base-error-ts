@@ -73,6 +73,21 @@ describe("BaseError", () => {
     expect(error.message).toBe("Something went wrong");
   });
 
+  it("should support an explicit construction name for stable observability", () => {
+    class NamedError extends BaseError<"DOMAIN_RULE_BROKEN"> {
+      constructor(message: string) {
+        super(message, undefined, { name: "DOMAIN_RULE_BROKEN" });
+      }
+    }
+
+    const error = new NamedError("Domain rule failed");
+
+    expect(error.name).toBe("DOMAIN_RULE_BROKEN");
+    expect(error.stack?.split("\n")[0]).toBe(
+      "DOMAIN_RULE_BROKEN: Domain rule failed",
+    );
+  });
+
   it("should include timestamps", () => {
     const error = new TestError("Test");
 

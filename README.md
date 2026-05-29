@@ -132,7 +132,7 @@ class ConcurrencyConflictError extends BaseError<"ConcurrencyConflictError"> {
   readonly retryable = true as const;
 }
 const conflict = new ConcurrencyConflictError("version mismatch");
-console.log(isChainRetryable(conflict));   // false — no code/category
+console.log(isChainRetryable(conflict)); // false — no code/category
 console.log(someChainRetryable(conflict)); // true
 
 // Find a specific error in the chain
@@ -182,7 +182,7 @@ async function withRetry<T>(
 
 ### Automatic Name Inference
 
-BaseError automatically infers the error name from the class name, eliminating the need to specify it twice:
+BaseError automatically infers the error name from the class name, eliminating the need to specify it twice. For domain/application errors that use a stable code as their observability identity, pass an explicit construction name so `name`, `toJSON()`, and the stack header are aligned from construction onward:
 
 ```typescript
 import { BaseError } from "@shirudo/base-error";
@@ -196,6 +196,12 @@ class UserNotFoundError extends BaseError<"UserNotFoundError"> {
 class ValidationError extends BaseError<"ValidationError"> {
   constructor(field: string, message: string, cause?: unknown) {
     super(`Validation failed for ${field}: ${message}`, cause);
+  }
+}
+
+class DomainRuleError extends BaseError<"DOMAIN_RULE_BROKEN"> {
+  constructor(message: string, cause?: unknown) {
+    super(message, cause, { name: "DOMAIN_RULE_BROKEN" });
   }
 }
 ```
@@ -518,6 +524,60 @@ console.log(error.toProblemDetails({ status: 400 }));
 - **expose**: Optional opt-in to expose technical code/message in public serializers
 - **cause**: Optional underlying error (inherited from BaseError)
 
+#### RFC 9457 Problem Details at boundaries
+
+`StructuredError.toProblemDetails()` is designed as a transport-boundary adapter. In v5, raw `details` are **not** exposed as top-level Problem Details extension members by default. This keeps domain/application error state separate from public HTTP/RPC contracts and avoids accidental collisions with standard members such as `status`, `detail`, or `type`.
+
+```typescript
+const error = new StructuredError({
+  code: "VALIDATION_FAILED",
+  category: "VALIDATION",
+  retryable: false,
+  message: "Email column users.email failed format validation", // technical
+  details: { internalField: "users.email", publicField: "email" },
+});
+
+const problem = error.toProblemDetails({
+  status: 400,
+  type: "https://api.example.com/problems/validation-failed",
+  title: "Validation failed",
+  detail: "Please correct the highlighted fields.", // public/client-safe
+  mapDetails: (details) => ({
+    field: details?.publicField,
+  }),
+});
+
+// {
+//   status: 400,
+//   type: "https://api.example.com/problems/validation-failed",
+//   title: "Validation failed",
+//   detail: "Please correct the highlighted fields.",
+//   code: "VALIDATION_FAILED",
+//   category: "VALIDATION",
+//   retryable: false,
+//   field: "email"
+// }
+```
+
+For small apps or fully trusted boundaries, you can still opt in to the old convenience behavior:
+
+```typescript
+const problem = error.toProblemDetails({
+  status: 400,
+  includeDetails: true,
+});
+```
+
+By default, standard Problem Details and library fields win over extension collisions. Power users can explicitly allow extension overrides:
+
+```typescript
+const problem = error.toProblemDetails({
+  status: 400,
+  extensions: { status: 422, detail: "Custom transport detail" },
+  allowExtensionOverrides: true,
+});
+```
+
 #### Creating Domain-Specific Error Classes
 
 ```typescript
@@ -751,6 +811,7 @@ class BaseError<T extends string> extends Error {
     message: string,
     cause?: unknown,
     options?: {
+      name?: string;
       publicCode?: string;
       publicMessage?: string;
       expose?: boolean;

@@ -5,7 +5,10 @@ import {
 } from "./BaseError.js";
 import type { PublicErrorJSON, PublicErrorOptions } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
-import type { ProblemDetails } from "../response/ProblemDetails.js";
+import type {
+  ProblemDetails,
+  ProblemDetailsOptions,
+} from "../response/ProblemDetails.js";
 import type { ErrorResponse, LocalizedMessage } from "../response/types.js";
 
 /**
@@ -152,7 +155,9 @@ export class StructuredError<
    *
    * This method provides a standardized format for HTTP API error responses.
    * It is safe by default: technical messages, categories, causes, stacks and
-   * details are not exposed unless configured with public fields or options.
+   * raw `details` are not exposed unless configured with public fields or
+   * options. Use `extensions`, `mapDetails`, or `includeDetails` when a
+   * transport boundary should expose additional public extension members.
    *
    * @param options - Optional configuration for the Problem Details response
    * @returns A ProblemDetails object ready for HTTP response serialization
@@ -186,31 +191,19 @@ export class StructuredError<
    * });
    * ```
    */
-  public toProblemDetails(
-    options: {
-      /** HTTP status code */
-      status?: number;
-      /** URI reference identifying the problem type */
-      type?: string;
-      /** Short, human-readable summary */
-      title?: string;
-      /** URI reference identifying this specific occurrence */
-      instance?: string;
-      /** Trace ID for distributed tracing */
-      traceId?: string;
-      /** Per-call public error code override */
-      publicCode?: string;
-      /** Per-call public message/detail override */
-      detail?: string;
-      /** Per-call exposure override */
-      expose?: boolean;
-      /** Include structured details as extension members. Defaults to false. */
-      includeDetails?: boolean;
-    } = {},
+  public toProblemDetails<
+    TExtensions extends Record<string, unknown> = Record<string, never>,
+    TMappedExtensions extends Record<string, unknown> = Record<string, never>,
+  >(
+    options: ProblemDetailsOptions<
+      TDetails,
+      TExtensions,
+      TMappedExtensions
+    > = {},
   ): ProblemDetails<
     TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE,
     TCategory,
-    TDetails
+    TDetails & TMappedExtensions & TExtensions
   > {
     const {
       status,
@@ -221,6 +214,9 @@ export class StructuredError<
       publicCode,
       detail,
       includeDetails,
+      extensions,
+      mapDetails,
+      allowExtensionOverrides = false,
     } = options;
     const expose = options.expose ?? this.shouldExposeToClients();
     const publicJson = this.toPublicJSON({
@@ -230,7 +226,9 @@ export class StructuredError<
       traceId,
     });
 
-    return {
+    // Library-owned members, computed through the safe public projection so the
+    // technical message/category never leak unless `expose` is set.
+    const standardMembers = {
       ...(type !== undefined && { type }),
       ...(title !== undefined && { title }),
       ...(status !== undefined && { status }),
@@ -240,13 +238,25 @@ export class StructuredError<
       ...(expose && { category: this.category }),
       retryable: this.retryable,
       ...(traceId !== undefined && { traceId }),
-      ...(includeDetails === true && this.details !== undefined
-        ? this.details
-        : undefined),
-    } as ProblemDetails<
+    };
+
+    // Opt-in extension members chosen by the boundary/presenter layer.
+    const extensionMembers = {
+      ...(includeDetails === true ? this.details : undefined),
+      ...(mapDetails ? mapDetails(this.details) : undefined),
+      ...extensions,
+    };
+
+    // Safe by default: standard/library members win over colliding extensions.
+    // Deliberate boundary layers can opt into the reverse precedence.
+    return (
+      allowExtensionOverrides
+        ? { ...standardMembers, ...extensionMembers }
+        : { ...extensionMembers, ...standardMembers }
+    ) as ProblemDetails<
       TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE,
       TCategory,
-      TDetails
+      TDetails & TMappedExtensions & TExtensions
     >;
   }
 
