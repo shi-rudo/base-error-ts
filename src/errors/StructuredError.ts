@@ -1,6 +1,9 @@
 import { BaseError } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
-import type { ProblemDetails } from "../response/ProblemDetails.js";
+import type {
+  ProblemDetails,
+  ProblemDetailsOptions,
+} from "../response/ProblemDetails.js";
 import type { ErrorResponse, LocalizedMessage } from "../response/types.js";
 
 /**
@@ -98,11 +101,7 @@ export class StructuredError<
   public /*#__PURE__*/ constructor(
     options: ErrorOptions<TCode, TCategory, TDetails>,
   ) {
-    super(options.message, options.cause);
-
-    // Override the name property to use the code instead of the constructor name
-    // Cast to template literal type to match BaseError's name type
-    (this as unknown as { name: `${TCode}` }).name = options.code as `${TCode}`;
+    super(options.message, options.cause, { name: options.code as `${TCode}` });
 
     this.code = options.code;
     this.category = options.category;
@@ -130,7 +129,10 @@ export class StructuredError<
    * Converts the error to an RFC 9457 Problem Details object.
    *
    * This method provides a standardized format for HTTP API error responses.
-   * The `details` object is spread into the result as extension members.
+   *
+   * In v5, raw `details` are not exposed by default. Use `extensions`,
+   * `mapDetails`, or `includeDetails` when a transport boundary should expose
+   * additional public extension members.
    *
    * @param options - Optional configuration for the Problem Details response
    * @returns A ProblemDetails object ready for HTTP response serialization
@@ -152,8 +154,7 @@ export class StructuredError<
    * //   detail: "User with id 123 not found",
    * //   code: "USER_NOT_FOUND",
    * //   category: "NOT_FOUND",
-   * //   retryable: false,
-   * //   userId: "123"
+   * //   retryable: false
    * // }
    *
    * // With full RFC 9457 fields
@@ -166,34 +167,97 @@ export class StructuredError<
    * });
    * ```
    */
-  public toProblemDetails(
-    options: {
-      /** HTTP status code */
-      status?: number;
-      /** URI reference identifying the problem type */
-      type?: string;
-      /** Short, human-readable summary */
-      title?: string;
-      /** URI reference identifying this specific occurrence */
-      instance?: string;
-      /** Trace ID for distributed tracing */
-      traceId?: string;
-    } = {},
-  ): ProblemDetails<TCode, TCategory, TDetails> {
-    const { status, type, title, instance, traceId } = options;
+  public toProblemDetails<
+    TExtensions extends Record<string, unknown> = Record<string, never>,
+    TMappedExtensions extends Record<string, unknown> = Record<string, never>,
+  >(
+    options: ProblemDetailsOptions<TDetails, TExtensions, TMappedExtensions> & {
+      includeDetails: true;
+    },
+  ): ProblemDetails<
+    TCode,
+    TCategory,
+    TDetails & TMappedExtensions & TExtensions
+  >;
 
-    return {
+  public toProblemDetails<
+    TExtensions extends Record<string, unknown> = Record<string, never>,
+    TMappedExtensions extends Record<string, unknown> = Record<string, never>,
+  >(
+    options?: ProblemDetailsOptions<
+      TDetails,
+      TExtensions,
+      TMappedExtensions
+    > & {
+      includeDetails?: false;
+    },
+  ): ProblemDetails<TCode, TCategory, TMappedExtensions & TExtensions>;
+
+  public toProblemDetails<
+    TExtensions extends Record<string, unknown> = Record<string, never>,
+    TMappedExtensions extends Record<string, unknown> = Record<string, never>,
+  >(
+    options?: ProblemDetailsOptions<TDetails, TExtensions, TMappedExtensions>,
+  ): ProblemDetails<
+    TCode,
+    TCategory,
+    TDetails & TMappedExtensions & TExtensions
+  >;
+
+  public toProblemDetails<
+    TExtensions extends Record<string, unknown> = Record<string, never>,
+    TMappedExtensions extends Record<string, unknown> = Record<string, never>,
+  >(
+    options: ProblemDetailsOptions<
+      TDetails,
+      TExtensions,
+      TMappedExtensions
+    > = {},
+  ): ProblemDetails<
+    TCode,
+    TCategory,
+    TDetails & TMappedExtensions & TExtensions
+  > {
+    const {
+      status,
+      type,
+      title,
+      detail,
+      instance,
+      traceId,
+      extensions,
+      includeDetails = false,
+      mapDetails,
+      allowExtensionOverrides = false,
+    } = options;
+
+    const standardMembers = {
       ...(type !== undefined && { type }),
       ...(title !== undefined && { title }),
       ...(status !== undefined && { status }),
-      detail: this.message,
+      detail: detail ?? this.message,
       ...(instance !== undefined && { instance }),
       code: this.code,
       category: this.category,
       retryable: this.retryable,
       ...(traceId !== undefined && { traceId }),
-      ...this.details,
-    } as ProblemDetails<TCode, TCategory, TDetails>;
+    };
+
+    const extensionMembers = {
+      ...(includeDetails ? this.details : undefined),
+      ...(mapDetails ? mapDetails(this.details) : undefined),
+      ...extensions,
+    };
+
+    return (
+      allowExtensionOverrides
+        ? { ...standardMembers, ...extensionMembers }
+        : { ...extensionMembers, ...standardMembers }
+    ) as ProblemDetails<
+      TCode,
+      TCategory,
+      TDetails & TMappedExtensions & TExtensions
+    >;
   }
 
   /**

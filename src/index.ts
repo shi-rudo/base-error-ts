@@ -3,6 +3,7 @@
 // ────────────────────────────────────────────────────────────────
 export { BaseError } from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
+export type { BaseErrorOptions } from "./errors/BaseError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
 
 // ────────────────────────────────────────────────────────────────
@@ -15,7 +16,10 @@ export type {
   ErrorResponse,
   ApiResponse,
 } from "./response/types.js";
-export type { ProblemDetails } from "./response/ProblemDetails.js";
+export type {
+  ProblemDetails,
+  ProblemDetailsOptions,
+} from "./response/ProblemDetails.js";
 
 // ────────────────────────────────────────────────────────────────
 // API Response Builder & Factories

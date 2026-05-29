@@ -60,21 +60,73 @@
  *   status: number,
  *   traceId?: string
  * ): ProblemDetails {
- *   return {
+ *   return error.toProblemDetails({
  *     type: `https://api.example.com/errors/${error.code.toLowerCase()}`,
  *     title: error.code.replace(/_/g, " ").toLowerCase(),
  *     status,
  *     detail: error.message,
  *     instance: traceId ? `/traces/${traceId}` : undefined,
- *     code: error.code,
- *     category: error.category,
- *     retryable: error.retryable,
  *     traceId,
- *     ...error.details,
- *   };
+ *   });
  * }
  * ```
  */
+
+/**
+ * Options for converting a StructuredError into Problem Details at an
+ * interface/transport boundary.
+ *
+ * v5 intentionally does not expose StructuredError.details by default. Domain
+ * details can contain internal state, so callers must opt in with
+ * `includeDetails`, map them through `mapDetails`, or provide explicit public
+ * `extensions`.
+ */
+export type ProblemDetailsOptions<
+  TDetails extends Record<string, unknown> = Record<string, unknown>,
+  TExtensions extends Record<string, unknown> = Record<string, never>,
+  TMappedExtensions extends Record<string, unknown> = Record<string, never>,
+> = {
+  /** HTTP status code */
+  status?: number;
+  /** URI reference identifying the problem type */
+  type?: string;
+  /** Short, human-readable summary */
+  title?: string;
+  /**
+   * Public, client-safe explanation for this occurrence.
+   * Defaults to the error's technical message for backwards ergonomics, but
+   * API boundaries should usually pass an explicit public detail.
+   */
+  detail?: string;
+  /** URI reference identifying this specific occurrence */
+  instance?: string;
+  /** Trace ID for distributed tracing */
+  traceId?: string;
+  /**
+   * Explicit public extension members. These are intended for transport-safe
+   * metadata chosen by the boundary/presenter layer.
+   */
+  extensions?: TExtensions;
+  /**
+   * Includes the raw StructuredError.details as extension members.
+   * Defaults to false in v5. Prefer `mapDetails` or `extensions` for public APIs.
+   */
+  includeDetails?: boolean;
+  /**
+   * Maps raw StructuredError.details to public extension members.
+   * This is the recommended enterprise/DDD-friendly way to expose selected
+   * details at HTTP or RPC boundaries.
+   */
+  mapDetails?: (details: TDetails | undefined) => TMappedExtensions;
+  /**
+   * Allows `details`, mapped details, and explicit extensions to override
+   * standard Problem Details members (`type`, `title`, `status`, `detail`,
+   * `instance`) and library members (`code`, `category`, `retryable`, `traceId`).
+   * Defaults to false.
+   */
+  allowExtensionOverrides?: boolean;
+};
+
 export type ProblemDetails<
   TCode extends string = string,
   TCategory extends string = string,
