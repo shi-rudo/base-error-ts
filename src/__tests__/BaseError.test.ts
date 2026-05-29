@@ -133,6 +133,69 @@ describe("BaseError", () => {
     }
   });
 
+  it("should expose toLogObject as the explicit logging representation", () => {
+    const cause = new Error("Root cause");
+    const error = new AutoNamedError("Database password leaked", cause);
+
+    const logObject = error.toLogObject();
+
+    expect(logObject).toMatchObject({
+      name: "AutoNamedError",
+      message: "Database password leaked",
+      timestamp: mockDate.getTime(),
+      timestampIso: mockDate.toISOString(),
+      cause: {
+        name: "Error",
+        message: "Root cause",
+        stack: expect.any(String),
+      },
+    });
+    expect(logObject.stack).toEqual(expect.any(String));
+    expect(error.toJSON()).toEqual(logObject);
+  });
+
+  it("should default public JSON to a safe generic error", () => {
+    const error = new AutoNamedError("Connection string contained secret");
+
+    expect(error.toPublicJSON()).toEqual({
+      code: "INTERNAL_ERROR",
+      message: "An unexpected error occurred.",
+    });
+  });
+
+  it("should use configured public code and public message without exposing internals", () => {
+    class PublicError extends BaseError<"PublicError"> {
+      constructor() {
+        super("Technical constraint name and database table", undefined, {
+          publicCode: "REQUEST_INVALID",
+          publicMessage: "The request is invalid.",
+        });
+      }
+    }
+
+    const error = new PublicError();
+
+    expect(error.toPublicJSON()).toEqual({
+      code: "REQUEST_INVALID",
+      message: "The request is invalid.",
+    });
+  });
+
+  it("should only use technical fields for public JSON when explicitly exposed", () => {
+    class ExposedError extends BaseError<"ExposedError"> {
+      constructor() {
+        super("Resource not found", undefined, { expose: true });
+      }
+    }
+
+    const error = new ExposedError();
+
+    expect(error.toPublicJSON()).toEqual({
+      code: "ExposedError",
+      message: "Resource not found",
+    });
+  });
+
   it("should handle undefined cause", () => {
     const error = new TestError("Test");
 

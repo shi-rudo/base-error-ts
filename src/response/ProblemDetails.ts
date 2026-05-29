@@ -3,7 +3,8 @@
  *
  * This type provides a standardized format for error responses in HTTP APIs,
  * based on RFC 9457 (formerly RFC 7807) with additional fields for
- * programmatic error handling.
+ * programmatic error handling. Public serializers in this package use safe
+ * codes and messages by default; expose technical fields only when intended.
  *
  * @see https://www.rfc-editor.org/rfc/rfc9457.html
  *
@@ -60,14 +61,16 @@
  *   status: number,
  *   traceId?: string
  * ): ProblemDetails {
- *   return error.toProblemDetails({
+ *   return {
  *     type: `https://api.example.com/errors/${error.code.toLowerCase()}`,
  *     title: error.code.replace(/_/g, " ").toLowerCase(),
  *     status,
- *     detail: error.message,
+ *     detail: error.toPublicJSON({ traceId }).message,
  *     instance: traceId ? `/traces/${traceId}` : undefined,
+ *     code: error.toPublicJSON().code,
+ *     retryable: error.retryable,
  *     traceId,
- *   });
+ *   };
  * }
  * ```
  */
@@ -76,10 +79,14 @@
  * Options for converting a StructuredError into Problem Details at an
  * interface/transport boundary.
  *
- * v5 intentionally does not expose StructuredError.details by default. Domain
- * details can contain internal state, so callers must opt in with
- * `includeDetails`, map them through `mapDetails`, or provide explicit public
- * `extensions`.
+ * Safe by default: technical messages, categories, causes, stacks and raw
+ * `details` are not exposed unless explicitly requested. Domain details can
+ * contain internal state, so callers must opt in with `includeDetails`, map
+ * them through `mapDetails`, or provide explicit public `extensions`.
+ *
+ * @template TDetails - Type of the originating error's structured details
+ * @template TExtensions - Explicit public extension members
+ * @template TMappedExtensions - Extension members produced by `mapDetails`
  */
 export type ProblemDetailsOptions<
   TDetails extends Record<string, unknown> = Record<string, unknown>,
@@ -93,23 +100,29 @@ export type ProblemDetailsOptions<
   /** Short, human-readable summary */
   title?: string;
   /**
-   * Public, client-safe explanation for this occurrence.
-   * Defaults to the error's technical message for backwards ergonomics, but
-   * API boundaries should usually pass an explicit public detail.
+   * Per-call public message/detail override. When omitted, a safe public
+   * message is used; the technical message is only emitted when `expose` is set.
    */
   detail?: string;
   /** URI reference identifying this specific occurrence */
   instance?: string;
   /** Trace ID for distributed tracing */
   traceId?: string;
+  /** Per-call public error code override */
+  publicCode?: string;
   /**
-   * Explicit public extension members. These are intended for transport-safe
-   * metadata chosen by the boundary/presenter layer.
+   * Per-call exposure override. When true, technical name/category/message may
+   * appear in the output. Defaults to the error's own exposure setting.
+   */
+  expose?: boolean;
+  /**
+   * Explicit public extension members. Intended for transport-safe metadata
+   * chosen by the boundary/presenter layer.
    */
   extensions?: TExtensions;
   /**
    * Includes the raw StructuredError.details as extension members.
-   * Defaults to false in v5. Prefer `mapDetails` or `extensions` for public APIs.
+   * Defaults to false. Prefer `mapDetails` or `extensions` for public APIs.
    */
   includeDetails?: boolean;
   /**
@@ -119,10 +132,14 @@ export type ProblemDetailsOptions<
    */
   mapDetails?: (details: TDetails | undefined) => TMappedExtensions;
   /**
-   * Allows `details`, mapped details, and explicit extensions to override
+   * Allows `details`, mapped details, and explicit `extensions` to override
    * standard Problem Details members (`type`, `title`, `status`, `detail`,
    * `instance`) and library members (`code`, `category`, `retryable`, `traceId`).
-   * Defaults to false.
+   *
+   * Defaults to false, so safe library-owned members always win. Enable only in
+   * deliberate boundary/presenter layers that need full control of the wire
+   * shape (for example, overriding `retryable` or projecting an arbitrary public
+   * `category`).
    */
   allowExtensionOverrides?: boolean;
 };
@@ -180,24 +197,23 @@ export type ProblemDetails<
   // ────────────────────────────────────────────────────────────────
 
   /**
-   * Machine-readable error code for programmatic handling.
-   * Maps directly to StructuredError.code.
+   * Machine-readable public error code for programmatic handling.
+   * Public serializers map internal StructuredError.code to this value.
    *
    * @example "USER_NOT_FOUND", "VALIDATION_FAILED", "DATABASE_TIMEOUT"
    */
   code: TCode;
 
   /**
-   * Error category for grouping related errors.
-   * Maps directly to StructuredError.category.
+   * Optional public error category for grouping related errors.
+   * Omitted by default by public serializers to avoid leaking internals.
    *
    * @example "AUTH", "VALIDATION", "INFRASTRUCTURE"
    */
-  category: TCategory;
+  category?: TCategory;
 
   /**
    * Whether the failed operation can be retried.
-   * Maps directly to StructuredError.retryable.
    *
    * @example true for transient errors, false for permanent errors
    */

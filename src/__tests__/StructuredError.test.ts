@@ -164,6 +164,28 @@ describe("StructuredError", () => {
       });
     });
 
+    it("should expose structured fields through toLogObject", () => {
+      const error = new StructuredError({
+        code: "TEST_ERROR",
+        category: "TEST",
+        retryable: true,
+        message: "Test message",
+        details: { key: "value" },
+      });
+
+      const logObject = error.toLogObject();
+
+      expect(logObject).toMatchObject({
+        name: "TEST_ERROR",
+        message: "Test message",
+        code: "TEST_ERROR",
+        category: "TEST",
+        retryable: true,
+        details: { key: "value" },
+      });
+      expect(error.toJSON()).toEqual(logObject);
+    });
+
     it("should not include details if undefined", () => {
       const error = new StructuredError({
         code: "TEST_ERROR",
@@ -366,7 +388,7 @@ describe("StructuredError", () => {
 
       expect(error.stack).toBeDefined();
       expect(typeof error.stack).toBe("string");
-      // Stack trace may show "StructuredError" since that's the actual constructor name
+      expect(error.stack!.split("\n")[0]).toBe("TEST: Test");
       expect(error.stack).toContain("Test");
     });
 
@@ -436,7 +458,7 @@ describe("StructuredError", () => {
   });
 
   describe("toProblemDetails", () => {
-    it("should convert to minimal ProblemDetails", () => {
+    it("should convert to minimal safe ProblemDetails", () => {
       const error = new StructuredError({
         code: "USER_NOT_FOUND",
         category: "NOT_FOUND",
@@ -446,10 +468,10 @@ describe("StructuredError", () => {
 
       const problem = error.toProblemDetails();
 
-      expect(problem.code).toBe("USER_NOT_FOUND");
-      expect(problem.category).toBe("NOT_FOUND");
+      expect(problem.code).toBe("INTERNAL_ERROR");
       expect(problem.retryable).toBe(false);
-      expect(problem.detail).toBe("User with id 123 not found");
+      expect(problem.detail).toBe("An unexpected error occurred.");
+      expect(problem.category).toBeUndefined();
       expect(problem.status).toBeUndefined();
       expect(problem.type).toBeUndefined();
       expect(problem.title).toBeUndefined();
@@ -493,9 +515,9 @@ describe("StructuredError", () => {
       expect(problem.title).toBe("Validation Failed");
       expect(problem.instance).toBe("/users/123/email");
       expect(problem.traceId).toBe("trace-abc-123");
-      expect(problem.detail).toBe("Email format is invalid");
-      expect(problem.code).toBe("VALIDATION_FAILED");
-      expect(problem.category).toBe("VALIDATION");
+      expect(problem.detail).toBe("An unexpected error occurred.");
+      expect(problem.code).toBe("INTERNAL_ERROR");
+      expect(problem.category).toBeUndefined();
       expect(problem.retryable).toBe(false);
     });
 
@@ -583,7 +605,7 @@ describe("StructuredError", () => {
       expect(problem.retryAfterSeconds).toBe(60);
     });
 
-    it("should keep standard members stable when extensions collide by default", () => {
+    it("should keep standard members stable when extensions collide", () => {
       const error = new StructuredError({
         code: "VALIDATION_FAILED",
         category: "VALIDATION",
@@ -602,9 +624,11 @@ describe("StructuredError", () => {
         includeDetails: true,
       });
 
+      // Standard/library members always win over colliding extensions, and the
+      // code stays the safe public default unless explicitly exposed.
       expect(problem.status).toBe(400);
       expect(problem.detail).toBe("Public validation message");
-      expect(problem.code).toBe("VALIDATION_FAILED");
+      expect(problem.code).toBe("INTERNAL_ERROR");
     });
 
     it("should allow explicit extension overrides for power users", () => {
@@ -625,7 +649,90 @@ describe("StructuredError", () => {
       expect(problem.detail).toBe("Custom boundary detail");
     });
 
-    it("should preserve type safety for codes and categories", () => {
+    it("should map internal structured errors to configured public codes and messages", () => {
+      const error = new StructuredError({
+        code: "DB_UNIQUE_VIOLATION",
+        category: "INFRASTRUCTURE",
+        retryable: false,
+        message:
+          "duplicate key value violates unique constraint users_email_key",
+        publicCode: "EMAIL_ALREADY_REGISTERED",
+        publicMessage: "This email address is already registered.",
+      });
+
+      expect(error.toPublicJSON()).toEqual({
+        code: "EMAIL_ALREADY_REGISTERED",
+        message: "This email address is already registered.",
+        retryable: false,
+      });
+
+      expect(error.toProblemDetails({ status: 409 })).toEqual({
+        status: 409,
+        detail: "This email address is already registered.",
+        code: "EMAIL_ALREADY_REGISTERED",
+        retryable: false,
+      });
+    });
+
+    it("should expose internal structured fields only when explicitly requested", () => {
+      const error = new StructuredError({
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        message: "Email format is invalid",
+        expose: true,
+        details: {
+          field: "email",
+          constraint: "format",
+        },
+      });
+
+      expect(error.toPublicJSON()).toEqual({
+        code: "VALIDATION_FAILED",
+        message: "Email format is invalid",
+        retryable: false,
+      });
+
+      expect(
+        error.toProblemDetails({ status: 400, includeDetails: true }),
+      ).toEqual({
+        status: 400,
+        detail: "Email format is invalid",
+        code: "VALIDATION_FAILED",
+        category: "VALIDATION",
+        retryable: false,
+        field: "email",
+        constraint: "format",
+      });
+    });
+
+    it("should keep ErrorResponse client output safe by default", () => {
+      const error = new StructuredError({
+        code: "DB_CONNECTION_STRING_REJECTED",
+        category: "INFRASTRUCTURE",
+        retryable: true,
+        message: "postgres://user:secret@db.internal was rejected",
+        details: { host: "db.internal" },
+        publicCode: "SERVICE_TEMPORARILY_UNAVAILABLE",
+        publicMessage: "The service is temporarily unavailable.",
+      });
+
+      expect(error.toErrorResponse({ httpStatusCode: 503 })).toEqual({
+        isSuccess: false,
+        error: {
+          code: "SERVICE_TEMPORARILY_UNAVAILABLE",
+          category: "INTERNAL",
+          retryable: true,
+          ctx: {
+            httpStatusCode: 503,
+            message: "The service is temporarily unavailable.",
+          },
+          details: {},
+        },
+      });
+    });
+
+    it("should preserve type safety for codes and categories when exposed", () => {
       type MyCode = "ERROR_A" | "ERROR_B";
       type MyCategory = "CAT_1" | "CAT_2";
 
@@ -636,11 +743,11 @@ describe("StructuredError", () => {
         message: "Test",
       });
 
-      const problem = error.toProblemDetails();
+      const problem = error.toProblemDetails({ expose: true });
 
       // TypeScript compile-time check
-      const code: MyCode = problem.code;
-      const category: MyCategory = problem.category;
+      const code: string = problem.code;
+      const category: MyCategory | undefined = problem.category;
 
       expect(code).toBe("ERROR_A");
       expect(category).toBe("CAT_1");
@@ -684,8 +791,8 @@ describe("StructuredError", () => {
 
       const problem = error.toProblemDetails({});
 
-      expect(problem.code).toBe("TEST");
-      expect(problem.detail).toBe("Test message");
+      expect(problem.code).toBe("INTERNAL_ERROR");
+      expect(problem.detail).toBe("An unexpected error occurred.");
     });
 
     it("should be serializable to JSON", () => {
@@ -707,7 +814,7 @@ describe("StructuredError", () => {
       const parsed = JSON.parse(json);
 
       expect(parsed.status).toBe(502);
-      expect(parsed.code).toBe("API_ERROR");
+      expect(parsed.code).toBe("INTERNAL_ERROR");
       expect(parsed).not.toHaveProperty("endpoint");
       expect(parsed).not.toHaveProperty("statusCode");
       expect(parsed.traceId).toBe("req-xyz");

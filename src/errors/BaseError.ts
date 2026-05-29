@@ -6,16 +6,37 @@ interface V8ErrorConstructor {
   ): void;
 }
 
-export type BaseErrorOptions<T extends string = string> = {
-  /**
-   * Explicit error name used for stack headers and serialization.
-   *
-   * When omitted, BaseError keeps its historical behavior and infers the name
-   * from the concrete constructor. Structured error types can pass a stable
-   * domain/application error code here so observability output is consistent
-   * from construction onward.
-   */
-  name?: T;
+export const DEFAULT_PUBLIC_ERROR_CODE = "INTERNAL_ERROR" as const;
+export const DEFAULT_PUBLIC_ERROR_CATEGORY = "INTERNAL" as const;
+export const DEFAULT_PUBLIC_ERROR_MESSAGE =
+  "An unexpected error occurred." as const;
+
+export type BaseErrorOptions<TPublicCode extends string = string> = {
+  /** Override the runtime error name. Intended for framework errors with stable codes. */
+  name?: string;
+  /** Stable, client-safe error code. */
+  publicCode?: TPublicCode;
+  /** Client-safe message. */
+  publicMessage?: string;
+  /** Allows technical name/message fallback in explicit public serialization. */
+  expose?: boolean;
+};
+
+export type PublicErrorOptions<TCode extends string = string> = {
+  /** Per-call public code override. */
+  code?: TCode;
+  /** Per-call public message override. */
+  message?: string;
+  /** Per-call exposure override. */
+  expose?: boolean;
+  /** Optional correlation id for public responses. */
+  traceId?: string;
+};
+
+export type PublicErrorJSON<TCode extends string = string> = {
+  code: TCode;
+  message: string;
+  traceId?: string;
 };
 
 /**
@@ -38,7 +59,10 @@ export type BaseErrorOptions<T extends string = string> = {
  * }
  * ```
  */
-export class BaseError<T extends string> extends Error {
+export class BaseError<
+  T extends string,
+  TPublicCode extends string = string,
+> extends Error {
   /**
    * Nominal type brand - makes each subclass structurally distinct at compile time.
    * Using 'this' ensures every subclass gets its own unique type identity.
@@ -73,25 +97,31 @@ export class BaseError<T extends string> extends Error {
   // --- Properties for user-friendly messages ---
   private _defaultUserMessage?: string;
   private _localizedMessages = new Map<string, string>();
+  private _publicCode?: TPublicCode;
+  private _publicMessage?: string;
+  private _expose = false;
 
   /**
    * Creates a new BaseError instance with automatic name inference.
    *
    * @param message – Human-readable explanation (name will be inferred from constructor)
    * @param cause   – Optional underlying error or extra context
+   * @param options – Optional public serialization and runtime name settings
    */
   // The /*#__PURE__*/ pragma lets tree-shakers know the constructor is side-effect free
   public /*#__PURE__*/ constructor(
     message: string,
     cause?: unknown,
-    options?: BaseErrorOptions<T>,
+    options: BaseErrorOptions<TPublicCode> = {},
   ) {
     // Always call super with just message for TypeScript compatibility
     super(message);
 
-    // Use an explicit, stable name when provided; otherwise infer from the
-    // concrete constructor for backwards-compatible subclass ergonomics.
-    this.name = options?.name ?? (this.constructor.name as T);
+    // Automatically infer the error name from the constructor name
+    this.name = (options.name ?? this.constructor.name) as T;
+    this._publicCode = options.publicCode;
+    this._publicMessage = options.publicMessage;
+    this._expose = options.expose ?? false;
 
     // Handle cause with native support when available, fallback otherwise
     if (cause !== undefined) {
@@ -151,6 +181,31 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
+   * Sets a stable, client-safe error code for public serialization.
+   * Use this to map internal domain or infrastructure failures to API codes.
+   */
+  public withPublicCode(code: TPublicCode): this {
+    this._publicCode = code;
+    return this;
+  }
+
+  /**
+   * Sets a client-safe message for public serialization.
+   */
+  public withPublicMessage(message: string): this {
+    this._publicMessage = message;
+    return this;
+  }
+
+  /**
+   * Enables or disables technical name/message fallback for public serialization.
+   */
+  public exposeToClients(expose = true): this {
+    this._expose = expose;
+    return this;
+  }
+
+  /**
    * Retrieves the most appropriate user-friendly message based on language preference.
    * The fallback order is: preferred language -> fallback language -> default message.
    * @param options - Language preference options.
@@ -176,8 +231,8 @@ export class BaseError<T extends string> extends Error {
     return this._defaultUserMessage;
   }
 
-  /** Serialises the error for JSON logs */
-  public toJSON(): Record<string, unknown> {
+  /** Serialises the error for logs. Includes technical message, stack and cause. */
+  public toLogObject(): Record<string, unknown> {
     const { name, message, timestamp, timestampIso, stack } = this;
     const cause = (this as unknown as Record<string, unknown>).cause;
 
@@ -199,6 +254,42 @@ export class BaseError<T extends string> extends Error {
     }
 
     return json;
+  }
+
+  /** Backwards-compatible JSON serialization for logging-oriented consumers. */
+  public toJSON(): Record<string, unknown> {
+    return this.toLogObject();
+  }
+
+  /**
+   * Serializes the error for client-facing responses.
+   *
+   * This method is safe by default: it does not expose the technical error name,
+   * technical message, stack trace, cause chain, or structured details unless
+   * explicitly configured with public fields or `expose`.
+   */
+  public toPublicJSON(options: PublicErrorOptions = {}): PublicErrorJSON {
+    const expose = options.expose ?? this._expose;
+    const code =
+      options.code ??
+      this._publicCode ??
+      (expose ? this.name : DEFAULT_PUBLIC_ERROR_CODE);
+    const message =
+      options.message ??
+      this._publicMessage ??
+      (expose
+        ? (this.getUserMessage() ?? this.message)
+        : DEFAULT_PUBLIC_ERROR_MESSAGE);
+
+    return {
+      code,
+      message,
+      ...(options.traceId !== undefined && { traceId: options.traceId }),
+    };
+  }
+
+  protected shouldExposeToClients(): boolean {
+    return this._expose;
   }
 
   /** Readable one-liner plus full nested cause chain. */
