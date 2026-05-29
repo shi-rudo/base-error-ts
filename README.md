@@ -559,24 +559,26 @@ const problem = error.toProblemDetails({
 // }
 ```
 
-For small apps or fully trusted boundaries, you can still opt in to the old convenience behavior:
+Exposing details to a client is **always** an explicit projection — there is no
+raw passthrough. If you genuinely want every field, name it in `mapDetails`:
 
 ```typescript
 const problem = error.toProblemDetails({
   status: 400,
-  includeDetails: true,
+  mapDetails: (details) => ({ ...details }), // deliberate, reviewable
 });
 ```
 
-By default, standard Problem Details and library fields win over extension collisions. Power users can explicitly allow extension overrides:
+Need the full, unredacted error for logs, Sentry, or your APM? That is a
+separate, server-side path — use `toLogObject()`, which keeps the technical
+message, stack, cause chain and raw `details`. The client-facing serializers
+never carry it.
 
-```typescript
-const problem = error.toProblemDetails({
-  status: 400,
-  extensions: { status: 422, detail: "Custom transport detail" },
-  allowExtensionOverrides: true,
-});
-```
+Safety is invariant: standard Problem Details members (`type`, `title`,
+`status`, `detail`, `instance`) and library members (`code`, `category`,
+`retryable`, `traceId`) **always** win over colliding extension keys. There is
+no override switch — a call site cannot accidentally leak. To set a deliberate
+public category, use the named `publicCategory` option.
 
 #### Creating Domain-Specific Error Classes
 

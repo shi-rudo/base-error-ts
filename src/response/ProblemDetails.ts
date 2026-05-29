@@ -80,9 +80,11 @@
  * interface/transport boundary.
  *
  * Safe by default: technical messages, categories, causes, stacks and raw
- * `details` are not exposed unless explicitly requested. Domain details can
- * contain internal state, so callers must opt in with `includeDetails`, map
- * them through `mapDetails`, or provide explicit public `extensions`.
+ * `details` are never exposed. Domain details can contain internal state, so
+ * crossing the boundary is always an explicit projection: select and rename
+ * fields through `mapDetails`, or provide literal public `extensions`. Raw
+ * details belong in observability output (`toLogObject()`), not in client
+ * responses.
  *
  * @template TDetails - Type of the originating error's structured details
  * @template TExtensions - Explicit public extension members
@@ -111,6 +113,12 @@ export type ProblemDetailsOptions<
   /** Per-call public error code override */
   publicCode?: string;
   /**
+   * Per-call public category override. Lets a boundary project a deliberate,
+   * client-safe category. When omitted, the internal category is emitted only
+   * if `expose` is set.
+   */
+  publicCategory?: string;
+  /**
    * Per-call exposure override. When true, technical name/category/message may
    * appear in the output. Defaults to the error's own exposure setting.
    */
@@ -121,27 +129,12 @@ export type ProblemDetailsOptions<
    */
   extensions?: TExtensions;
   /**
-   * Includes the raw StructuredError.details as extension members.
-   * Defaults to false. Prefer `mapDetails` or `extensions` for public APIs.
-   */
-  includeDetails?: boolean;
-  /**
-   * Maps raw StructuredError.details to public extension members.
-   * This is the recommended enterprise/DDD-friendly way to expose selected
-   * details at HTTP or RPC boundaries.
+   * Maps raw StructuredError.details to public extension members. This is the
+   * only way to surface details in a client response: every exposure is an
+   * explicit, reviewable projection. Library/standard members always win on
+   * key collisions.
    */
   mapDetails?: (details: TDetails | undefined) => TMappedExtensions;
-  /**
-   * Allows `details`, mapped details, and explicit `extensions` to override
-   * standard Problem Details members (`type`, `title`, `status`, `detail`,
-   * `instance`) and library members (`code`, `category`, `retryable`, `traceId`).
-   *
-   * Defaults to false, so safe library-owned members always win. Enable only in
-   * deliberate boundary/presenter layers that need full control of the wire
-   * shape (for example, overriding `retryable` or projecting an arbitrary public
-   * `category`).
-   */
-  allowExtensionOverrides?: boolean;
 };
 
 export type ProblemDetails<

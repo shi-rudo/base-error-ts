@@ -5,7 +5,8 @@
 ### Breaking Changes
 
 - `StructuredError.toProblemDetails()` and `StructuredError.toErrorResponse()` are safe by default. They no longer expose technical messages, internal codes, categories, or raw `details` unless public fields or explicit exposure options are used.
-- Standard Problem Details members (`type`, `title`, `status`, `detail`, `instance`) and library members (`code`, `category`, `retryable`, `traceId`) win over extension key collisions by default; opt into the reverse precedence with `allowExtensionOverrides`.
+- Safe-by-default is invariant: standard Problem Details members (`type`, `title`, `status`, `detail`, `instance`) and library members (`code`, `category`, `retryable`, `traceId`) always win over colliding extension keys. There is no override switch.
+- Raw `details` never cross into client responses. Surfacing details is always an explicit `mapDetails` projection on both `toProblemDetails()` and `toErrorResponse()`; full-fidelity details remain available for observability via `toLogObject()`.
 - `typescript` is no longer a peer dependency. The package still ships TypeScript declarations.
 - Updated the package version from `4.7.0` to `5.0.0`.
 
@@ -18,9 +19,8 @@
 - Added `ProblemDetailsOptions` and exported it from the package root.
 - Added `detail` to `toProblemDetails()` options so boundary layers can provide a public, client-safe message separately from the technical error message.
 - Added `extensions` for explicit public Problem Details extension members.
-- Added `mapDetails` for DDD-friendly boundary mapping from raw domain/application details to public extension members.
-- Added `includeDetails` as an explicit opt-in for exposing raw `StructuredError.details`.
-- Added `allowExtensionOverrides` as an explicit power-user escape hatch for overriding standard/library Problem Details members.
+- Added `mapDetails` to `toProblemDetails()` and `toErrorResponse()` for DDD-friendly boundary mapping from raw domain/application details to public members — the only path for surfacing details to clients.
+- Added `publicCategory` to `toProblemDetails()` for projecting a deliberate, client-safe category (symmetric with `toErrorResponse()`).
 - Added package metadata for `sideEffects`, `engines`, `packageManager`, homepage, and npm provenance.
 
 ### Fixed

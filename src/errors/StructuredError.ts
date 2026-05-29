@@ -155,9 +155,9 @@ export class StructuredError<
    *
    * This method provides a standardized format for HTTP API error responses.
    * It is safe by default: technical messages, categories, causes, stacks and
-   * raw `details` are not exposed unless configured with public fields or
-   * options. Use `extensions`, `mapDetails`, or `includeDetails` when a
-   * transport boundary should expose additional public extension members.
+   * raw `details` are never exposed. Surface public extension members through an
+   * explicit `mapDetails` projection or literal `extensions`; raw details belong
+   * in observability output (`toLogObject()`), not in client responses.
    *
    * @param options - Optional configuration for the Problem Details response
    * @returns A ProblemDetails object ready for HTTP response serialization
@@ -212,11 +212,10 @@ export class StructuredError<
       instance,
       traceId,
       publicCode,
+      publicCategory,
       detail,
-      includeDetails,
       extensions,
       mapDetails,
-      allowExtensionOverrides = false,
     } = options;
     const expose = options.expose ?? this.shouldExposeToClients();
     const publicJson = this.toPublicJSON({
@@ -227,7 +226,7 @@ export class StructuredError<
     });
 
     // Library-owned members, computed through the safe public projection so the
-    // technical message/category never leak unless `expose` is set.
+    // technical message/category never leak unless explicitly projected.
     const standardMembers = {
       ...(type !== undefined && { type }),
       ...(title !== undefined && { title }),
@@ -235,25 +234,27 @@ export class StructuredError<
       detail: publicJson.message,
       ...(instance !== undefined && { instance }),
       code: publicJson.code,
-      ...(expose && { category: this.category }),
+      ...(publicCategory !== undefined
+        ? { category: publicCategory }
+        : expose
+          ? { category: this.category }
+          : {}),
       retryable: this.retryable,
       ...(traceId !== undefined && { traceId }),
     };
 
-    // Opt-in extension members chosen by the boundary/presenter layer.
+    // Extension members are always an explicit projection chosen by the
+    // boundary layer — raw details never cross implicitly.
     const extensionMembers = {
-      ...(includeDetails === true ? this.details : undefined),
       ...(mapDetails ? mapDetails(this.details) : undefined),
       ...extensions,
     };
 
-    // Safe by default: standard/library members win over colliding extensions.
-    // Deliberate boundary layers can opt into the reverse precedence.
-    return (
-      allowExtensionOverrides
-        ? { ...standardMembers, ...extensionMembers }
-        : { ...extensionMembers, ...standardMembers }
-    ) as ProblemDetails<
+    // Safe and invariant: library/standard members always win on collisions.
+    return {
+      ...extensionMembers,
+      ...standardMembers,
+    } as ProblemDetails<
       TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE,
       TCategory,
       TDetails & TMappedExtensions & TExtensions
@@ -286,7 +287,9 @@ export class StructuredError<
    * });
    * ```
    */
-  public toErrorResponse(
+  public toErrorResponse<
+    TMappedDetails extends Record<string, unknown> = Record<string, never>,
+  >(
     options: {
       /** HTTP status code */
       httpStatusCode?: number;
@@ -302,8 +305,13 @@ export class StructuredError<
       message?: string;
       /** Per-call exposure override */
       expose?: boolean;
-      /** Include structured details. Defaults to false. */
-      includeDetails?: boolean;
+      /**
+       * Maps raw StructuredError.details to public `details` members. This is the
+       * only way to surface details in a client response: every exposure is an
+       * explicit, reviewable projection. Raw details belong in observability
+       * output (`toLogObject()`), not here.
+       */
+      mapDetails?: (details: TDetails | undefined) => TMappedDetails;
     } = {},
   ): ErrorResponse<
     TCode | TPublicCode | typeof DEFAULT_PUBLIC_ERROR_CODE | string,
@@ -313,7 +321,7 @@ export class StructuredError<
       message: string;
       messageLocalized?: LocalizedMessage;
     },
-    TDetails
+    TMappedDetails
   > {
     const {
       httpStatusCode,
@@ -322,7 +330,7 @@ export class StructuredError<
       publicCode,
       publicCategory,
       message,
-      includeDetails,
+      mapDetails,
     } = options;
     const expose = options.expose ?? this.shouldExposeToClients();
     const publicJson = this.toPublicJSON({
@@ -346,9 +354,7 @@ export class StructuredError<
           message: publicJson.message,
           ...(messageLocalized !== undefined && { messageLocalized }),
         },
-        details: (includeDetails === true
-          ? (this.details ?? {})
-          : {}) as TDetails,
+        details: (mapDetails ? mapDetails(this.details) : {}) as TMappedDetails,
       },
     };
   }

@@ -541,7 +541,7 @@ describe("StructuredError", () => {
       expect(problem).not.toHaveProperty("value");
     });
 
-    it("should include raw details when explicitly requested", () => {
+    it("should surface details only through an explicit mapDetails projection", () => {
       const error = new StructuredError({
         code: "VALIDATION_FAILED",
         category: "VALIDATION",
@@ -556,12 +556,16 @@ describe("StructuredError", () => {
 
       const problem = error.toProblemDetails({
         status: 400,
-        includeDetails: true,
+        mapDetails: (details) => ({
+          field: details?.field,
+          constraint: details?.constraint,
+        }),
       });
 
       expect(problem.field).toBe("email");
       expect(problem.constraint).toBe("format");
-      expect(problem.value).toBe("not-an-email");
+      // Fields not named in the projection never cross the boundary.
+      expect(problem).not.toHaveProperty("value");
     });
 
     it("should map raw details to public extension members", () => {
@@ -621,7 +625,11 @@ describe("StructuredError", () => {
       const problem = error.toProblemDetails({
         status: 400,
         detail: "Public validation message",
-        includeDetails: true,
+        mapDetails: (details) => ({
+          status: details?.status,
+          detail: details?.detail,
+          code: details?.code,
+        }),
       });
 
       // Standard/library members always win over colliding extensions, and the
@@ -631,7 +639,7 @@ describe("StructuredError", () => {
       expect(problem.code).toBe("INTERNAL_ERROR");
     });
 
-    it("should allow explicit extension overrides for power users", () => {
+    it("should never let extensions override standard or library members", () => {
       const error = new StructuredError({
         code: "VALIDATION_FAILED",
         category: "VALIDATION",
@@ -639,14 +647,39 @@ describe("StructuredError", () => {
         message: "Technical validation message",
       });
 
+      // There is no escape hatch: safe-by-default is invariant.
       const problem = error.toProblemDetails({
         status: 400,
-        extensions: { status: 422, detail: "Custom boundary detail" },
-        allowExtensionOverrides: true,
+        detail: "Public boundary detail",
+        extensions: {
+          status: 422,
+          detail: "Unsafe override",
+          code: "OVERRIDE",
+          retryable: true,
+        },
       });
 
-      expect(problem.status).toBe(422);
-      expect(problem.detail).toBe("Custom boundary detail");
+      expect(problem.status).toBe(400);
+      expect(problem.detail).toBe("Public boundary detail");
+      expect(problem.code).toBe("INTERNAL_ERROR");
+      expect(problem.retryable).toBe(false);
+    });
+
+    it("should project a deliberate public category", () => {
+      const error = new StructuredError({
+        code: "DB_UNIQUE_VIOLATION",
+        category: "INFRASTRUCTURE",
+        retryable: false,
+        message: "duplicate key value violates unique constraint",
+      });
+
+      const problem = error.toProblemDetails({
+        status: 409,
+        publicCategory: "CONFLICT",
+      });
+
+      // Internal category stays hidden; the deliberate public one is emitted.
+      expect(problem.category).toBe("CONFLICT");
     });
 
     it("should map internal structured errors to configured public codes and messages", () => {
@@ -694,7 +727,13 @@ describe("StructuredError", () => {
       });
 
       expect(
-        error.toProblemDetails({ status: 400, includeDetails: true }),
+        error.toProblemDetails({
+          status: 400,
+          mapDetails: (details) => ({
+            field: details?.field,
+            constraint: details?.constraint,
+          }),
+        }),
       ).toEqual({
         status: 400,
         detail: "Email format is invalid",
@@ -770,12 +809,15 @@ describe("StructuredError", () => {
 
       const problem = error.toProblemDetails({
         status: 401,
-        includeDetails: true,
+        mapDetails: (details) => ({
+          userId: details?.userId,
+          attemptCount: details?.attemptCount,
+        }),
       });
 
-      // TypeScript compile-time check - details are opt-in extensions
-      const userId: string = problem.userId;
-      const attemptCount: number = problem.attemptCount;
+      // TypeScript compile-time check - mapped details are typed extensions
+      const userId = problem.userId;
+      const attemptCount = problem.attemptCount;
 
       expect(userId).toBe("user-123");
       expect(attemptCount).toBe(3);
