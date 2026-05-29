@@ -56,20 +56,27 @@ const problem = error.toProblemDetails({
 });
 ```
 
-## Quick compatibility migration
+## Reproducing v4-style output
 
-If you want v4-style output while migrating, opt in explicitly:
+There is no raw passthrough in v5. If you genuinely want every detail field in a
+client response, name them in an explicit projection:
 
 ```ts
 const problem = error.toProblemDetails({
   status: 400,
-  includeDetails: true,
+  mapDetails: (details) => ({ ...details }), // deliberate and reviewable
 });
 ```
 
+Need the full, unredacted error for logs/Sentry/APM? That is a separate,
+server-side path — use `toLogObject()`, which keeps the technical message,
+stack, cause chain and raw `details`. The client-facing serializers never carry
+internal state.
+
 ## Collision behavior
 
-In v5, standard/library fields win by default:
+Safety is invariant. Standard/library fields always win — there is no override
+switch, so a call site cannot accidentally leak:
 
 ```ts
 const error = new StructuredError({
@@ -83,27 +90,17 @@ const error = new StructuredError({
 const problem = error.toProblemDetails({
   status: 400,
   detail: "Public detail",
-  includeDetails: true,
+  mapDetails: (details) => ({ status: details?.status, detail: details?.detail }),
 });
 
-// problem.status === 400
+// problem.status === 400  (library member wins)
 // problem.detail === "Public detail"
 ```
 
-Power users can still opt into overrides:
+## Option summary
 
-```ts
-const problem = error.toProblemDetails({
-  status: 400,
-  extensions: { status: 422, detail: "Custom detail" },
-  allowExtensionOverrides: true,
-});
-```
-
-## New option summary
-
-- `detail`: public/client-safe Problem Details detail. Defaults to `error.message` for convenience.
+- `detail`: public/client-safe Problem Details detail. When omitted, a safe public message is used (the technical `message` is only emitted when `expose` is set).
+- `publicCode` / `publicCategory`: deliberate, client-safe code and category overrides.
 - `extensions`: explicit public extension members.
-- `mapDetails`: maps raw `details` to public extension members.
-- `includeDetails`: exposes raw `details` as extensions when set to `true`.
-- `allowExtensionOverrides`: lets extensions override standard/library fields when set to `true`.
+- `mapDetails`: the only way to surface `details` in a client response — an explicit, reviewable projection.
+- `expose`: opt in to emitting the technical name/category/message.
