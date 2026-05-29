@@ -6,6 +6,18 @@ interface V8ErrorConstructor {
   ): void;
 }
 
+export type BaseErrorOptions<T extends string = string> = {
+  /**
+   * Explicit error name used for stack headers and serialization.
+   *
+   * When omitted, BaseError keeps its historical behavior and infers the name
+   * from the concrete constructor. Structured error types can pass a stable
+   * domain/application error code here so observability output is consistent
+   * from construction onward.
+   */
+  name?: T;
+};
+
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
@@ -69,12 +81,17 @@ export class BaseError<T extends string> extends Error {
    * @param cause   – Optional underlying error or extra context
    */
   // The /*#__PURE__*/ pragma lets tree-shakers know the constructor is side-effect free
-  public /*#__PURE__*/ constructor(message: string, cause?: unknown) {
+  public /*#__PURE__*/ constructor(
+    message: string,
+    cause?: unknown,
+    options?: BaseErrorOptions<T>,
+  ) {
     // Always call super with just message for TypeScript compatibility
     super(message);
 
-    // Automatically infer the error name from the constructor name
-    this.name = this.constructor.name as T;
+    // Use an explicit, stable name when provided; otherwise infer from the
+    // concrete constructor for backwards-compatible subclass ergonomics.
+    this.name = options?.name ?? (this.constructor.name as T);
 
     // Handle cause with native support when available, fallback otherwise
     if (cause !== undefined) {
