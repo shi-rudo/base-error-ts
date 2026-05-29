@@ -33,6 +33,7 @@ export default defineConfig({
           items: [
             { text: "Getting Started", link: "/guide/getting-started" },
             { text: "Why safe by default", link: "/guide/safe-by-default" },
+            { text: "Pitfalls", link: "/guide/pitfalls" },
           ],
         },
         {
