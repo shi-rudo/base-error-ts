@@ -1,7 +1,17 @@
 // ────────────────────────────────────────────────────────────────
 // Error Classes
 // ────────────────────────────────────────────────────────────────
-export { BaseError } from "./errors/BaseError.js";
+export {
+  BaseError,
+  DEFAULT_PUBLIC_ERROR_CATEGORY,
+  DEFAULT_PUBLIC_ERROR_CODE,
+  DEFAULT_PUBLIC_ERROR_MESSAGE,
+} from "./errors/BaseError.js";
+export type {
+  BaseErrorOptions,
+  PublicErrorJSON,
+  PublicErrorOptions,
+} from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
 

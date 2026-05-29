@@ -1,10 +1,11 @@
 {
   "name": "@shirudo/base-error",
-  "version": "4.7.0",
+  "version": "5.0.0",
   "description": "A cross-environment base error class for TypeScript applications, designed for seamless use across Node.js, browsers, and edge runtimes.",
+  "homepage": "https://github.com/shi-rudo/base-error-ts#readme",
   "repository": {
     "type": "git",
-    "url": "git://github.com/shi-rudo/base-error-ts.git"
+    "url": "git+https://github.com/shi-rudo/base-error-ts.git"
   },
   "keywords": [
     "typescript",
@@ -35,13 +36,20 @@
     "url": "https://github.com/shi-rudo/base-error-ts/issues"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "files": [
     "dist",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "pnpm@10.32.1",
   "type": "module",
   "exports": {
     ".": {
@@ -58,8 +66,8 @@
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write .",
-    "build": "npm run test:run && npm run lint:fix && tsup",
-    "prepublishOnly": "npm run build"
+    "build": "pnpm test:run && pnpm lint && tsup",
+    "prepublishOnly": "pnpm build"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
@@ -76,8 +84,5 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.16"
-  },
-  "peerDependencies": {
-    "typescript": "^5.3.3"
   }
 }

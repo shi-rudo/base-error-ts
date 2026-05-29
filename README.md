@@ -17,7 +17,8 @@ It provides rich, filterable stack traces and advanced features **without pollut
 - 🔄 **Error cause chain**: Preserves the error cause chain, even in environments without native support
 - ⏱️ **Built-in timestamps**: Includes both numeric (epoch) and ISO string timestamps
 - 🧬 **Proper inheritance**: Maintains prototype chain for reliable `instanceof` checks
-- 📊 **JSON serialization**: Built-in `toJSON` method for easy logging
+- 📊 **Explicit log serialization**: `toLogObject()` keeps stack and cause chains for observability
+- 🔒 **Safe public serialization**: `toPublicJSON()` and `toProblemDetails()` hide internals by default
 - ✨ **Automatic name inference**: No need to specify the error name twice
 - 👤 **User-friendly messages**: Built-in support for user-friendly error messages and internationalization
 
@@ -199,22 +200,25 @@ class ValidationError extends BaseError<"ValidationError"> {
 }
 ```
 
-### JSON Serialization
+### Logging vs Public Serialization
 
 ```typescript
 import { BaseError } from "@shirudo/base-error";
 
 class ApiError extends BaseError<"ApiError"> {
   constructor(statusCode: number, message: string, cause?: unknown) {
-    super(message, cause); // Using automatic name inference
+    super(message, cause, {
+      publicCode: "RESOURCE_NOT_FOUND",
+      publicMessage: "The requested resource could not be found.",
+    });
     this.statusCode = statusCode;
   }
 
   statusCode: number;
 
-  // Override toJSON to include custom properties
-  toJSON() {
-    const json = super.toJSON();
+  // Override toLogObject to include custom log-only properties
+  toLogObject() {
+    const json = super.toLogObject();
     return {
       ...json,
       statusCode: this.statusCode,
@@ -222,9 +226,20 @@ class ApiError extends BaseError<"ApiError"> {
   }
 }
 
-const error = new ApiError(404, "Resource not found");
-console.log(JSON.stringify(error, null, 2));
+const error = new ApiError(404, "Database row users/123 not found");
+
+// Logs include technical diagnostics.
+console.log(error.toLogObject());
+
+// Client responses are safe by default.
+console.log(error.toPublicJSON());
+// { code: "RESOURCE_NOT_FOUND", message: "The requested resource could not be found." }
 ```
+
+`toJSON()` remains available for logging-oriented compatibility and delegates to
+`toLogObject()`. Do not return `toJSON()` directly from HTTP or RPC handlers
+unless you intentionally want to expose technical messages, stack traces, and
+causes.
 
 ### User-Friendly Messages (v2.1+)
 
@@ -465,7 +480,9 @@ const error = new StructuredError({
   code: "VALIDATION_FAILED",
   category: "CLIENT_ERROR",
   retryable: false,
-  message: "Email format is invalid",
+  message: "Email failed RFC validation for field users.email",
+  publicCode: "INVALID_EMAIL",
+  publicMessage: "Please enter a valid email address.",
   details: { field: "email", value: "not-an-email" },
 });
 
@@ -478,6 +495,15 @@ console.log(error.details); // { field: "email", value: "not-an-email" }
 // All BaseError features work seamlessly
 error.withUserMessage("Please enter a valid email address");
 console.log(JSON.stringify(error, null, 2));
+
+// Safe for clients. Does not include stack, cause, category or details by default.
+console.log(error.toProblemDetails({ status: 400 }));
+// {
+//   status: 400,
+//   detail: "Please enter a valid email address.",
+//   code: "INVALID_EMAIL",
+//   retryable: false
+// }
 ```
 
 #### Field Descriptions
@@ -486,7 +512,10 @@ console.log(JSON.stringify(error, null, 2));
 - **category**: Groups related errors together (e.g., `"AUTH"`, `"VALIDATION"`, `"INFRASTRUCTURE"`)
 - **retryable**: Boolean flag indicating if the operation can be retried
 - **details**: Optional structured data providing additional context
-- **message**: Human-readable technical message (inherited from BaseError)
+- **message**: Human-readable technical message for logs (inherited from BaseError)
+- **publicCode**: Optional stable client-facing code for API responses
+- **publicMessage**: Optional client-safe message for API responses
+- **expose**: Optional opt-in to expose technical code/message in public serializers
 - **cause**: Optional underlying error (inherited from BaseError)
 
 #### Creating Domain-Specific Error Classes
@@ -718,7 +747,15 @@ npx tsx examples/problem-details-example.ts
 ```typescript
 class BaseError<T extends string> extends Error {
   // Constructor with automatic name inference
-  constructor(message: string, cause?: unknown);
+  constructor(
+    message: string,
+    cause?: unknown,
+    options?: {
+      publicCode?: string;
+      publicMessage?: string;
+      expose?: boolean;
+    },
+  );
 
   // Properties
   readonly name: T; // Error type name (automatically inferred)
@@ -728,10 +765,24 @@ class BaseError<T extends string> extends Error {
   readonly cause?: unknown; // Error cause (if provided)
 
   // Methods
-  toJSON(): Record<string, unknown>; // Serialize to JSON
+  toLogObject(): Record<string, unknown>; // Serialize for logs
+  toJSON(): Record<string, unknown>; // Backwards-compatible log serialization
+  toPublicJSON(options?: {
+    code?: string;
+    message?: string;
+    expose?: boolean;
+    traceId?: string;
+  }): {
+    code: string;
+    message: string;
+    traceId?: string;
+  };
 
   // User Message Methods (v2.1+)
   withUserMessage(message: string): this; // Set default user-friendly message
+  withPublicCode(code: string): this; // Set stable public code
+  withPublicMessage(message: string): this; // Set safe public message
+  exposeToClients(expose?: boolean): this; // Opt into technical fallback
   addLocalizedMessage(lang: string, message: string): this; // Add localized message (prevents duplicates)
   updateLocalizedMessage(lang: string, message: string): this; // Update/set localized message (allows overwriting)
   getUserMessage(options?: {

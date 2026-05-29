@@ -3,7 +3,8 @@
  *
  * This type provides a standardized format for error responses in HTTP APIs,
  * based on RFC 9457 (formerly RFC 7807) with additional fields for
- * programmatic error handling.
+ * programmatic error handling. Public serializers in this package use safe
+ * codes and messages by default; expose technical fields only when intended.
  *
  * @see https://www.rfc-editor.org/rfc/rfc9457.html
  *
@@ -64,13 +65,11 @@
  *     type: `https://api.example.com/errors/${error.code.toLowerCase()}`,
  *     title: error.code.replace(/_/g, " ").toLowerCase(),
  *     status,
- *     detail: error.message,
+ *     detail: error.toPublicJSON({ traceId }).message,
  *     instance: traceId ? `/traces/${traceId}` : undefined,
- *     code: error.code,
- *     category: error.category,
+ *     code: error.toPublicJSON().code,
  *     retryable: error.retryable,
  *     traceId,
- *     ...error.details,
  *   };
  * }
  * ```
@@ -128,24 +127,23 @@ export type ProblemDetails<
   // ────────────────────────────────────────────────────────────────
 
   /**
-   * Machine-readable error code for programmatic handling.
-   * Maps directly to StructuredError.code.
+   * Machine-readable public error code for programmatic handling.
+   * Public serializers map internal StructuredError.code to this value.
    *
    * @example "USER_NOT_FOUND", "VALIDATION_FAILED", "DATABASE_TIMEOUT"
    */
   code: TCode;
 
   /**
-   * Error category for grouping related errors.
-   * Maps directly to StructuredError.category.
+   * Optional public error category for grouping related errors.
+   * Omitted by default by public serializers to avoid leaking internals.
    *
    * @example "AUTH", "VALIDATION", "INFRASTRUCTURE"
    */
-  category: TCategory;
+  category?: TCategory;
 
   /**
    * Whether the failed operation can be retried.
-   * Maps directly to StructuredError.retryable.
    *
    * @example true for transient errors, false for permanent errors
    */
