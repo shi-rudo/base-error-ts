@@ -14,6 +14,7 @@ export type {
 } from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
+export { matchError } from "./errors/match.js";
 
 // ────────────────────────────────────────────────────────────────
 // API Response Types
