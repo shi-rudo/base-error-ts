@@ -22,12 +22,18 @@ import type { BaseError } from "../errors/BaseError.js";
  * guard(isValidEmail(email), new ValidationError("Invalid email format"));
  * // Continues execution only if email is valid
  * ```
+ *
+ * @example
+ * ```ts
+ * // Pass a factory to avoid constructing the error on the happy path.
+ * guard(user, () => new UserNotFoundError(id));
+ * ```
  */
 export function guard<T extends string>(
   condition: unknown,
-  error: BaseError<T>,
+  error: BaseError<T> | (() => BaseError<T>),
 ): asserts condition {
   if (!condition) {
-    throw error;
+    throw typeof error === "function" ? error() : error;
   }
 }

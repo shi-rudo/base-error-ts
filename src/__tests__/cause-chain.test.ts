@@ -82,10 +82,22 @@ describe("getRootCause", () => {
     expect(getRootCause(error)).toBe(null);
   });
 
-  it("handles undefined cause", () => {
+  it("treats an explicit undefined cause as no cause (returns the error itself)", () => {
     const error = new Error("test") as ErrorWithCause;
     error.cause = undefined;
-    expect(getRootCause(error)).toBe(undefined);
+    expect(getRootCause(error)).toBe(error);
+  });
+
+  it("treats `new Error(msg, { cause: undefined })` as the root cause", () => {
+    // The options form sets an own `cause` property whose value is undefined.
+    const leaf = new Error("leaf", { cause: undefined });
+    expect("cause" in leaf).toBe(true);
+    expect(getRootCause(leaf)).toBe(leaf);
+
+    // Same when such an error sits mid-chain under a wrapper.
+    const wrapper = new Error("wrapper") as ErrorWithCause;
+    wrapper.cause = leaf;
+    expect(getRootCause(wrapper)).toBe(leaf);
   });
 
   it("handles object cause without cause property", () => {

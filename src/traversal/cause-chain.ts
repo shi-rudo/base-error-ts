@@ -138,6 +138,8 @@ export function filterCauseChain(
  * @param maxDepth - Maximum chain depth to traverse (default: 100)
  * @returns True if at least one error matches the predicate
  *
+ * @throws Error - When a circular cause chain is detected
+ *
  * @example
  * ```typescript
  * const hasRetryable = someCauseChain(
@@ -161,6 +163,8 @@ export function someCauseChain(
  * @param predicate - Function that returns true for matching errors
  * @param maxDepth - Maximum chain depth to traverse (default: 100)
  * @returns True if all errors match the predicate, or if the chain is empty
+ *
+ * @throws Error - When a circular cause chain is detected
  *
  * @example
  * ```typescript
