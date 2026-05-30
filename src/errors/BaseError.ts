@@ -31,6 +31,14 @@ export type PublicErrorOptions<TCode extends string = string> = {
   expose?: boolean;
   /** Optional correlation id for public responses. */
   traceId?: string;
+  /**
+   * Preferred locale for the client-safe message. When set and a matching
+   * user/localized message exists, it is used as the public message — these
+   * are author-provided, client-safe strings, so they surface without `expose`.
+   */
+  locale?: string;
+  /** Fallback locale used when the preferred locale has no message. */
+  fallbackLocale?: string;
 };
 
 export type PublicErrorJSON<TCode extends string = string> = {
@@ -285,8 +293,17 @@ export class BaseError<
       options.code ??
       this._publicCode ??
       (expose ? this.name : DEFAULT_PUBLIC_ERROR_CODE);
+    // Author-provided localized messages are client-safe by design, so a
+    // requested locale resolves them without needing `expose`. Only explicit
+    // locale entries are used here — the default user message is not leaked.
+    const localized =
+      (options.locale && this._localizedMessages.get(options.locale)) ||
+      (options.fallbackLocale &&
+        this._localizedMessages.get(options.fallbackLocale)) ||
+      undefined;
     const message =
       options.message ??
+      localized ??
       this._publicMessage ??
       (expose
         ? (this.getUserMessage() ?? this.message)

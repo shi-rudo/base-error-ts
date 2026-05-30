@@ -35,6 +35,24 @@ error.toProblemDetails({
 `publicCategory` projects a deliberate category. The **internal** category is
 otherwise omitted (unless you `expose`).
 
+## Localized detail {#localized-detail}
+
+If the error carries author-provided localized messages
+([`addLocalizedMessage`](./base-error#user-facing-public-messages)), pass a
+`locale` (and optional `fallbackLocale`) to use one as the `detail`. These are
+client-safe by design, so they surface **without** `expose`:
+
+```ts
+error
+  .addLocalizedMessage("de", "Diese E-Mail ist bereits registriert.")
+  .toProblemDetails({ status: 409, locale: "de" });
+// detail: "Diese E-Mail ist bereits registriert."
+```
+
+An explicit `detail` still wins; a missing locale falls back to `publicMessage`
+(never the default user message). Same `locale`/`fallbackLocale` options apply to
+`toErrorResponse()` and `toPublicJSON()`.
+
 ## Projecting details {#projecting-details}
 
 Raw `details` never cross into a client response. To surface any of them, write
