@@ -15,6 +15,8 @@ export type {
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
 export { matchError } from "./errors/match.js";
+export { defineErrors } from "./errors/catalog.js";
+export type { ErrorSpec, Catalog, CatalogError } from "./errors/catalog.js";
 
 // ────────────────────────────────────────────────────────────────
 // API Response Types

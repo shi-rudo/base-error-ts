@@ -14,15 +14,34 @@ type CaseArg<E extends StructuredError<string, string>, K extends string> = [
   ? E
   : Extract<E, { code: K }>;
 
-/** Exhaustive form: every `code` in the union must have a handler. */
-type ExhaustiveCases<E extends StructuredError<string, string>, R> = {
-  [K in E["code"]]: (error: CaseArg<E, K>) => R;
-};
+/**
+ * All handlers, each optional, plus an optional `_` catch-all. Return types are
+ * left open so the concrete handler object can drive the result type.
+ */
+type Cases<E extends StructuredError<string, string>> = {
+  [K in E["code"]]?: (error: CaseArg<E, K>) => unknown;
+} & { _?: (error: E) => unknown };
 
-/** Partial form: handle a subset, with a required `_` catch-all. */
-type PartialCases<E extends StructuredError<string, string>, R> = {
-  [K in E["code"]]?: (error: CaseArg<E, K>) => R;
-} & { _: (error: E) => R };
+/** The union of every handler's return type — the result of `matchError`. */
+type Result<C> = {
+  [K in keyof C]: C[K] extends (...args: never[]) => infer R ? R : never;
+}[keyof C];
+
+/**
+ * Exhaustiveness constraint: if no `_` catch-all is given, every `code` must
+ * have a handler. Missing codes are added as required, so an incomplete object
+ * fails to type-check.
+ */
+type Exhaustive<
+  E extends StructuredError<string, string>,
+  C,
+> = "_" extends keyof C
+  ? C
+  : [Exclude<E["code"], keyof C>] extends [never]
+    ? C
+    : C & {
+        [K in Exclude<E["code"], keyof C>]: (error: CaseArg<E, K>) => unknown;
+      };
 
 /**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
@@ -30,7 +49,8 @@ type PartialCases<E extends StructuredError<string, string>, R> = {
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
  * error types and you omit a handler, it is a **compile error** — unless you
  * provide a `_` catch-all. Each handler receives the error narrowed to its
- * case, so `details` is the precise per-code type.
+ * case, so `details` is the precise per-code type, and the return type is the
+ * union of the handler return types.
  *
  * Errors caught as `unknown` must be narrowed first (e.g. with
  * `isStructuredError`) and annotated as the expected union; exhaustiveness
@@ -47,7 +67,7 @@ type PartialCases<E extends StructuredError<string, string>, R> = {
  * const status = matchError(err, {
  *   USER_NOT_FOUND: () => 404,
  *   EMAIL_TAKEN: () => 409,
- *   RATE_LIMITED: (e) => e.details.retryAfter > 0 ? 429 : 503,
+ *   RATE_LIMITED: (e) => (e.retryable ? 429 : 503),
  * });
  * ```
  *
@@ -60,19 +80,11 @@ type PartialCases<E extends StructuredError<string, string>, R> = {
  * });
  * ```
  */
-export function matchError<E extends StructuredError<string, string>, R>(
-  error: E,
-  cases: ExhaustiveCases<E, R>,
-): R;
-export function matchError<E extends StructuredError<string, string>, R>(
-  error: E,
-  cases: PartialCases<E, R>,
-): R;
-export function matchError<E extends StructuredError<string, string>, R>(
-  error: E,
-  cases: ExhaustiveCases<E, R> | PartialCases<E, R>,
-): R {
-  const table = cases as Record<string, ((error: E) => R) | undefined>;
+export function matchError<
+  E extends StructuredError<string, string>,
+  const C extends Cases<E>,
+>(error: E, cases: Exhaustive<E, C>): Result<C> {
+  const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = table[error.code] ?? table._;
 
   if (!handler) {
@@ -81,5 +93,5 @@ export function matchError<E extends StructuredError<string, string>, R>(
     );
   }
 
-  return handler(error);
+  return handler(error) as Result<C>;
 }
