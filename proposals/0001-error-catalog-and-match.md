@@ -147,6 +147,33 @@ What the catalog buys:
 
 ---
 
+## Decision: tagged instances, not nominal classes per code
+
+`defineErrors` produces **instances of a single `StructuredError`**, with the
+literal `code` carried in the type — not a distinct class per code.
+
+Why:
+
+- It faithfully models the domain as a **tagged union / sum type**, the
+  functional-DDD representation (Wlaschin) and the modern TS norm (ts-pattern,
+  neverthrow, Effect all discriminate on a tag, not a class hierarchy).
+- Per-case narrowing in `matchError` does **not** need nominal classes: a
+  factory returning `StructuredError<"USER_NOT_FOUND", "NOT_FOUND", { userId }>`
+  already gives each union member a literal `code`, so `Extract<E, { code: K }>`
+  narrows `details` fully.
+- The only thing nominal classes would add is per-code `instanceof`, which is
+  **redundant** — `instanceof StructuredError` + `code` + `matchError` cover
+  every runtime check — while compounding the per-code-details type machinery
+  (the main implementation risk) and nudging users toward scattered,
+  non-exhaustive `instanceof` branches that defeat the purpose of `matchError`.
+- It is consistent with the stable-`_tag` decision (narrow on `code`, not on a
+  per-class tag).
+
+**Escape hatch for OO/framework interop:** anyone who genuinely needs per-code
+`instanceof` (e.g. a NestJS exception filter) can still hand-write
+`class UserNotFoundError extends StructuredError`, exactly as today. The catalog
+is the ergonomic default; manual subclasses remain the opt-out.
+
 ## How they compose
 
 ```ts
