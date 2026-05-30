@@ -41,6 +41,7 @@ export default defineConfig({
           items: [
             { text: "BaseError", link: "/guide/base-error" },
             { text: "StructuredError", link: "/guide/structured-error" },
+            { text: "Matching errors", link: "/guide/matching" },
             { text: "Cause chains", link: "/guide/cause-chains" },
           ],
         },

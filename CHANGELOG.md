@@ -23,6 +23,7 @@
 - Added `mapDetails` to `toProblemDetails()` and `toErrorResponse()` for DDD-friendly boundary mapping from raw domain/application details to public members — the only path for surfacing details to clients. It is invoked only when the error carries `details` and receives a defined `TDetails`, so callbacks never have to guard against `undefined`.
 - Added `publicCategory` to `toProblemDetails()` for projecting a deliberate, client-safe category (symmetric with `toErrorResponse()`).
 - `guard()` now also accepts an error factory (`() => BaseError`) so the error is constructed only when the assertion fails.
+- Added `matchError(error, cases)` — exhaustive, type-narrowing dispatch on a structured error's `code`. Omitting a case is a compile error unless a `_` catch-all is given; each handler receives the error narrowed to its case.
 - The public serializers (`toPublicJSON`, `toProblemDetails`, `toErrorResponse`) accept `locale` / `fallbackLocale`. When a matching author-provided localized message exists it becomes the public message — surfaced without `expose`, since these strings are client-safe by design. An explicit `message`/`detail` still wins, and missing locales fall back to `publicMessage` without leaking the default user message.
 - Added package metadata for `sideEffects`, `engines`, `packageManager`, homepage, and npm provenance.
 

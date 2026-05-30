@@ -88,9 +88,11 @@ describe("getRootCause", () => {
     expect(getRootCause(error)).toBe(error);
   });
 
-  it("treats `new Error(msg, { cause: undefined })` as the root cause", () => {
-    // The options form sets an own `cause` property whose value is undefined.
-    const leaf = new Error("leaf", { cause: undefined });
+  it("treats an own `cause` property of undefined as the root cause", () => {
+    // Equivalent to `new Error(msg, { cause: undefined })`: an own `cause`
+    // property whose value is undefined.
+    const leaf = new Error("leaf") as ErrorWithCause;
+    leaf.cause = undefined;
     expect("cause" in leaf).toBe(true);
     expect(getRootCause(leaf)).toBe(leaf);
 
