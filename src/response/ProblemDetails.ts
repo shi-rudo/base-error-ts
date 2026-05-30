@@ -119,6 +119,14 @@ export type ProblemDetailsOptions<
    */
   publicCategory?: string;
   /**
+   * Preferred locale for the `detail` message. When set and a matching
+   * localized message exists, it is used (these are author-provided, client-safe
+   * strings). An explicit `detail` still wins.
+   */
+  locale?: string;
+  /** Fallback locale used when the preferred locale has no message. */
+  fallbackLocale?: string;
+  /**
    * Per-call exposure override. When true, technical name/category/message may
    * appear in the output. Defaults to the error's own exposure setting.
    */

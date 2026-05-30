@@ -222,6 +222,8 @@ export class StructuredError<
       publicCode,
       publicCategory,
       detail,
+      locale,
+      fallbackLocale,
       extensions,
       mapDetails,
     } = options;
@@ -231,6 +233,8 @@ export class StructuredError<
       message: detail,
       expose,
       traceId,
+      locale,
+      fallbackLocale,
     });
 
     // Library-owned members, computed through the safe public projection so the
@@ -314,6 +318,13 @@ export class StructuredError<
       publicCategory?: string;
       /** Per-call public message override */
       message?: string;
+      /**
+       * Preferred locale for the public message. When set and a matching
+       * localized message exists, it is used. An explicit `message` still wins.
+       */
+      locale?: string;
+      /** Fallback locale used when the preferred locale has no message. */
+      fallbackLocale?: string;
       /** Per-call exposure override */
       expose?: boolean;
       /**
@@ -341,6 +352,8 @@ export class StructuredError<
       publicCode,
       publicCategory,
       message,
+      locale,
+      fallbackLocale,
       mapDetails,
     } = options;
     const expose = options.expose ?? this.shouldExposeToClients();
@@ -349,6 +362,8 @@ export class StructuredError<
       message,
       expose,
       traceId,
+      locale,
+      fallbackLocale,
     });
 
     return {

@@ -476,6 +476,62 @@ describe("StructuredError", () => {
     });
   });
 
+  describe("localized public messages", () => {
+    const makeError = () =>
+      new StructuredError({
+        code: "USER_NOT_FOUND",
+        category: "NOT_FOUND",
+        retryable: false,
+        message: "User 123 not found in primary db",
+        publicMessage: "The requested resource was not found.",
+      })
+        .addLocalizedMessage("en", "We couldn't find that user.")
+        .addLocalizedMessage("de", "Wir konnten diesen Benutzer nicht finden.");
+
+    it("uses the localized message in toPublicJSON without expose", () => {
+      expect(makeError().toPublicJSON({ locale: "de" }).message).toBe(
+        "Wir konnten diesen Benutzer nicht finden.",
+      );
+    });
+
+    it("surfaces the localized message as the ProblemDetails detail", () => {
+      const problem = makeError().toProblemDetails({
+        status: 404,
+        locale: "en",
+      });
+      expect(problem.detail).toBe("We couldn't find that user.");
+      // still safe: code/category are not leaked
+      expect(problem.code).toBe("INTERNAL_ERROR");
+      expect(problem.category).toBeUndefined();
+    });
+
+    it("falls back to fallbackLocale, then to publicMessage", () => {
+      // 'fr' is missing -> fallback 'en'
+      expect(
+        makeError().toProblemDetails({ locale: "fr", fallbackLocale: "en" })
+          .detail,
+      ).toBe("We couldn't find that user.");
+      // neither present -> configured publicMessage (no default-message leak)
+      expect(makeError().toProblemDetails({ locale: "fr" }).detail).toBe(
+        "The requested resource was not found.",
+      );
+    });
+
+    it("lets an explicit detail/message win over the locale", () => {
+      expect(
+        makeError().toProblemDetails({ locale: "de", detail: "Override" })
+          .detail,
+      ).toBe("Override");
+    });
+
+    it("threads locale through toErrorResponse", () => {
+      const res = makeError().toErrorResponse({ locale: "de" });
+      expect(res.error.ctx.message).toBe(
+        "Wir konnten diesen Benutzer nicht finden.",
+      );
+    });
+  });
+
   describe("toProblemDetails", () => {
     it("should convert to minimal safe ProblemDetails", () => {
       const error = new StructuredError({
