@@ -47,6 +47,20 @@ describe("matchError", () => {
     expect(status(rateLimited(30))).toBe(429);
   });
 
+  it("infers the result type from the handler return types", () => {
+    // Typed bindings — if matchError regressed to `unknown`, typecheck fails.
+    const n: number = matchError(userNotFound("1") as AppError, {
+      USER_NOT_FOUND: () => 404,
+      RATE_LIMITED: () => 429,
+    });
+    const s: string = matchError(rateLimited(1) as AppError, {
+      USER_NOT_FOUND: () => "a",
+      _: (e) => e.code,
+    });
+    expect(n).toBe(404);
+    expect(s).toBe("RATE_LIMITED");
+  });
+
   it("narrows the error to its case so per-code details are typed", () => {
     const describeError = (err: AppError) =>
       matchError(err, {
