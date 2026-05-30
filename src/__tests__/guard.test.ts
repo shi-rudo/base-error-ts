@@ -55,6 +55,23 @@ describe("invariant", () => {
     }
   });
 
+  it("should throw a lazily-constructed error from a factory when condition is false", () => {
+    expect(() => {
+      guard(false, () => new TestInvariantError("built lazily"));
+    }).toThrow("built lazily");
+  });
+
+  it("should not invoke the error factory on the happy path", () => {
+    let constructed = 0;
+    const factory = () => {
+      constructed++;
+      return new TestInvariantError("should not be built");
+    };
+
+    expect(() => guard(true, factory)).not.toThrow();
+    expect(constructed).toBe(0);
+  });
+
   it("should work with different BaseError subclasses", () => {
     const validationError = new ValidationError("email");
 
