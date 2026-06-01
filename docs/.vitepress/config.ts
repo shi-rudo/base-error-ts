@@ -44,6 +44,7 @@ export default defineConfig({
             { text: "Error catalog", link: "/guide/catalog" },
             { text: "Matching errors", link: "/guide/matching" },
             { text: "Cause chains", link: "/guide/cause-chains" },
+            { text: "Type guards & assertions", link: "/guide/guards" },
           ],
         },
         {
@@ -51,6 +52,7 @@ export default defineConfig({
           items: [
             { text: "Problem Details", link: "/guide/problem-details" },
             { text: "Error responses", link: "/guide/error-responses" },
+            { text: "Building API responses", link: "/guide/building-responses" },
             { text: "Observability & logging", link: "/guide/observability" },
           ],
         },
