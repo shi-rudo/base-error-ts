@@ -1,14 +1,11 @@
 import { StructuredError } from "./StructuredError.js";
 
 /** Fallback configuration for {@link toStructuredError}. */
-export type CoerceOptions<
-  TCode extends string = "UNKNOWN_ERROR",
-  TCategory extends string = "INTERNAL",
-> = {
+export type CoerceOptions = {
   /** Internal code for the fallback. Default: `"UNKNOWN_ERROR"`. */
-  code?: TCode;
+  code?: string;
   /** Internal category for the fallback. Default: `"INTERNAL"`. */
-  category?: TCategory;
+  category?: string;
   /** Retryable flag for the fallback. Default: `false`. */
   retryable?: boolean;
   /** Override the technical message (otherwise derived from the value). */
@@ -19,20 +16,19 @@ export type CoerceOptions<
   publicMessage?: string;
 };
 
-export function toStructuredError<
-  TCode extends string = "UNKNOWN_ERROR",
-  TCategory extends string = "INTERNAL",
->(
+export function toStructuredError(
   value: unknown,
-  options: CoerceOptions<TCode, TCategory> = {},
-): StructuredError<TCode, TCategory> {
-  // Pass-through: an existing structured error keeps its own identity.
+  options: CoerceOptions = {},
+): StructuredError<string, string> {
+  // Pass-through: an existing structured error keeps its own identity. The
+  // return type is intentionally `StructuredError<string, string>` (not the
+  // option literals) because pass-through can return any code/category.
   if (value instanceof StructuredError) {
-    return value as StructuredError<TCode, TCategory>;
+    return value;
   }
 
-  const code = (options.code ?? "UNKNOWN_ERROR") as TCode;
-  const category = (options.category ?? "INTERNAL") as TCategory;
+  const code = options.code ?? "UNKNOWN_ERROR";
+  const category = options.category ?? "INTERNAL";
   const retryable = options.retryable ?? false;
 
   let message: string;
@@ -49,7 +45,7 @@ export function toStructuredError<
     cause = value;
   }
 
-  return new StructuredError<TCode, TCategory>({
+  return new StructuredError<string, string>({
     code,
     category,
     retryable,

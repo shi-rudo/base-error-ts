@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, expectTypeOf } from "vitest";
 import { toStructuredError, StructuredError } from "../index.js";
 
 describe("toStructuredError", () => {
@@ -10,6 +10,18 @@ describe("toStructuredError", () => {
       message: "nope",
     });
     expect(toStructuredError(original)).toBe(original);
+  });
+
+  it("has an honest return type — code/category are string, not the option literal", () => {
+    // Because a pre-existing StructuredError passes through unchanged, the
+    // return type must not promise the option's literal code/category.
+    const e = toStructuredError(new Error("x"), {
+      code: "DB_ERROR",
+      category: "INFRASTRUCTURE",
+    });
+    expectTypeOf(e.code).toEqualTypeOf<string>();
+    expectTypeOf(e.category).toEqualTypeOf<string>();
+    expect(e.code).toBe("DB_ERROR"); // runtime still applies the fallback
   });
 
   it("ignores options when passing a StructuredError through", () => {
