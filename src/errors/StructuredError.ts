@@ -141,9 +141,15 @@ export class StructuredError<
    * Lenient and safe: missing fields fall back to safe defaults
    * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable); malformed input yields that
    * envelope instead of throwing; only whitelisted fields are read (no
-   * prototype pollution). The original `stack`/`timestamp` and the cause chain
-   * are restored. Reconstructed fields are **not** an authority on trust —
-   * whoever produced the payload can forge them.
+   * prototype pollution). The original `stack`/`timestamp`, the cause chain, and
+   * user/localized messages are restored. Reconstructed fields are **not** an
+   * authority on trust — whoever produced the payload can forge them.
+   *
+   * Always returns a base `StructuredError`: subclass identity and behavior are
+   * **not** restored (a `ValidationError` round-trips to a `StructuredError`,
+   * losing `publicIssues()`/`addIssue()`; its raw `details.issues` survive as
+   * data). Likewise `publicCode`/`publicMessage` are not part of the log shape,
+   * so they are not reconstructed. Narrow on `code`, not on `_tag`/instanceof.
    */
   public static fromJSON(json: unknown): StructuredError<string, string> {
     return StructuredError.#fromJSON(json, 0);
@@ -181,6 +187,21 @@ export class StructuredError<
       ...(details !== undefined && { details }),
       ...(cause !== undefined && { cause }),
     });
+
+    // Restore the author-provided messages the log shape carried.
+    if (typeof obj.userMessage === "string") {
+      error.withUserMessage(obj.userMessage);
+    }
+    if (
+      obj.localizedMessages !== null &&
+      typeof obj.localizedMessages === "object"
+    ) {
+      for (const [lang, msg] of Object.entries(obj.localizedMessages)) {
+        if (typeof msg === "string") {
+          error.updateLocalizedMessage(lang, msg);
+        }
+      }
+    }
 
     // Rehydrate the original identity rather than the freshly generated values.
     StructuredError.#rehydrate(error, "stack", obj.stack, "string");

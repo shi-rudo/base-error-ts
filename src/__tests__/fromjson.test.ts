@@ -3,6 +3,21 @@ import { StructuredError, matchError } from "../index.js";
 
 describe("StructuredError.fromJSON", () => {
   describe("round-trip", () => {
+    it("restores user and localized messages", () => {
+      const e = new StructuredError({
+        code: "USER_NOT_FOUND",
+        category: "NOT_FOUND",
+        retryable: false,
+        message: "tech detail",
+      })
+        .withUserMessage("We couldn't find it.")
+        .addLocalizedMessage("de", "Nicht gefunden.");
+
+      const r = StructuredError.fromJSON(e.toJSON());
+      expect(r.getUserMessage()).toBe("We couldn't find it.");
+      expect(r.getUserMessage({ preferredLang: "de" })).toBe("Nicht gefunden.");
+    });
+
     it("reproduces an equivalent StructuredError from toJSON()", () => {
       const original = new StructuredError({
         code: "USER_NOT_FOUND",
