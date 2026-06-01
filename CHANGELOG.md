@@ -35,7 +35,7 @@
 - Added `toStructuredError(value, options?)` — coerces any caught value into a `StructuredError` (a consistent boundary envelope; a `StructuredError` passes through, other `Error`s are preserved as `cause`). Honest defaults (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable) and an optional second parameter so it fits the `errorMapper` slot of `@shirudo/result`.
 - Added `defineErrors(catalog)` — a declarative error catalog that generates a typed factory per `code` (with `category`, `retryable` and the public mapping baked in) plus a `meta(code)` accessor for boundary metadata such as `httpStatus`. Exposes the `ErrorSpec`, `Catalog` and `CatalogError` types; `CatalogError<typeof catalog>` is the closed union to pass to `matchError`.
 - The public serializers (`toPublicJSON`, `toProblemDetails`, `toErrorResponse`) accept `locale` / `fallbackLocale`. When a matching author-provided localized message exists it becomes the public message — surfaced without `expose`, since these strings are client-safe by design. An explicit `message`/`detail` still wins, and missing locales fall back to `publicMessage` without leaking the default user message.
-- Added package metadata for `sideEffects`, `engines`, `packageManager`, homepage, and npm provenance.
+- Added package metadata for `sideEffects`, `engines`, `packageManager`, and homepage.
 
 ### Fixed
 
