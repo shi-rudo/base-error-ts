@@ -202,6 +202,77 @@ describe("log redaction", () => {
     });
   });
 
+  describe("walker correctness (review #1, #2)", () => {
+    it("redactAllow masks non-allowed data in a plain-object cause (no leak outside details)", () => {
+      const err = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: { apiKey: "SECRET123", id: "keep-me" },
+      }).redactAllow(["id"]);
+
+      const cause = err.toLogObject().cause as Record<string, unknown>;
+      expect(cause.apiKey).toBe("[REDACTED]");
+      expect(cause.id).toBe("keep-me");
+    });
+
+    it("redactAllow still keeps a structured cause's envelope and masks its details", () => {
+      const inner = new StructuredError({
+        code: "DB",
+        category: "I",
+        retryable: true,
+        message: "rejected",
+        details: { ssn: "999", keep: "ok" },
+      });
+      const err = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: inner,
+      }).redactAllow(["keep"]);
+
+      const cause = err.toLogObject().cause as Record<string, unknown>;
+      expect(cause.code).toBe("DB"); // structured envelope of the cause survives
+      expect(cause.message).toBe("rejected");
+      const d = cause.details as Record<string, unknown>;
+      expect(d.ssn).toBe("[REDACTED]");
+      expect(d.keep).toBe("ok");
+    });
+
+    it("redact preserves non-plain detail values (Date/Set) instead of collapsing to {}", () => {
+      const when = new Date("2020-01-01T00:00:00.000Z");
+      const err = new StructuredError({
+        code: "D",
+        category: "Z",
+        retryable: false,
+        message: "m",
+        details: { when, tags: new Set(["a"]), userId: "1" },
+      }).redact(["password"]); // non-matching key
+
+      const d = err.toLogObject().details as Record<string, unknown>;
+      expect(d.when).toBe(when); // not rebuilt into {}
+      expect(d.tags).toBeInstanceOf(Set);
+      expect(d.userId).toBe("1");
+    });
+
+    it("redactAllow masks a non-allowed non-plain detail value without collapsing allowed ones", () => {
+      const when = new Date("2020-01-01T00:00:00.000Z");
+      const err = new StructuredError({
+        code: "D",
+        category: "Z",
+        retryable: false,
+        message: "m",
+        details: { when, kept: new Date("2021-01-01T00:00:00.000Z") },
+      }).redactAllow(["kept"]);
+
+      const d = err.toLogObject().details as Record<string, unknown>;
+      expect(d.when).toBe("[REDACTED]"); // not allowed -> masked
+      expect(d.kept).toBeInstanceOf(Date); // allowed -> preserved, not collapsed
+    });
+  });
+
   describe("fail-closed on a throwing redactor", () => {
     it("does not crash the log path and does not leak the payload", () => {
       const err = makeError().redactWith(() => {
@@ -215,6 +286,21 @@ describe("log redaction", () => {
       expect(log).not.toHaveProperty("details");
       expect(JSON.stringify(log)).not.toContain("123-45-6789");
       expect(log.message).toBe("[log redaction failed]");
+    });
+
+    it("keeps non-sensitive triage fields in the fail-closed marker", () => {
+      const err = makeError().redactWith(() => {
+        throw new Error("redactor bug");
+      });
+      const log = err.toLogObject();
+      // structural, non-sensitive fields survive for triage
+      expect(log.code).toBe("USER_UPDATE_FAILED");
+      expect(log.category).toBe("PERSISTENCE");
+      expect(log.retryable).toBe(false);
+      expect(log.timestamp).toBeTypeOf("number");
+      // but the unredacted message/details never appear
+      expect(log.message).toBe("[log redaction failed]");
+      expect(log).not.toHaveProperty("details");
     });
   });
 });
