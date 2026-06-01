@@ -42,6 +42,7 @@ export default defineConfig({
             { text: "BaseError", link: "/guide/base-error" },
             { text: "StructuredError", link: "/guide/structured-error" },
             { text: "Error catalog", link: "/guide/catalog" },
+            { text: "Validation errors", link: "/guide/validation" },
             { text: "Matching errors", link: "/guide/matching" },
             { text: "Cause chains", link: "/guide/cause-chains" },
             { text: "Type guards & assertions", link: "/guide/guards" },

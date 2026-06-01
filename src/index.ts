@@ -19,6 +19,13 @@ export { defineErrors } from "./errors/catalog.js";
 export type { ErrorSpec, Catalog, CatalogError } from "./errors/catalog.js";
 export { toStructuredError } from "./errors/coerce.js";
 export type { CoerceOptions } from "./errors/coerce.js";
+export { ValidationError } from "./errors/validation.js";
+export type {
+  ValidationIssue,
+  PublicIssue,
+  ValidationErrorOptions,
+  PublicIssuesOptions,
+} from "./errors/validation.js";
 
 // ────────────────────────────────────────────────────────────────
 // API Response Types
