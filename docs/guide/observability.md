@@ -81,7 +81,13 @@ err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTE
 JSON.stringify(err);       // also masked
 ```
 
-The mask is configurable (`redact(["ssn"], { mask: "******" })`).
+The mask is configurable — a string, or a **function** of `(value, key)` for
+partial masking or type preservation:
+
+```ts
+err.redact(["card"], { mask: (v) => "****" + String(v).slice(-4) }); // ****6789
+err.redact(["age"], { mask: () => 0 });                              // keep the type
+```
 
 ### Allow-list (higher assurance)
 
@@ -105,6 +111,16 @@ or a string detail value. For those, use the function form:
 
 ```ts
 err.redactWith((log) => ({ ...log, message: scrub(log.message as string) }));
+```
+
+`redactWith` is also the composition seam for a **dedicated redaction library**
+when you need patterns, wildcards or regex-based PII detection — this library
+intentionally stays minimal and delegates that power:
+
+```ts
+import { redact as deepRedact } from "@visulima/redact";
+
+err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 ```
 
 ### Notes
