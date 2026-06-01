@@ -96,8 +96,8 @@ Honest defaults: `code` `"UNKNOWN_ERROR"`, `category` `"INTERNAL"`, `retryable`
 not fabricate domain semantics, and you should rethrow genuine programmer bugs
 (`TypeError`/`RangeError`/assertions) rather than wrap them.
 
-Because its second parameter is optional, it fits the `errorMapper` slot of
-[`@shirudo/result`](https://github.com/shi-rudo/result-ts) directly:
+Because its second parameter is optional, it slots directly into the
+error-mapper position of a `Result` type's `fromThrowable`-style constructor:
 
 ```ts
 const r = Result.fromThrowable(() => JSON.parse(input), toStructuredError);
