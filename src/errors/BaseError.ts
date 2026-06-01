@@ -114,6 +114,7 @@ export class BaseError<
   private _publicCode?: TPublicCode;
   private _publicMessage?: string;
   private _expose = false;
+  #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
 
   /**
    * Creates a new BaseError instance with automatic name inference.
@@ -225,6 +226,53 @@ export class BaseError<
   }
 
   /**
+   * Redacts the given keys (deep, at any depth) from the **log** output
+   * (`toLogObject`/`toJSON`). Sticky on the instance, so it also applies when a
+   * logger auto-serializes the error via `JSON.stringify`. Does not affect the
+   * client serializers, which are already safe by default.
+   *
+   * @param keys - Property names to mask wherever they appear in the log object.
+   * @param options - `mask` defaults to `"[REDACTED]"`.
+   */
+  public redact(keys: string[], options?: { mask?: string }): this {
+    const mask = options?.mask ?? "[REDACTED]";
+    const keySet = new Set(keys);
+    this.#redactor = (log) =>
+      BaseError.#maskKeys(log, keySet, mask) as Record<string, unknown>;
+    return this;
+  }
+
+  /**
+   * Sets a custom redactor applied to the full log object — use for allow-lists
+   * or scrubbing the technical `message`. Sticky; the last redactor wins.
+   */
+  public redactWith(
+    redactor: (log: Record<string, unknown>) => Record<string, unknown>,
+  ): this {
+    this.#redactor = redactor;
+    return this;
+  }
+
+  /** Deep-clones `value`, masking the value of any key in `keys` at any depth. */
+  /*#__PURE__*/ static #maskKeys(
+    value: unknown,
+    keys: Set<string>,
+    mask: string,
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) => BaseError.#maskKeys(item, keys, mask));
+    }
+    if (value !== null && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value)) {
+        out[key] = keys.has(key) ? mask : BaseError.#maskKeys(val, keys, mask);
+      }
+      return out;
+    }
+    return value;
+  }
+
+  /**
    * Retrieves the most appropriate user-friendly message based on language preference.
    * The fallback order is: preferred language -> fallback language -> default message.
    * @param options - Language preference options.
@@ -250,8 +298,12 @@ export class BaseError<
     return this._defaultUserMessage;
   }
 
-  /** Serialises the error for logs. Includes technical message, stack and cause. */
-  public toLogObject(): Record<string, unknown> {
+  /**
+   * Assembles the raw log object (no redaction). Subclasses override this to
+   * add their own fields; the public {@link toLogObject} applies redaction to
+   * the complete assembled object.
+   */
+  protected buildLogObject(): Record<string, unknown> {
     const { name, message, timestamp, timestampIso, stack } = this;
     const cause = (this as unknown as Record<string, unknown>).cause;
 
@@ -273,6 +325,15 @@ export class BaseError<
     }
 
     return json;
+  }
+
+  /**
+   * Serialises the error for logs. Includes technical message, stack and cause,
+   * with the instance redactor applied (see {@link redact} / {@link redactWith}).
+   */
+  public toLogObject(): Record<string, unknown> {
+    const raw = this.buildLogObject();
+    return this.#redactor ? this.#redactor(raw) : raw;
   }
 
   /** Backwards-compatible JSON serialization for logging-oriented consumers. */

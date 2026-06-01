@@ -252,11 +252,12 @@ export class StructuredError<
   }
 
   /**
-   * Serializes the error for logs, including all structured metadata.
-   * Extends BaseError's log object with code, category, retryable, and details.
+   * Extends BaseError's raw log object with code, category, retryable, and
+   * details. Redaction (if configured) is applied by the inherited
+   * {@link toLogObject} to the complete assembled object.
    */
-  public override toLogObject(): Record<string, unknown> {
-    const baseJson = super.toLogObject();
+  protected override buildLogObject(): Record<string, unknown> {
+    const baseJson = super.buildLogObject();
 
     return {
       ...baseJson,
@@ -265,11 +266,6 @@ export class StructuredError<
       retryable: this.retryable,
       ...(this.details !== undefined && { details: this.details }),
     };
-  }
-
-  /** Backwards-compatible JSON serialization for logging-oriented consumers. */
-  public override toJSON(): Record<string, unknown> {
-    return this.toLogObject();
   }
 
   public override toPublicJSON(

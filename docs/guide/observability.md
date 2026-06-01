@@ -61,6 +61,43 @@ The log carries the constraint name and cause chain; the HTTP response carries
 only `EMAIL_ALREADY_REGISTERED` and a safe message. Same error, two audiences,
 no leak.
 
+## Redacting PII from logs
+
+In regulated contexts the logs themselves must scrub PII — `details.ssn`
+shouldn't reach the sink in plaintext. `redact` configures a **sticky**
+deny-list on the error, so even the auto-serialize path (`JSON.stringify(error)`
+that a logger does) is masked:
+
+```ts
+const err = new StructuredError({
+  code: "USER_UPDATE_FAILED",
+  category: "PERSISTENCE",
+  retryable: false,
+  message: "update failed",
+  details: { userId: "1", email: "a@b.com", ssn: "123-45-6789" },
+}).redact(["email", "ssn"]); // deep; default mask "[REDACTED]"
+
+err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTED]" }
+JSON.stringify(err);       // also masked
+```
+
+The mask is configurable (`redact(["ssn"], { mask: "******" })`). For an
+**allow-list** or to scrub the technical `message`, use the function form:
+
+```ts
+err.redactWith((log) => ({
+  ...log,
+  message: scrub(log.message as string),
+  details: { userId: (log.details as Record<string, unknown>).userId },
+}));
+```
+
+Redaction applies to the **log path only** — the client serializers are already
+safe by default. It is **defense-in-depth at the source**, not a replacement for
+logger-level redaction (pino `redact`, winston formatters); for blanket app-wide
+policy, prefer the logger. Deny-lists are best-effort — use `redactWith` with an
+allow-list for high-sensitivity data.
+
 ## Sentry / OpenTelemetry
 
 Pass `toLogObject()` (or the error itself) to your reporter. Because the cause
