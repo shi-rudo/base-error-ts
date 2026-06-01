@@ -83,6 +83,14 @@ describe("defineErrors", () => {
     expect(AppErrors.meta("USER_NOT_FOUND").httpStatus).toBe(404);
   });
 
+  it("returns a copy whose nested details cannot poison the catalog", () => {
+    const row = AppErrors.meta("USER_NOT_FOUND");
+    (row.details as Record<string, unknown>).injected = "x";
+    expect(AppErrors.meta("USER_NOT_FOUND").details).not.toHaveProperty(
+      "injected",
+    );
+  });
+
   it("resolves the boundary status from the catalog", () => {
     const err = AppErrors.USER_NOT_FOUND("x", { details: { userId: "1" } });
     const problem = err.toProblemDetails({

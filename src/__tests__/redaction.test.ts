@@ -273,6 +273,147 @@ describe("log redaction", () => {
     });
   });
 
+  describe("walker depth + cause regions (review-2 #1/#2)", () => {
+    class Session {
+      userId = "u1";
+      password = "hunter2";
+    }
+
+    it("redact masks a denied key nested inside a class instance (deny-list reaches non-plain objects)", () => {
+      const err = new StructuredError({
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        details: { session: new Session() },
+      }).redact(["password"]);
+
+      const session = (err.toLogObject().details as { session: Session })
+        .session;
+      expect(session.password).toBe("[REDACTED]");
+      expect(session.userId).toBe("u1"); // non-denied sibling survives
+    });
+
+    it("redactAllow descends into a class instance, keeping allowed leaves and masking the rest", () => {
+      const err = new StructuredError({
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        details: { session: new Session() },
+      }).redactAllow(["userId"]);
+
+      const session = (err.toLogObject().details as { session: Session })
+        .session;
+      expect(session.userId).toBe("u1"); // allowed leaf kept
+      expect(session.password).toBe("[REDACTED]"); // not allowed → masked
+    });
+
+    it("redactAllow masks foreign fields in a cause that mimics the structured shape", () => {
+      const err = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: { code: "E", category: "a", retryable: false, secret: "SHHH" },
+      }).redactAllow(["id"]);
+
+      const cause = err.toLogObject().cause as Record<string, unknown>;
+      expect(cause.secret).toBe("[REDACTED]"); // foreign sibling masked (no bypass)
+      expect(cause.code).toBe("E"); // structural envelope kept
+      expect(cause.category).toBe("a");
+      expect(cause.retryable).toBe(false);
+    });
+
+    it("redactAllow masks an envelope-named key nested inside a foreign cause field (no at-any-depth keep)", () => {
+      const err = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: {
+          code: "E",
+          category: "a",
+          retryable: false,
+          meta: { message: "SECRET-PII", token: "t" },
+        },
+      }).redactAllow([]);
+
+      const cause = err.toLogObject().cause as Record<string, unknown>;
+      expect(cause.code).toBe("E"); // cause-top envelope kept
+      const meta = cause.meta as Record<string, unknown>;
+      expect(meta.message).toBe("[REDACTED]"); // nested foreign data, NOT envelope
+      expect(meta.token).toBe("[REDACTED]");
+    });
+
+    it("redactAllow masks envelope-named keys inside an array under a foreign cause field", () => {
+      const err = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: {
+          code: "E",
+          category: "a",
+          retryable: false,
+          items: [{ code: "S1" }],
+        },
+      }).redactAllow([]);
+
+      const cause = err.toLogObject().cause as Record<string, unknown>;
+      const items = cause.items as Array<Record<string, unknown>>;
+      expect(items[0]?.code).toBe("[REDACTED]"); // data in array, not cause-top envelope
+    });
+
+    it("redactAllow keeps an absent cause as undefined instead of masking it", () => {
+      // makeError() has no cause → buildLogObject emits cause: undefined.
+      const log = makeError().redactAllow(["userId"]).toLogObject();
+      expect(log.cause).toBeUndefined(); // structural slot, not "[REDACTED]"
+    });
+
+    it("redactAllow keeps the top-level structural envelope regardless of region-transition keys", () => {
+      const log = makeError().redactAllow([]).toLogObject();
+      expect(log.code).toBe("USER_UPDATE_FAILED");
+      expect(log.message).toBe("update failed");
+      expect(log.cause).toBeUndefined();
+    });
+
+    it("redactAllow preserves an empty plain object in details instead of masking it to a string", () => {
+      const err = new StructuredError({
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        details: { userId: "1", profile: {} },
+      }).redactAllow(["userId"]);
+
+      const details = err.toLogObject().details as Record<string, unknown>;
+      expect(details.profile).toEqual({}); // kept as {}, not "[REDACTED]"
+    });
+
+    it("redactAllow treats structured and non-structured causes consistently (both keep envelope, mask foreign data)", () => {
+      const structuredCauseSecret = new StructuredError({
+        code: "DB",
+        category: "I",
+        retryable: true,
+        message: "rejected",
+        details: { ssn: "999" },
+      });
+      const err = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "wrap",
+        cause: structuredCauseSecret,
+      }).redactAllow([]);
+
+      const cause = err.toLogObject().cause as Record<string, unknown>;
+      expect(cause.code).toBe("DB"); // envelope kept
+      expect(cause.message).toBe("rejected"); // envelope kept
+      expect((cause.details as Record<string, unknown>).ssn).toBe("[REDACTED]"); // data masked
+    });
+  });
+
   describe("fail-closed on a throwing redactor", () => {
     it("does not crash the log path and does not leak the payload", () => {
       const err = makeError().redactWith(() => {

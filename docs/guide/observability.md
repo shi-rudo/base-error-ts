@@ -1,6 +1,6 @@
 # Observability & logging
 
-The strictness of the client-facing path exists *because* there is a separate,
+The strictness of the client-facing path exists _because_ there is a separate,
 full-fidelity path for your backend. Logs, Sentry and APM should see everything;
 clients should not. The library keeps these apart so you never have to choose.
 
@@ -53,7 +53,9 @@ try {
   logger.error(error.toLogObject());
 
   // 2. Safe projection → client
-  return Response.json(error.toProblemDetails({ status: 409 }), { status: 409 });
+  return Response.json(error.toProblemDetails({ status: 409 }), {
+    status: 409,
+  });
 }
 ```
 
@@ -78,7 +80,7 @@ const err = new StructuredError({
 }).redact(["email", "ssn"]); // deep; default mask "[REDACTED]"
 
 err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTED]" }
-JSON.stringify(err);       // also masked
+JSON.stringify(err); // also masked
 ```
 
 The mask is configurable — a string, or a **function** of `(value, key)` for
@@ -86,10 +88,10 @@ partial masking or type preservation:
 
 ```ts
 err.redact(["card"], { mask: (v) => "****" + String(v).slice(-4) }); // ****6789
-err.redact(["age"], { mask: () => 0 });                              // keep the type
+err.redact(["age"], { mask: () => 0 }); // keep the type
 ```
 
-For the common "show *which* secret it was without exposing it" case, use the
+For the common "show _which_ secret it was without exposing it" case, use the
 built-in `partialMask` — it reveals a prefix/suffix and masks the rest, and
 **fully** masks values too short to reveal safely (and non-strings):
 
@@ -111,11 +113,14 @@ leaf **except** the listed ones, so new fields leak nothing by default:
 err.redactAllow(["userId", "requestId"]); // only these detail leaves survive
 ```
 
-It masks leaf field names inside any data payload — `details`, nested cause
-`details`, and a plain-object (non-structured) cause — so data outside `details`
-can't slip through. The structural envelope (`message`/`code`/…) and structured
-causes' envelopes are untouched. (The technical `message` is structural here;
-scrub free text in it with `redactWith`.)
+It masks every leaf inside any **data** region — a `details` subtree (at any
+depth) and a cause's data fields — so data can't slip through wherever it sits.
+The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
+structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`);
+but **any other field on a cause is data** and is masked, so a plain object that
+merely _resembles_ a structured error can't smuggle siblings through. The
+classification is by position, not by shape — there is nothing to spoof. (The
+technical `message` is structural here; scrub free text in it with `redactWith`.)
 
 ### What key redaction can't do
 
@@ -146,7 +151,7 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 - **Fail-closed**: if a redactor throws, `toLogObject()` does not crash the
   logging path and does not emit the unredacted payload. It keeps only the
   non-sensitive structural fields (`name`/`code`/`category`/`retryable`/
-  timestamps/`traceId`) plus a `[log redaction failed]` marker.
+  timestamps) plus a `[log redaction failed]` marker.
 
 ## Sentry / OpenTelemetry
 
@@ -186,7 +191,7 @@ restored**. A `ValidationError` round-trips to a `StructuredError` (losing
 on `code`, not on `_tag`/`instanceof`.
 
 ::: warning Across services, translate — don't trust
-`fromJSON` rebuilds *shape*, not authority: whoever produced the payload can
+`fromJSON` rebuilds _shape_, not authority: whoever produced the payload can
 forge `code`/`retryable`. Don't use reconstructed fields for authorization, and
 don't `matchError` on another service's codes as if they were yours —
 reconstruct, then translate through an Anti-Corruption Layer into your own

@@ -1,4 +1,5 @@
 import { StructuredError } from "./StructuredError.js";
+import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 
 /** Fallback configuration for {@link toStructuredError}. */
 export type CoerceOptions = {
@@ -27,9 +28,9 @@ export function toStructuredError(
     return value;
   }
 
-  const code = options.code ?? "UNKNOWN_ERROR";
-  const category = options.category ?? "INTERNAL";
-  const retryable = options.retryable ?? false;
+  const code = options.code ?? UNKNOWN_ERROR_DEFAULTS.code;
+  const category = options.category ?? UNKNOWN_ERROR_DEFAULTS.category;
+  const retryable = options.retryable ?? UNKNOWN_ERROR_DEFAULTS.retryable;
 
   let message: string;
   let cause: unknown;
@@ -40,7 +41,7 @@ export function toStructuredError(
     message = options.message ?? value;
     cause = undefined;
   } else {
-    message = options.message ?? "Unknown error";
+    message = options.message ?? UNKNOWN_ERROR_DEFAULTS.message;
     // Preserve the raw value (object/number/null) for observability.
     cause = value;
   }

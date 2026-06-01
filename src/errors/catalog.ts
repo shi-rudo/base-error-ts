@@ -137,8 +137,14 @@ export function defineErrors<const T extends Record<string, ErrorSpec>>(
     if (!Object.prototype.hasOwnProperty.call(catalog, code)) {
       throw new Error(`meta: unknown error code "${code}"`);
     }
-    // Return a copy so callers cannot mutate the catalog's stored spec.
-    return { ...(catalog[code] as ErrorSpec) };
+    // Return a copy so callers cannot mutate the catalog's stored spec. The
+    // `details` marker is copied one level too (its runtime value is a flat
+    // type marker, typically `{}`), so a caller can't poison it via meta().
+    const spec = catalog[code] as ErrorSpec;
+    return {
+      ...spec,
+      ...(spec.details !== undefined && { details: { ...spec.details } }),
+    };
   };
 
   return api as Catalog<T>;
