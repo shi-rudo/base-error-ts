@@ -45,8 +45,9 @@ a subclass as before.
 
 ## The boundary metadata
 
-`meta(code)` returns the static spec row, so the boundary resolves status from
-the catalog instead of guessing it:
+`meta(code)` returns a copy of the static spec row, so the boundary resolves
+status from the catalog instead of guessing it (`code` is typed to the catalog's
+keys; an unknown code throws a clear error rather than returning `undefined`):
 
 ```ts
 const problem = err.toProblemDetails({
