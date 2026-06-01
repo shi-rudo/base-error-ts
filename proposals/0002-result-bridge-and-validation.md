@@ -131,21 +131,27 @@ Collect multiple field failures into one error and emit RFC 9457 `errors[]`.
 import { ValidationError } from "@shirudo/base-error";
 
 const v = new ValidationError("Registration is invalid");
-if (!isEmail(email)) v.addIssue({ path: "email", message: "Enter a valid email." });
-if (age < 18) v.addIssue({ path: "age", message: "Must be 18 or older.", code: "TOO_YOUNG" });
+if (!isEmail(email)) v.addIssue({ message: "Enter a valid email.", path: ["email"] });
+if (age < 18) v.addIssue({ message: "Must be 18 or older.", path: ["age"] });
 if (v.hasIssues()) throw v;
+
+// Or pipe a validator's issues straight in (Standard Schema):
+const result = schema["~standard"].validate(input);
+if (result.issues) throw new ValidationError("Invalid input", { issues: result.issues });
 ```
 
 ### Types & API
 
 ```ts
+// Structurally identical to Standard Schema's `Issue` (standardschema.dev), so
+// validator output from Zod / Valibot / ArkType / TanStack Form pipes straight
+// in with no remapping — and with no dependency (the shape is matched, not
+// imported). Extra fields a validator attaches ride along at runtime.
 export type ValidationIssue = {
-  /** Field / JSON-pointer-ish path the issue applies to. */
-  path?: string;
   /** Human-readable, client-safe message. */
-  message: string;
-  /** Optional machine-readable issue code. */
-  code?: string;
+  readonly message: string;
+  /** Path to the offending value (Standard Schema form). */
+  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
 };
 
 export class ValidationError extends StructuredError<
@@ -186,11 +192,15 @@ v.toProblemDetails({ status: 422 });
 //   code: "INTERNAL_ERROR",          // still safe-by-default for code
 //   retryable: false,
 //   errors: [
-//     { path: "email", message: "Enter a valid email." },
-//     { path: "age", message: "Must be 18 or older.", code: "TOO_YOUNG" },
+//     { message: "Enter a valid email.", path: ["email"] },
+//     { message: "Must be 18 or older.", path: ["age"] },
 //   ],
 // }
 ```
+
+Optionally each emitted issue can also carry a derived string `pointer`
+(e.g. `"address.zip"`) alongside the canonical Standard Schema `path` array, for
+HTTP clients that prefer a string key. Canonical form stays `path`.
 
 This is a **deliberate, documented exception** to "details never cross": the
 issues are author-written, client-safe strings (the same reasoning that lets
@@ -226,8 +236,9 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 - **Subclass vs standalone:** subclassing `StructuredError` (proposed) keeps it
   in the ecosystem (`instanceof StructuredError`, `code`, catalog, match). A
   standalone `AggregateError`-style type would lose that. Recommend subclass.
-- **Issue shape:** `path`/`message`/`code` (proposed) vs richer (severity,
-  value). Keep minimal in v1.
+- **Issue shape:** matched to Standard Schema's `Issue` (`message` + `path`),
+  so Zod / Valibot / ArkType / TanStack Form output pipes in unchanged and the
+  type stays dependency-free. Resolved.
 - **`toErrorResponse` parity:** should the aggregate also surface issues in
   `toErrorResponse`'s `details`? Likely yes via the same projection.
 
