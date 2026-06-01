@@ -118,4 +118,62 @@ describe("log redaction", () => {
     const log = makeError().toLogObject();
     expect((log.details as Record<string, unknown>).ssn).toBe("123-45-6789");
   });
+
+  describe("redactAllow (allow-list)", () => {
+    it("keeps only allowed detail leaves and masks the rest (deep)", () => {
+      const log = makeError().redactAllow(["userId", "phone"]).toLogObject();
+      const details = log.details as Record<string, unknown>;
+      expect(details.userId).toBe("1"); // allowed leaf kept
+      expect(details.email).toBe("[REDACTED]"); // not allowed → masked
+      expect(details.ssn).toBe("[REDACTED]");
+      expect((details.profile as Record<string, unknown>).phone).toBe(
+        "555-0100",
+      ); // nested allowed leaf kept
+    });
+
+    it("does not touch the envelope (message/code/category survive)", () => {
+      const log = makeError().redactAllow(["userId"]).toLogObject();
+      expect(log.message).toBe("update failed");
+      expect(log.code).toBe("USER_UPDATE_FAILED");
+      expect(log.category).toBe("PERSISTENCE");
+    });
+
+    it("honors a custom mask and applies inside cause details", () => {
+      const inner = new StructuredError({
+        code: "DB",
+        category: "I",
+        retryable: true,
+        message: "x",
+        details: { ssn: "9", keep: "ok" },
+      });
+      const outer = new StructuredError({
+        code: "O",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: inner,
+      }).redactAllow(["keep"], { mask: "•" });
+      const causeDetails = (
+        outer.toLogObject().cause as { details: Record<string, unknown> }
+      ).details;
+      expect(causeDetails.keep).toBe("ok");
+      expect(causeDetails.ssn).toBe("•");
+    });
+  });
+
+  describe("fail-closed on a throwing redactor", () => {
+    it("does not crash the log path and does not leak the payload", () => {
+      const err = makeError().redactWith(() => {
+        throw new Error("redactor bug");
+      });
+      let log!: Record<string, unknown>;
+      expect(() => {
+        log = err.toLogObject();
+      }).not.toThrow();
+      // fail-closed: no details payload, just a safe marker
+      expect(log).not.toHaveProperty("details");
+      expect(JSON.stringify(log)).not.toContain("123-45-6789");
+      expect(log.message).toBe("[log redaction failed]");
+    });
+  });
 });

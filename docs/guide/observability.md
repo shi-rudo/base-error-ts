@@ -81,22 +81,41 @@ err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTE
 JSON.stringify(err);       // also masked
 ```
 
-The mask is configurable (`redact(["ssn"], { mask: "******" })`). For an
-**allow-list** or to scrub the technical `message`, use the function form:
+The mask is configurable (`redact(["ssn"], { mask: "******" })`).
+
+### Allow-list (higher assurance)
+
+A deny-list is the conventional choice (it matches pino's `redact`), but you
+can't enumerate every PII field — a newly-added `details.passportNumber` would
+leak. For high-sensitivity data use `redactAllow`, which masks every `details`
+leaf **except** the listed ones, so new fields leak nothing by default:
 
 ```ts
-err.redactWith((log) => ({
-  ...log,
-  message: scrub(log.message as string),
-  details: { userId: (log.details as Record<string, unknown>).userId },
-}));
+err.redactAllow(["userId", "requestId"]); // only these detail leaves survive
 ```
 
-Redaction applies to the **log path only** — the client serializers are already
-safe by default. It is **defense-in-depth at the source**, not a replacement for
-logger-level redaction (pino `redact`, winston formatters); for blanket app-wide
-policy, prefer the logger. Deny-lists are best-effort — use `redactWith` with an
-allow-list for high-sensitivity data.
+It operates on leaf field names within `details` (and nested cause details);
+the envelope (`message`/`code`/…) is untouched.
+
+### What key redaction can't do
+
+Key-based redaction masks the **value at a key** — it cannot catch PII embedded
+in free text, e.g. inside the technical `message` (`"user a@b.com not found"`)
+or a string detail value. For those, use the function form:
+
+```ts
+err.redactWith((log) => ({ ...log, message: scrub(log.message as string) }));
+```
+
+### Notes
+
+- **Log path only** — the client serializers are already safe by default.
+- **Defense-in-depth at the source**, not a replacement for logger-level
+  redaction (pino `redact`, winston formatters); for blanket app-wide policy,
+  prefer the logger.
+- **Fail-closed**: if a redactor throws, `toLogObject()` does not crash the
+  logging path and does not emit the unredacted payload — it returns a safe
+  `{ name, message: "[log redaction failed]" }` marker instead.
 
 ## Sentry / OpenTelemetry
 

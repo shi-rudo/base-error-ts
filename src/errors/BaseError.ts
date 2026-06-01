@@ -243,6 +243,59 @@ export class BaseError<
   }
 
   /**
+   * Allow-list redaction (higher assurance than {@link redact}): within
+   * `details` (and nested cause details), masks every leaf whose key is **not**
+   * listed — so a newly-added field leaks nothing by default. Container objects
+   * are recursed; the log envelope (`message`/`code`/…) is untouched. Sticky;
+   * last redactor wins.
+   *
+   * @param keys - Detail leaf keys allowed to survive in the log.
+   * @param options - `mask` defaults to `"[REDACTED]"`.
+   */
+  public redactAllow(keys: string[], options?: { mask?: string }): this {
+    const mask = options?.mask ?? "[REDACTED]";
+    const allow = new Set(keys);
+    this.#redactor = (log) =>
+      BaseError.#maskExcept(log, allow, mask, false) as Record<string, unknown>;
+    return this;
+  }
+
+  /**
+   * Deep-clones `value`, masking every leaf inside a `details` subtree whose key
+   * is not in `allow`. Container objects are recursed; the envelope is untouched.
+   */
+  /*#__PURE__*/ static #maskExcept(
+    value: unknown,
+    allow: Set<string>,
+    mask: string,
+    inside: boolean,
+  ): unknown {
+    if (Array.isArray(value)) {
+      return value.map((item) =>
+        BaseError.#maskExcept(item, allow, mask, inside),
+      );
+    }
+    if (value !== null && typeof value === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [key, val] of Object.entries(value)) {
+        const isLeaf = val === null || typeof val !== "object";
+        if (inside && isLeaf) {
+          out[key] = allow.has(key) ? val : mask;
+        } else {
+          out[key] = BaseError.#maskExcept(
+            val,
+            allow,
+            mask,
+            inside || key === "details",
+          );
+        }
+      }
+      return out;
+    }
+    return value;
+  }
+
+  /**
    * Sets a custom redactor applied to the full log object — use for allow-lists
    * or scrubbing the technical `message`. Sticky; the last redactor wins.
    */
@@ -333,7 +386,16 @@ export class BaseError<
    */
   public toLogObject(): Record<string, unknown> {
     const raw = this.buildLogObject();
-    return this.#redactor ? this.#redactor(raw) : raw;
+    if (!this.#redactor) {
+      return raw;
+    }
+    try {
+      return this.#redactor(raw);
+    } catch {
+      // Fail-closed: a broken redactor must neither crash the logging path nor
+      // leak the unredacted payload. Emit a safe marker instead.
+      return { name: this.name, message: "[log redaction failed]" };
+    }
   }
 
   /** Backwards-compatible JSON serialization for logging-oriented consumers. */
