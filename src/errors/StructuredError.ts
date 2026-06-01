@@ -5,6 +5,7 @@ import {
 } from "./BaseError.js";
 import type { PublicErrorJSON, PublicErrorOptions } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
+import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import type {
   ProblemDetails,
   ProblemDetailsOptions,
@@ -166,13 +167,20 @@ export class StructuredError<
         ? (json as Record<string, unknown>)
         : {};
 
-    const code = typeof obj.code === "string" ? obj.code : "UNKNOWN_ERROR";
+    const code =
+      typeof obj.code === "string" ? obj.code : UNKNOWN_ERROR_DEFAULTS.code;
     const category =
-      typeof obj.category === "string" ? obj.category : "INTERNAL";
+      typeof obj.category === "string"
+        ? obj.category
+        : UNKNOWN_ERROR_DEFAULTS.category;
     const retryable =
-      typeof obj.retryable === "boolean" ? obj.retryable : false;
+      typeof obj.retryable === "boolean"
+        ? obj.retryable
+        : UNKNOWN_ERROR_DEFAULTS.retryable;
     const message =
-      typeof obj.message === "string" ? obj.message : "Unknown error";
+      typeof obj.message === "string"
+        ? obj.message
+        : UNKNOWN_ERROR_DEFAULTS.message;
     const details =
       typeof obj.details === "object" && obj.details !== null
         ? (obj.details as Record<string, unknown>)
@@ -194,7 +202,8 @@ export class StructuredError<
     }
     if (
       obj.localizedMessages !== null &&
-      typeof obj.localizedMessages === "object"
+      typeof obj.localizedMessages === "object" &&
+      !Array.isArray(obj.localizedMessages)
     ) {
       for (const [lang, msg] of Object.entries(obj.localizedMessages)) {
         if (typeof msg === "string") {

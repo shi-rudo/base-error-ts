@@ -55,6 +55,15 @@ export type PublicErrorJSON<TCode extends string = string> = {
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
 /**
+ * Where a node sits in the log tree, for `redactAllow`'s structure-vs-data
+ * decision: `"root"` (top-level envelope, kept), `"cause"` (a cause's top level
+ * — structural envelope keys kept, the rest data), `"data"` (a `details`
+ * subtree or a cause's foreign subtree — every leaf is data). The deny-list
+ * (`redact`) ignores it.
+ */
+type RedactRegion = "root" | "cause" | "data";
+
+/**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
  * browsers. It preserves the native `cause` field where available, falls back
@@ -251,19 +260,25 @@ export class BaseError<
           denied.has(key)
             ? BaseError.#applyMask(mask, value, key)
             : BaseError.#RECURSE,
-        false,
+        "root",
       ) as Record<string, unknown>;
     return this;
   }
 
   /**
-   * Allow-list redaction (higher assurance than {@link redact}): within
-   * `details` (and nested cause details), masks every leaf whose key is **not**
-   * listed — so a newly-added field leaks nothing by default. Container objects
-   * are recursed; the log envelope (`message`/`code`/…) is untouched. Sticky;
-   * last redactor wins.
+   * Allow-list redaction (higher assurance than {@link redact}): within any
+   * **data** region — a `details` subtree (at any depth) and the data-bearing
+   * fields of a `cause` — masks every leaf whose key is **not** listed, so a
+   * newly-added field leaks nothing by default. Container objects are recursed
+   * so nested allowed leaves survive. The structural envelope (`message`/`code`/
+   * …) at the top level, and a cause's top-level structural envelope keys
+   * (`name`/`message`/`stack`/`code`/`category`/`retryable`), are kept — but a
+   * cause's foreign fields (anything outside that fixed set, and everything
+   * nested beneath them) are treated as data, so a plain object that merely
+   * *looks* like a structured error cannot smuggle siblings — or envelope-named
+   * keys buried in foreign subtrees — through. Sticky; last redactor wins.
    *
-   * @param keys - Detail leaf keys allowed to survive in the log.
+   * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`.
    */
   public redactAllow(keys: string[], options?: { mask?: RedactMask }): this {
@@ -272,23 +287,42 @@ export class BaseError<
     this.#redactor = (log) =>
       BaseError.#redactWalk(
         log,
-        (key, value, inData) => {
+        (key, value, region: RedactRegion) => {
           // Always recurse into containers so nested allowed leaves survive.
-          if (Array.isArray(value) || BaseError.#isPlainObject(value)) {
+          if (Array.isArray(value) || BaseError.#isWalkable(value)) {
             return BaseError.#RECURSE;
           }
-          // Inside a data payload, a leaf survives only if explicitly allowed.
-          return inData && !allow.has(key)
-            ? BaseError.#applyMask(mask, value, key)
-            : value;
+          // Leaf. Keep iff the region permits this key.
+          const kept =
+            region === "root" ||
+            allow.has(key) ||
+            (region === "cause" && BaseError.#ENVELOPE_KEYS.has(key));
+          return kept ? value : BaseError.#applyMask(mask, value, key);
         },
-        false,
+        "root",
       ) as Record<string, unknown>;
     return this;
   }
 
   /** Sentinel returned by a redaction decision to mean "descend / keep as-is". */
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
+
+  /**
+   * Structural fields of an error envelope that survive an allow-list at the
+   * **top level of a cause**. Everything else under a cause (foreign siblings
+   * and anything nested beneath them, plus `details`) is treated as data, so a
+   * plain object mimicking the structured shape cannot smuggle sensitive
+   * siblings — or envelope-named keys buried in foreign subtrees — past
+   * `redactAllow`. Private: it must not become a process-wide redaction toggle.
+   */
+  static readonly #ENVELOPE_KEYS: ReadonlySet<string> = new Set([
+    "name",
+    "message",
+    "stack",
+    "code",
+    "category",
+    "retryable",
+  ]);
 
   /*#__PURE__*/ static #applyMask(
     mask: RedactMask,
@@ -298,57 +332,69 @@ export class BaseError<
     return typeof mask === "function" ? mask(value, key) : mask;
   }
 
-  /** Plain objects (`{}` / `Object.create(null)`) are the only objects we descend into. */
-  /*#__PURE__*/ static #isPlainObject(
+  /**
+   * Whether the walker should descend into `value`. A **plain object**
+   * (`{}` / `Object.create(null)`) is always a container — even when empty, so
+   * it is preserved as `{}` rather than masked or collapsed. Any **other**
+   * object is a container only if it carries its own enumerable keys: a class
+   * instance with own fields *is* descended (so a deny/allow list reaches keys
+   * nested inside it), while `Date`/`Map`/`Set`/`RegExp` (no own enumerable
+   * keys) stay preserved leaves rather than collapsing to `{}`.
+   */
+  /*#__PURE__*/ static #isWalkable(
     value: unknown,
   ): value is Record<string, unknown> {
-    if (value === null || typeof value !== "object") return false;
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      return false;
+    }
     const proto = Object.getPrototypeOf(value) as unknown;
-    return proto === Object.prototype || proto === null;
-  }
-
-  /** Duck-types a serialized structured error (same shape as #serializeCause emits). */
-  /*#__PURE__*/ static #isStructuredShape(
-    value: Record<string, unknown>,
-  ): boolean {
-    return (
-      typeof value.code === "string" &&
-      typeof value.category === "string" &&
-      typeof value.retryable === "boolean"
-    );
+    if (proto === Object.prototype || proto === null) return true;
+    return Object.keys(value).length > 0;
   }
 
   /**
-   * Single deep-clone walker for redaction. Recurses only into plain objects and
-   * arrays; every other value (string, Date, Map, class instance, …) is a leaf.
-   * `decide(key, value, inData)` returns the replacement for a key, or `#RECURSE`
-   * to descend into a container / keep a leaf unchanged. `inData` tracks whether
-   * we are inside a data payload — a `details` subtree or a plain-object (i.e.
-   * non-structured) cause — so the allow-list never leaks data that lives outside
-   * `details` (e.g. a plain-object cause). The deny-list ignores `inData`.
+   * Single deep-clone walker for redaction. Recurses into arrays and objects
+   * that carry own enumerable keys (see {@link BaseError.#isWalkable}); every
+   * other value (string, `Date`, `Map`, empty object, …) is a leaf.
+   * `decide(key, value, region)` returns the replacement for a key, or
+   * `#RECURSE` to descend into a container / keep a leaf unchanged.
+   *
+   * `region` classifies where we are, so the allow-list can distinguish the
+   * structural envelope from data:
+   * - `"root"` — the top-level error envelope (kept verbatim by the allow-list);
+   * - `"cause"` — at a `cause`'s top level; the structural envelope keys
+   *   (`#ENVELOPE_KEYS`) are kept, all other leaves are data;
+   * - `"data"` — inside a `details` subtree or a cause's foreign subtree; every
+   *   leaf is data.
+   *
+   * The transition is by key name only — no duck-typing — so a cause that
+   * merely resembles a structured error cannot reclassify its data as envelope.
+   * The deny-list ignores `region`.
    */
   /*#__PURE__*/ static #redactWalk(
     value: unknown,
-    decide: (key: string, value: unknown, inData: boolean) => unknown,
-    inData: boolean,
+    decide: (key: string, value: unknown, region: RedactRegion) => unknown,
+    region: RedactRegion,
   ): unknown {
     if (Array.isArray(value)) {
-      return value.map((item) => BaseError.#redactWalk(item, decide, inData));
+      return value.map((item) => BaseError.#redactWalk(item, decide, region));
     }
-    if (BaseError.#isPlainObject(value)) {
+    if (BaseError.#isWalkable(value)) {
       const out: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(value)) {
-        const childInData =
-          inData ||
-          key === "details" ||
-          (key === "cause" &&
-            BaseError.#isPlainObject(val) &&
-            !BaseError.#isStructuredShape(val));
-        const decision = decide(key, val, childInData);
+        // A leaf's keep/mask decision is made in the region it *lives in* (the
+        // parent); the child region only governs recursion. Conflating the two
+        // wrongly masks a region-transition key that holds a leaf (e.g. a
+        // top-level `cause: undefined`).
+        const decision = decide(key, val, region);
         if (decision === BaseError.#RECURSE) {
           out[key] =
-            Array.isArray(val) || BaseError.#isPlainObject(val)
-              ? BaseError.#redactWalk(val, decide, childInData)
+            Array.isArray(val) || BaseError.#isWalkable(val)
+              ? BaseError.#redactWalk(
+                  val,
+                  decide,
+                  BaseError.#childRegion(region, key),
+                )
               : val;
         } else {
           out[key] = decision;
@@ -357,6 +403,26 @@ export class BaseError<
       return out;
     }
     return value;
+  }
+
+  /**
+   * Region a child key enters. `details` → data (data is sticky for the whole
+   * subtree); `cause` → cause. Inside a `cause`, only the structural envelope
+   * keys stay `cause`; every other (foreign) child — and therefore everything
+   * nested beneath it — drops to data, so envelope-named keys buried in a
+   * cause's foreign subtrees cannot be mistaken for the cause's own envelope.
+   */
+  /*#__PURE__*/ static #childRegion(
+    region: RedactRegion,
+    key: string,
+  ): RedactRegion {
+    if (region === "data") return "data";
+    if (key === "details") return "data";
+    if (key === "cause") return "cause";
+    if (region === "cause") {
+      return BaseError.#ENVELOPE_KEYS.has(key) ? "cause" : "data";
+    }
+    return region;
   }
 
   /**
@@ -452,7 +518,14 @@ export class BaseError<
     }
   }
 
-  /** Non-sensitive structural fields preserved in the fail-closed redaction marker. */
+  /**
+   * Non-sensitive structural fields preserved in the fail-closed redaction
+   * marker. Only those a given error's `buildLogObject()` actually emits are
+   * copied (guarded by `key in raw`), so `code`/`category`/`retryable` appear
+   * for a `StructuredError` but are simply absent for a plain `BaseError`.
+   * `traceId` is intentionally not listed — it is a serialization parameter of
+   * the client path, never a log-object field.
+   */
   static readonly #SAFE_TRIAGE_KEYS = [
     "name",
     "code",
@@ -460,7 +533,6 @@ export class BaseError<
     "retryable",
     "timestamp",
     "timestampIso",
-    "traceId",
   ] as const;
 
   /** Backwards-compatible JSON serialization for logging-oriented consumers. */

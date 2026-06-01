@@ -120,6 +120,19 @@ describe("StructuredError.fromJSON", () => {
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     });
 
+    it("ignores an array localizedMessages instead of registering numeric-keyed locales", () => {
+      const restored = StructuredError.fromJSON({
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        localizedMessages: ["hi", "yo"],
+      });
+      // Must not register a bogus "0"/"1" locale from array indices.
+      expect(restored.getUserMessage({ preferredLang: "0" })).toBeUndefined();
+      expect(restored.getUserMessage({ preferredLang: "1" })).toBeUndefined();
+    });
+
     it("copies only whitelisted fields onto the instance", () => {
       const restored = StructuredError.fromJSON({
         code: "X",
