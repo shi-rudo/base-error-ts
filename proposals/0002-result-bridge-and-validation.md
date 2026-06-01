@@ -126,16 +126,13 @@ const r2 = Result.fromPromise(
 `toStructuredError`'s optional second parameter means it satisfies the
 `(unknown) => E` mapper shape directly.
 
-### Open questions
+### Resolved (shipped in `src/errors/coerce.ts`)
 
-- **Default `code`.** `"UNKNOWN_ERROR"` vs reusing the public `"INTERNAL_ERROR"`
-  constant. The internal code and the *public* default (`INTERNAL_ERROR`) are
-  different layers; proposed internal default `"UNKNOWN_ERROR"`.
-- **Primitives as `cause`.** Setting `cause` to a non-Error (number/object) is
-  legal (`cause: unknown`) and preserves info; for bare strings we skip it since
-  the message already carries it. Confirm this split.
-- Naming: `toStructuredError` vs `ensureStructuredError`. Proposed
-  `toStructuredError` (shorter, reads as a conversion).
+- **Default `code`** = `"UNKNOWN_ERROR"` (distinct from the public
+  `INTERNAL_ERROR`), `category` `"INTERNAL"`, `retryable` `false`.
+- **`cause`**: non-Error values (objects/numbers/null) are preserved as `cause`;
+  a bare string only becomes the message.
+- **Naming**: `toStructuredError`.
 
 ### Test plan
 
@@ -303,11 +300,10 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
   `code`, catalog, match). Resolved.
 - **Issue shape:** Standard Schema's `Issue`. Resolved.
 
-### Open questions
+### Resolved (shipped in `src/errors/validation.ts`)
 
-- **`code`/`category` override:** hard-wired `VALIDATION_FAILED`/`VALIDATION` vs
-  letting a caller pick (`BAD_REQUEST`, `INVALID_INPUT`, …). Lean: allow an
-  optional override, default to `VALIDATION_FAILED`/`VALIDATION`.
+- **`code`/`category` override**: allowed as an optional generic override,
+  defaulting to `VALIDATION_FAILED`/`VALIDATION`.
 
 ### Test plan
 
