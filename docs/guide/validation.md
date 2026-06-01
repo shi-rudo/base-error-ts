@@ -80,9 +80,9 @@ so observability loses nothing while the client sees only the whitelist:
 logger.error(v.toLogObject()); // details.issues includes everything
 ```
 
-## With `@shirudo/result`
+## With a `Result` type
 
-`Result` short-circuits on the first error, so accumulate imperatively, then
+A `Result` short-circuits on the first error, so accumulate imperatively, then
 return one `ValidationError`:
 
 ```ts
