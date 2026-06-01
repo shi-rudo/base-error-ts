@@ -161,6 +161,47 @@ describe("log redaction", () => {
     });
   });
 
+  describe("function mask", () => {
+    const makeWith = (details: Record<string, unknown>) =>
+      new StructuredError({
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        details,
+      });
+
+    it("supports partial masking (preserve last chars)", () => {
+      const log = makeWith({ card: "4111111111116789" })
+        .redact(["card"], { mask: (v) => "****" + String(v).slice(-4) })
+        .toLogObject();
+      expect((log.details as Record<string, unknown>).card).toBe("****6789");
+    });
+
+    it("can preserve the value type (e.g. mask a number to 0)", () => {
+      const log = makeWith({ age: 42 })
+        .redact(["age"], { mask: () => 0 })
+        .toLogObject();
+      expect((log.details as Record<string, unknown>).age).toBe(0);
+    });
+
+    it("passes the original value and key to the mask function", () => {
+      const log = makeWith({ email: "a@b.com" })
+        .redact(["email"], { mask: (v, k) => `${k}:${String(v).length}` })
+        .toLogObject();
+      expect((log.details as Record<string, unknown>).email).toBe("email:7");
+    });
+
+    it("works with redactAllow too", () => {
+      const log = makeWith({ keep: "ok", secret: "abcdef" })
+        .redactAllow(["keep"], { mask: (v) => String(v).length })
+        .toLogObject();
+      const details = log.details as Record<string, unknown>;
+      expect(details.keep).toBe("ok");
+      expect(details.secret).toBe(6);
+    });
+  });
+
   describe("fail-closed on a throwing redactor", () => {
     it("does not crash the log path and does not leak the payload", () => {
       const err = makeError().redactWith(() => {

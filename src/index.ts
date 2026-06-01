@@ -11,6 +11,7 @@ export type {
   BaseErrorOptions,
   PublicErrorJSON,
   PublicErrorOptions,
+  RedactMask,
 } from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";

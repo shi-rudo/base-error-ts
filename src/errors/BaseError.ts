@@ -48,6 +48,13 @@ export type PublicErrorJSON<TCode extends string = string> = {
 };
 
 /**
+ * Replacement used by {@link BaseError.redact}/{@link BaseError.redactAllow}.
+ * Either a fixed value, or a function of the original `(value, key)` — useful
+ * for partial masking (`****6789`) or preserving the value's type.
+ */
+export type RedactMask = string | ((value: unknown, key: string) => unknown);
+
+/**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
  * browsers. It preserves the native `cause` field where available, falls back
@@ -234,7 +241,7 @@ export class BaseError<
    * @param keys - Property names to mask wherever they appear in the log object.
    * @param options - `mask` defaults to `"[REDACTED]"`.
    */
-  public redact(keys: string[], options?: { mask?: string }): this {
+  public redact(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
     const keySet = new Set(keys);
     this.#redactor = (log) =>
@@ -252,7 +259,7 @@ export class BaseError<
    * @param keys - Detail leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`.
    */
-  public redactAllow(keys: string[], options?: { mask?: string }): this {
+  public redactAllow(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
     this.#redactor = (log) =>
@@ -264,10 +271,18 @@ export class BaseError<
    * Deep-clones `value`, masking every leaf inside a `details` subtree whose key
    * is not in `allow`. Container objects are recursed; the envelope is untouched.
    */
+  /*#__PURE__*/ static #applyMask(
+    mask: RedactMask,
+    value: unknown,
+    key: string,
+  ): unknown {
+    return typeof mask === "function" ? mask(value, key) : mask;
+  }
+
   /*#__PURE__*/ static #maskExcept(
     value: unknown,
     allow: Set<string>,
-    mask: string,
+    mask: RedactMask,
     inside: boolean,
   ): unknown {
     if (Array.isArray(value)) {
@@ -280,7 +295,9 @@ export class BaseError<
       for (const [key, val] of Object.entries(value)) {
         const isLeaf = val === null || typeof val !== "object";
         if (inside && isLeaf) {
-          out[key] = allow.has(key) ? val : mask;
+          out[key] = allow.has(key)
+            ? val
+            : BaseError.#applyMask(mask, val, key);
         } else {
           out[key] = BaseError.#maskExcept(
             val,
@@ -310,7 +327,7 @@ export class BaseError<
   /*#__PURE__*/ static #maskKeys(
     value: unknown,
     keys: Set<string>,
-    mask: string,
+    mask: RedactMask,
   ): unknown {
     if (Array.isArray(value)) {
       return value.map((item) => BaseError.#maskKeys(item, keys, mask));
@@ -318,7 +335,9 @@ export class BaseError<
     if (value !== null && typeof value === "object") {
       const out: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(value)) {
-        out[key] = keys.has(key) ? mask : BaseError.#maskKeys(val, keys, mask);
+        out[key] = keys.has(key)
+          ? BaseError.#applyMask(mask, val, key)
+          : BaseError.#maskKeys(val, keys, mask);
       }
       return out;
     }
