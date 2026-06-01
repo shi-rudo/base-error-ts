@@ -129,6 +129,129 @@ export class StructuredError<
   }
 
   /**
+   * Reconstruct a StructuredError from its serialized (`toJSON`/`toLogObject`)
+   * shape — the inverse of {@link toJSON}.
+   *
+   * Intended for reconstruction **within a single trust/bounded-context
+   * boundary**: Web Worker / `postMessage` (where `instanceof` is lost across
+   * `structuredClone`), job queues / durable storage, and log replay. Across
+   * services, reconstruct then translate through an Anti-Corruption Layer — do
+   * not treat an upstream's `code` as your own.
+   *
+   * Lenient and safe: missing fields fall back to safe defaults
+   * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable); malformed input yields that
+   * envelope instead of throwing; only whitelisted fields are read (no
+   * prototype pollution). The original `stack`/`timestamp` and the cause chain
+   * are restored. Reconstructed fields are **not** an authority on trust —
+   * whoever produced the payload can forge them.
+   */
+  public static fromJSON(json: unknown): StructuredError<string, string> {
+    return StructuredError.#fromJSON(json, 0);
+  }
+
+  static readonly #MAX_DEPTH = 100;
+
+  static #fromJSON(
+    json: unknown,
+    depth: number,
+  ): StructuredError<string, string> {
+    const obj: Record<string, unknown> =
+      typeof json === "object" && json !== null
+        ? (json as Record<string, unknown>)
+        : {};
+
+    const code = typeof obj.code === "string" ? obj.code : "UNKNOWN_ERROR";
+    const category =
+      typeof obj.category === "string" ? obj.category : "INTERNAL";
+    const retryable =
+      typeof obj.retryable === "boolean" ? obj.retryable : false;
+    const message =
+      typeof obj.message === "string" ? obj.message : "Unknown error";
+    const details =
+      typeof obj.details === "object" && obj.details !== null
+        ? (obj.details as Record<string, unknown>)
+        : undefined;
+    const cause = StructuredError.#reconstructCause(obj.cause, depth);
+
+    const error = new StructuredError({
+      code,
+      category,
+      retryable,
+      message,
+      ...(details !== undefined && { details }),
+      ...(cause !== undefined && { cause }),
+    });
+
+    // Rehydrate the original identity rather than the freshly generated values.
+    StructuredError.#rehydrate(error, "stack", obj.stack, "string");
+    StructuredError.#rehydrate(error, "timestamp", obj.timestamp, "number");
+    StructuredError.#rehydrate(
+      error,
+      "timestampIso",
+      obj.timestampIso,
+      "string",
+    );
+
+    return error as StructuredError<string, string>;
+  }
+
+  static #rehydrate(
+    target: object,
+    key: string,
+    value: unknown,
+    type: "string" | "number",
+  ): void {
+    if (typeof value === type) {
+      Object.defineProperty(target, key, {
+        value,
+        configurable: true,
+        writable: true,
+        enumerable: key !== "stack",
+      });
+    }
+  }
+
+  static #reconstructCause(value: unknown, depth: number): unknown {
+    if (depth >= StructuredError.#MAX_DEPTH) {
+      return undefined;
+    }
+    if (typeof value !== "object" || value === null) {
+      // Primitives (and null) are kept verbatim.
+      return value;
+    }
+
+    const obj = value as Record<string, unknown>;
+
+    // Structured shape -> nested StructuredError.
+    if (
+      typeof obj.code === "string" &&
+      typeof obj.category === "string" &&
+      typeof obj.retryable === "boolean"
+    ) {
+      return StructuredError.#fromJSON(obj, depth + 1);
+    }
+
+    // Plain error shape -> a basic Error, chained.
+    if (typeof obj.message === "string") {
+      const err = new Error(obj.message);
+      if (typeof obj.name === "string") {
+        err.name = obj.name;
+      }
+      if (typeof obj.stack === "string") {
+        err.stack = obj.stack;
+      }
+      const nested = StructuredError.#reconstructCause(obj.cause, depth + 1);
+      if (nested !== undefined) {
+        (err as unknown as { cause: unknown }).cause = nested;
+      }
+      return err;
+    }
+
+    // Any other object: opaque data, kept as-is.
+    return value;
+  }
+
+  /**
    * Serializes the error for logs, including all structured metadata.
    * Extends BaseError's log object with code, category, retryable, and details.
    */

@@ -69,3 +69,34 @@ chain is serialized, nested root causes survive the trip:
 ```ts
 Sentry.captureException(error, { extra: error.toLogObject() });
 ```
+
+## Reconstructing — `StructuredError.fromJSON`
+
+`fromJSON` is the inverse of `toJSON`: it rebuilds a typed `StructuredError`
+(restoring `code`/`category`/`retryable`/`details`, the original
+`stack`/`timestamp`, and the cause chain) from the serialized shape.
+
+```ts
+const err = StructuredError.fromJSON(payload); // payload: unknown
+matchError(err, { PARSE_FAILED: () => retry(), _: (e) => report(e) });
+```
+
+It is for reconstruction **within one trust/bounded-context boundary**:
+
+- **Worker / `postMessage` / iframe** — `instanceof` is lost across
+  `structuredClone`; `fromJSON` restores the typed error.
+- **Job queues / durable storage** — reconstruct an error parked by the same
+  system.
+- **Log replay / forensics** — parse a logged error JSON back into an object.
+
+It is lenient (malformed input → a safe `UNKNOWN_ERROR` envelope, never throws)
+and prototype-pollution-safe (whitelisted fields only).
+
+::: warning Across services, translate — don't trust
+`fromJSON` rebuilds *shape*, not authority: whoever produced the payload can
+forge `code`/`retryable`. Don't use reconstructed fields for authorization, and
+don't `matchError` on another service's codes as if they were yours —
+reconstruct, then translate through an Anti-Corruption Layer into your own
+model. The inter-service contract should be a safe projection (Problem Details /
+a versioned DTO), not the log shape.
+:::
