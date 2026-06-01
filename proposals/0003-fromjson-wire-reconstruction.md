@@ -2,13 +2,42 @@
 
 **Status:** Draft / for discussion — no implementation yet.
 **Context:** `toLogObject()` / `toJSON()` serialize a (structured) error,
-including the full cause chain. There is no inverse: a service receiving that
-payload over RPC can only duck-type it (`isStructuredError`). `fromJSON` closes
-the round-trip so a *consumer service* can reconstruct a typed
-`StructuredError` and then `matchError` on its `code` — the missing piece for
-**distributed DDD / cross-service error propagation**.
+including the full cause chain. There is no inverse: code that receives that
+JSON can only duck-type it (`isStructuredError`), and `instanceof` does not
+survive `structuredClone`/`postMessage`/storage. `fromJSON` is the inverse of
+`toJSON` — it rebuilds a typed `StructuredError` from the **log/serialization
+shape** so it can be handled, logged, and `matchError`'d again.
 
+`fromJSON` is **not** an inter-service integration contract (see *Positioning*).
 Zero-dependency; no dependency on `@shirudo/result`.
+
+## Positioning — where this belongs (and where it doesn't)
+
+`toJSON`/`toLogObject` is the **full observability payload** (stack, technical
+message, raw `details`). `fromJSON` reconstructs *that* shape, so its honest home
+is reconstruction **within a single trust/bounded-context boundary**:
+
+- **Same-context runtime boundaries** — Web Worker / `postMessage` / iframe /
+  child process. `instanceof` is lost across `structuredClone`; `fromJSON`
+  restores the typed error. ✓
+- **Job queues / durable storage** — an error serialized into a queue or DB,
+  reconstructed by a worker in the **same system**. ✓
+- **Log replay / forensics** — parse a logged error back into a `StructuredError`
+  for tooling. The log shape is exactly right here, and the input is trusted. ✓
+
+**Not** a transparent cross-service propagation mechanism. Two DDD/enterprise
+cautions:
+
+1. **Bounded-context coupling.** Another service's `code`s belong to *its*
+   ubiquitous language. Do not `matchError` on an upstream's codes as if they
+   were yours — reconstruct, then **translate through an Anti-Corruption Layer**
+   into your own error model.
+2. **The log shape is not a published contract.** Shipping stacks / technical
+   messages / raw `details` across a service boundary is a leak and version
+   coupling. The inter-service error contract should be a deliberate, safe
+   projection (Problem Details / a versioned error DTO), not the log object.
+
+Use `fromJSON` freely inside one context; across services, put an ACL in front.
 
 ---
 
@@ -22,15 +51,24 @@ A single static entry on `StructuredError` (the workhorse superset). It is the
 inverse of `toJSON()`:
 
 ```ts
-// service B → wire → service A
-const received = await rpc.call(); // unknown JSON
-const err = StructuredError.fromJSON(received);
+// Same-context boundary: a worker posts a serialized error back to the main
+// thread (instanceof was lost crossing structuredClone).
+worker.onmessage = (e) => {
+  const err = StructuredError.fromJSON(e.data.error);
+  matchError(err, {
+    PARSE_FAILED: () => showParseError(),
+    _: (x) => report(x),
+  });
+};
+```
 
-matchError(err, {
-  USER_NOT_FOUND: () => 404,
-  RATE_LIMITED: () => 429,
-  _: () => 502, // upstream failure we don't model
-});
+Across services, reconstruct then **translate through an ACL** — never match on
+the upstream's codes directly:
+
+```ts
+const upstream = StructuredError.fromJSON(received); // reconstruct shape (for logs)
+logger.warn(upstream.toLogObject());
+throw toMyDomainError(upstream); // translate into THIS context's model
 ```
 
 Round-trip guarantee: `StructuredError.fromJSON(e.toJSON())` reproduces an
@@ -53,8 +91,8 @@ equivalent error — `code`, `category`, `retryable`, `details`, `message`,
 
 ## Security (the part that matters for a base library)
 
-Reconstruction runs on data that may come from another service — treat it as
-**untrusted input**:
+Even within one system, reconstruction runs on data that crossed a boundary —
+treat it as **untrusted input**:
 
 1. **Whitelist only.** Copy only known fields (`name`, `message`, `code`,
    `category`, `retryable`, `details`, `timestamp`, `timestampIso`, `stack`,
@@ -85,6 +123,15 @@ Reconstruction runs on data that may come from another service — treat it as
 4. **Seeding readonly `stack`/`timestamp`.** Implementation detail: a private
    rehydration path (or `Object.defineProperty`) sets these from the payload
    after construction, since the public constructor generates fresh ones.
+5. **Versioning.** No `version` field is proposed; the lenient field-by-field
+   reconstruction tolerates added/missing fields, which covers same-context
+   evolution. A versioned schema is the *consumer's* concern at a real
+   cross-service contract (where the safe projection, not `fromJSON`, applies).
+6. **Result-returning variant?** Given `@shirudo/result`, a
+   `Result<StructuredError, …>` parse would be more honest than the lenient
+   envelope for genuinely-untrusted input — but it would couple to result-ts.
+   Decision: keep `fromJSON` lenient and decoupled; a consumer can validate
+   (e.g. check `code` against an allow-list) and wrap in a `Result` themselves.
 
 ## Test plan
 
@@ -106,6 +153,9 @@ aggregate; no new public types beyond the static method.
 
 ## Non-goals
 
+- Not a transparent cross-service propagation mechanism — across services,
+  reconstruct then translate through an ACL; the wire contract is the safe
+  projection, not the log shape.
 - Not a general-purpose deserializer/validator (it reconstructs *this* library's
   serialized shape).
 - No trust/authenticity guarantees — that is the transport's job (signing/mTLS).
