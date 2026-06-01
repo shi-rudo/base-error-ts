@@ -61,6 +61,48 @@ on failure, not on the happy path:
 guard(user, () => new UserNotFoundError(id));
 ```
 
+## `toStructuredError()` — coerce any caught value
+
+Where guards *narrow*, `toStructuredError` *guarantees*: it turns any `unknown`
+into a `StructuredError`, giving an unexpected failure a consistent, loggable,
+safe-to-serialize **envelope** at the boundary.
+
+```ts
+import { toStructuredError } from "@shirudo/base-error";
+
+try {
+  await repo.save(order);
+} catch (e) {
+  if (e instanceof TypeError) throw e; // a bug — surface it, don't swallow
+  const err = toStructuredError(e, {
+    code: "ORDER_PERSIST_FAILED",
+    category: "INFRASTRUCTURE",
+    retryable: true,
+  });
+  logger.error(err.toLogObject());
+  return err.toProblemDetails({ status: 503 });
+}
+```
+
+| Input | Result |
+| --- | --- |
+| a `StructuredError` | returned unchanged (options ignored) |
+| any other `Error` | wrapped: its `message` kept, original preserved as `cause` |
+| a `string` | becomes the message |
+| anything else | fallback message, value preserved as `cause` |
+
+Honest defaults: `code` `"UNKNOWN_ERROR"`, `category` `"INTERNAL"`, `retryable`
+`false`. It is a **boundary/observability tool, not a modeling tool** — it does
+not fabricate domain semantics, and you should rethrow genuine programmer bugs
+(`TypeError`/`RangeError`/assertions) rather than wrap them.
+
+Because its second parameter is optional, it fits the `errorMapper` slot of
+[`@shirudo/result`](https://github.com/shi-rudo/result-ts) directly:
+
+```ts
+const r = Result.fromThrowable(() => JSON.parse(input), toStructuredError);
+```
+
 ## Cause-chain guards
 
 For walking and testing `cause` chains there are dedicated guards
