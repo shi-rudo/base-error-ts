@@ -177,7 +177,13 @@ It is for reconstruction **within one trust/bounded-context boundary**:
 - **Log replay / forensics** — parse a logged error JSON back into an object.
 
 It is lenient (malformed input → a safe `UNKNOWN_ERROR` envelope, never throws)
-and prototype-pollution-safe (whitelisted fields only).
+and prototype-pollution-safe (whitelisted fields only). It restores the cause
+chain, the original `stack`/`timestamp`, and user/localized messages.
+
+It always returns a base `StructuredError` — **subclass identity is not
+restored**. A `ValidationError` round-trips to a `StructuredError` (losing
+`publicIssues()`/`addIssue()`; the raw `details.issues` survive as data). Narrow
+on `code`, not on `_tag`/`instanceof`.
 
 ::: warning Across services, translate — don't trust
 `fromJSON` rebuilds *shape*, not authority: whoever produced the payload can
