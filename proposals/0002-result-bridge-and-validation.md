@@ -1,6 +1,7 @@
 # Proposal 0002 — `toStructuredError` bridge & validation aggregate
 
-**Status:** Draft / for discussion — no implementation yet.
+**Status:** Accepted — decisions locked (see *Decisions* below). Implementation
+sequenced: `toStructuredError` first, validation aggregate second.
 **Context:** `Result<T, E>` is intentionally *out of scope* for this library and
 lives in [`@shirudo/result`](https://github.com/shi-rudo/result-ts), whose `E`
 is unconstrained — so `StructuredError` already fits as the error type. This
@@ -332,16 +333,17 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 2. **Validation aggregate** second — larger (new class + RFC 9457 projection +
    docs). Dogfood the `errors[]` shape before locking the extension key.
 
-## Decisions to confirm before implementation
+## Decisions (locked)
 
-1. `toStructuredError` default internal `code` → `"UNKNOWN_ERROR"`?
-2. Validation issues are **opt-in only** (no default exposure), and only the
-   `PublicIssue` whitelist can ever cross — confirm this over a default-expose
-   convenience.
-3. Default wire shape `errors`/`{message,path,code?}` with an RFC-7807
-   `invalid-params`/`{name,reason}` preset via `mapIssue` — confirm the default.
-4. `ValidationError` as a `StructuredError` subclass (recommended).
-5. Allow optional `code`/`category` override on `ValidationError`?
+1. `toStructuredError` default internal `code` = `"UNKNOWN_ERROR"`,
+   `category` = `"INTERNAL"`, `retryable` = `false`.
+2. Validation issues are **opt-in only** (no default exposure); only the
+   `PublicIssue` whitelist (`message`/`path`/`code?`/`pointer?`) can ever cross.
+3. Default wire shape `errors`/`{message,path,code?}`, with an RFC-7807
+   `invalid-params`/`{name,reason}` preset via the `mapIssue` hook.
+4. `ValidationError` is a `StructuredError` subclass.
+5. `ValidationError` allows an optional `code`/`category` override, defaulting to
+   `"VALIDATION_FAILED"`/`"VALIDATION"`.
 
 ## Non-goals
 
