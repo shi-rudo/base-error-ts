@@ -5,22 +5,22 @@
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/@shirudo/base-error)](https://bundlephobia.com/package/@shirudo/base-error)
 [![Tests](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml/badge.svg)](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml)
 
-A robust, cross-environment base error class for TypeScript applications that works seamlessly across Node.js, modern browsers, and edge runtimes (like Cloudflare Workers, Deno Deploy, and Vercel Edge Functions).
-
-It provides rich, filterable stack traces and advanced features **without polluting the global scope or causing type conflicts.**
+A cross-environment base error class for TypeScript — Node.js, modern browsers,
+and edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). Structured
+errors, RFC 9457 Problem Details, and a public projection that **never leaks
+internal state by default**. Zero runtime dependencies.
 
 ## Features
 
-- 🌐 **Cross-platform compatibility**: Works in Node.js, browsers, and edge runtimes
-- 🚫 **No global scope pollution (v4+)**: Type-safe and isolated, won't conflict with other libraries
-- 🔍 **Rich stack traces**: Captures the best possible stack trace for the current environment
-- 🔄 **Error cause chain**: Preserves the error cause chain, even in environments without native support
-- ⏱️ **Built-in timestamps**: Includes both numeric (epoch) and ISO string timestamps
-- 🧬 **Proper inheritance**: Maintains prototype chain for reliable `instanceof` checks
-- 📊 **Explicit log serialization**: `toLogObject()` keeps stack and cause chains for observability
-- 🔒 **Safe public serialization**: `toPublicJSON()` and `toProblemDetails()` hide internals by default
-- ✨ **Automatic name inference**: No need to specify the error name twice
-- 👤 **User-friendly messages**: Built-in support for user-friendly error messages and internationalization
+- 🌐 **Cross-platform** — Node.js, browsers, edge; rich stack traces, preserved cause chains.
+- 🔒 **Safe by default, invariant** — client serializers never expose technical messages, internal codes/categories, or raw details unless you explicitly project them.
+- 🧱 **Structured errors** — typed `code` / `category` / `retryable` / `details`, RFC 9457 Problem Details, discriminated API responses.
+- 🎯 **Exhaustive `matchError`** — compile-time-checked dispatch on `code`.
+- 📒 **Error catalog** — `defineErrors` generates typed factories from one declarative spec.
+- ✅ **Validation aggregate** — collect field issues (Standard Schema compatible) into one error.
+- 🔁 **Wire round-trip** — `toLogObject` / `fromJSON` for same-context reconstruction & log replay.
+- 🌍 **i18n** — locale-aware public messages.
+- 🛡️ **PII redaction** — opt-in, sticky log-path redaction (`redact` / `redactAllow` / `partialMask`).
 
 ## Installation
 
@@ -28,837 +28,70 @@ It provides rich, filterable stack traces and advanced features **without pollut
 npm install @shirudo/base-error
 ```
 
-## Usage
+## Quick start
 
-### Basic Usage
+```ts
+import { StructuredError, matchError } from "@shirudo/base-error";
 
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-// Create a custom error class using automatic name inference
-class UserNotFoundError extends BaseError<"UserNotFoundError"> {
+class UserNotFoundError extends StructuredError<"USER_NOT_FOUND", "NOT_FOUND"> {
   constructor(userId: string) {
-    super(`User ${userId} not found`);
-    // Optional: Add user-friendly message for end users
-    this.withUserMessage("The requested user could not be found.");
-  }
-}
-
-// Throw the error
-throw new UserNotFoundError("user-123");
-```
-
-### With Error Cause
-
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-class DatabaseError extends BaseError<"DatabaseError"> {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause);
-  }
-}
-
-class UserServiceError extends BaseError<"UserServiceError"> {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause);
-  }
-}
-
-try {
-  // Some database operation that fails
-  throw new Error("Connection refused");
-} catch (dbError) {
-  // Wrap the low-level error with more context
-  throw new UserServiceError("Failed to fetch user data", dbError);
-}
-```
-
-### Cause Chain Traversal
-
-When errors are wrapped multiple times, you can traverse the cause chain to inspect nested errors and make informed retry decisions:
-
-```typescript
-import {
-  BaseError,
-  StructuredError,
-  getRootCause,
-  getRootCauseRetryable,
-  isChainRetryable,
-  someChainRetryable,
-  findInCauseChain,
-} from "@shirudo/base-error";
-
-// Create a chain of errors
-const rootCause = new StructuredError({
-  code: "NETWORK_TIMEOUT",
-  category: "NETWORK",
-  retryable: true,
-  message: "Connection timed out",
-});
-
-const middleError = new StructuredError({
-  code: "SERVICE_ERROR",
-  category: "SERVICE",
-  retryable: false,
-  message: "Service temporarily unavailable",
-  cause: rootCause,
-});
-
-const topError = new StructuredError({
-  code: "FETCH_USER_FAILED",
-  category: "CLIENT",
-  retryable: false,
-  message: "Could not fetch user data",
-  cause: middleError,
-});
-
-// Traverse to the root cause
-const root = getRootCause(topError);
-console.log(root); // The NETWORK_TIMEOUT error
-
-// Check if root cause is retryable (most specific retry decision)
-const shouldRetryRoot = getRootCauseRetryable(topError);
-console.log(shouldRetryRoot); // true
-
-// Check if ANY error in the chain is retryable (strict: requires full StructuredError shape)
-const hasRetryable = isChainRetryable(topError);
-console.log(hasRetryable); // true
-
-// Loose variant: matches ANY error with `retryable === true`, even bare BaseError subclasses
-// Use this when your hierarchy extends BaseError directly and signals retryability
-// via a plain `retryable: true` field (no code/category required).
-class ConcurrencyConflictError extends BaseError<"ConcurrencyConflictError"> {
-  readonly retryable = true as const;
-}
-const conflict = new ConcurrencyConflictError("version mismatch");
-console.log(isChainRetryable(conflict)); // false — no code/category
-console.log(someChainRetryable(conflict)); // true
-
-// Find a specific error in the chain
-const networkError = findInCauseChain(
-  topError,
-  (e): e is StructuredError =>
-    typeof e === "object" &&
-    e !== null &&
-    "code" in e &&
-    e.code === "NETWORK_TIMEOUT",
-);
-console.log(networkError); // The NETWORK_TIMEOUT error
-```
-
-#### Retry Pattern with Cause Chain
-
-```typescript
-async function withRetry<T>(
-  operation: () => Promise<T>,
-  maxRetries: number = 3,
-): Promise<T> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      lastError = error;
-
-      if (attempt === maxRetries) break;
-
-      // Check cause chain for retryable errors
-      if (isChainRetryable(error)) {
-        const delay = Math.pow(2, attempt) * 100;
-        await new Promise((resolve) => setTimeout(resolve, delay));
-        continue;
-      }
-
-      // Non-retryable error, give up immediately
-      throw error;
-    }
-  }
-
-  throw lastError;
-}
-```
-
-### Automatic Name Inference
-
-BaseError automatically infers the error name from the class name, eliminating the need to specify it twice. For domain/application errors that use a stable code as their observability identity, pass an explicit construction name so `name`, `toJSON()`, and the stack header are aligned from construction onward:
-
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-class UserNotFoundError extends BaseError<"UserNotFoundError"> {
-  constructor(userId: string) {
-    super(`User ${userId} not found`); // Name is automatically inferred
-  }
-}
-
-class ValidationError extends BaseError<"ValidationError"> {
-  constructor(field: string, message: string, cause?: unknown) {
-    super(`Validation failed for ${field}: ${message}`, cause);
-  }
-}
-
-class DomainRuleError extends BaseError<"DOMAIN_RULE_BROKEN"> {
-  constructor(message: string, cause?: unknown) {
-    super(message, cause, { name: "DOMAIN_RULE_BROKEN" });
-  }
-}
-```
-
-### Logging vs Public Serialization
-
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-class ApiError extends BaseError<"ApiError"> {
-  constructor(statusCode: number, message: string, cause?: unknown) {
-    super(message, cause, {
-      publicCode: "RESOURCE_NOT_FOUND",
-      publicMessage: "The requested resource could not be found.",
-    });
-    this.statusCode = statusCode;
-  }
-
-  statusCode: number;
-
-  // Override toLogObject to include custom log-only properties
-  toLogObject() {
-    const json = super.toLogObject();
-    return {
-      ...json,
-      statusCode: this.statusCode,
-    };
-  }
-}
-
-const error = new ApiError(404, "Database row users/123 not found");
-
-// Logs include technical diagnostics.
-console.log(error.toLogObject());
-
-// Client responses are safe by default.
-console.log(error.toPublicJSON());
-// { code: "RESOURCE_NOT_FOUND", message: "The requested resource could not be found." }
-```
-
-`toJSON()` remains available for logging-oriented compatibility and delegates to
-`toLogObject()`. Do not return `toJSON()` directly from HTTP or RPC handlers
-unless you intentionally want to expose technical messages, stack traces, and
-causes.
-
-### User-Friendly Messages (v2.1+)
-
-BaseError supports user-friendly messages that can be localized for different languages, making it perfect for applications that need to show end-user error messages:
-
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-class UserNotFoundError extends BaseError<"UserNotFoundError"> {
-  constructor(userId: string) {
-    super(`User with id ${userId} not found in database lookup`); // Technical message
-
-    // Set user-friendly message
-    this.withUserMessage(`User ${userId} was not found.`);
-
-    // Add localized messages
-    this.addLocalizedMessage(
-      "en",
-      "User not found. Please check the user ID and try again.",
-    )
-      .addLocalizedMessage(
-        "es",
-        "Usuario no encontrado. Verifique el ID de usuario e inténtelo de nuevo.",
-      )
-      .addLocalizedMessage(
-        "fr",
-        "Utilisateur introuvable. Veuillez vérifier l'ID utilisateur et réessayer.",
-      )
-      .addLocalizedMessage(
-        "de",
-        "Benutzer nicht gefunden. Bitte überprüfen Sie die Benutzer-ID und versuchen Sie es erneut.",
-      );
-  }
-}
-
-// Usage in error handling
-try {
-  throw new UserNotFoundError("user-123");
-} catch (error) {
-  if (error instanceof UserNotFoundError) {
-    // Get localized message based on user preference
-    const userMessage = error.getUserMessage({
-      preferredLang: "es",
-      fallbackLang: "en",
-    });
-    console.log("User message:", userMessage); // "Usuario no encontrado..."
-
-    // Technical message for logging
-    console.log("Technical message:", error.message); // "User with id user-123 not found..."
-  }
-}
-```
-
-#### User Message API
-
-The user message functionality provides four methods:
-
-1. **`withUserMessage(message: string)`** - Sets the default user-friendly message
-2. **`addLocalizedMessage(lang: string, message: string)`** - Adds a localized message for a specific language (prevents duplicates)
-3. **`updateLocalizedMessage(lang: string, message: string)`** - Updates or sets a localized message (allows overwriting)
-4. **`getUserMessage(options?)`** - Retrieves the appropriate message based on language preferences
-
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-class ValidationError extends BaseError<"ValidationError"> {
-  constructor(field: string, technicalReason: string) {
-    super(`Validation failed for field '${field}': ${technicalReason}`);
-
-    // Chain method calls for fluent API
-    this.withUserMessage("Please check your input and try again.")
-      .addLocalizedMessage("en", "Please check your input and try again.")
-      .addLocalizedMessage(
-        "es",
-        "Por favor, revise su entrada e inténtelo de nuevo.",
-      )
-      .addLocalizedMessage("fr", "Veuillez vérifier votre saisie et réessayer.")
-      .addLocalizedMessage(
-        "de",
-        "Bitte überprüfen Sie Ihre Eingabe und versuchen Sie es erneut.",
-      );
-  }
-}
-
-const error = new ValidationError("email", "invalid format");
-
-// Get message with different language preferences
-error.getUserMessage(); // Default message
-error.getUserMessage({ preferredLang: "es" }); // Spanish message
-error.getUserMessage({ preferredLang: "it", fallbackLang: "en" }); // English (fallback)
-error.getUserMessage({ preferredLang: "pt", fallbackLang: "it" }); // Default message (no match)
-
-// Duplicate prevention
-try {
-  error.addLocalizedMessage("en", "Another English message"); // Throws error
-} catch (e) {
-  console.log(e.message); // "Localized message for language 'en' already exists..."
-}
-
-// Use updateLocalizedMessage to intentionally overwrite
-error.updateLocalizedMessage("en", "Updated English message"); // Works fine
-```
-
-#### JSON Serialization with User Messages
-
-User messages are automatically included in JSON serialization:
-
-```typescript
-const error = new ValidationError("email", "invalid format");
-
-console.log(JSON.stringify(error, null, 2));
-// Output:
-// {
-//   "name": "ValidationError",
-//   "message": "Validation failed for field 'email': invalid format",
-//   "timestamp": 1704067200000,
-//   "timestampIso": "2025-01-01T00:00:00.000Z",
-//   "stack": "...",
-//   "userMessage": "Please check your input and try again.",
-//   "localizedMessages": {
-//     "en": "Please check your input and try again.",
-//     "es": "Por favor, revise su entrada e inténtelo de nuevo.",
-//     "fr": "Veuillez vérifier votre saisie et réessayer.",
-//     "de": "Bitte überprüfen Sie Ihre Eingabe und versuchen Sie es erneut."
-//   }
-// }
-```
-
-#### Language Fallback Strategy
-
-The `getUserMessage()` method uses a three-tier fallback strategy:
-
-1. **Preferred language** - If specified and available
-2. **Fallback language** - If preferred is not available but fallback is
-3. **Default message** - If neither preferred nor fallback languages are available
-4. **`undefined`** - If no user messages have been set
-
-```typescript
-const error = new ValidationError("email", "invalid format");
-
-// Only set some languages
-error
-  .withUserMessage("Default message")
-  .addLocalizedMessage("en", "English message")
-  .addLocalizedMessage("fr", "French message");
-
-// Fallback examples
-error.getUserMessage({ preferredLang: "fr" }); // → "French message"
-error.getUserMessage({ preferredLang: "es", fallbackLang: "en" }); // → "English message"
-error.getUserMessage({ preferredLang: "es", fallbackLang: "de" }); // → "Default message"
-error.getUserMessage({ preferredLang: "es" }); // → "Default message"
-```
-
-### Error Codes with Union Types
-
-For applications that need consistent error codes, you can use union types with BaseError:
-
-```typescript
-import { BaseError } from "@shirudo/base-error";
-
-// Define your error codes as a union type
-type ErrorCode =
-  | "USER_NOT_FOUND"
-  | "USER_NOT_AUTHORIZED"
-  | "USER_NOT_AUTHENTICATED"
-  | "USER_QUOTA_LIMIT_REACHED";
-
-// Base class for all user-related errors
-class UserError<T extends ErrorCode> extends BaseError<T> {
-  constructor(
-    public readonly code: T,
-    message: string,
-    public readonly userId?: string,
-    cause?: unknown,
-  ) {
-    super(message, cause);
-    this.code = code;
-  }
-
-  // Override toJSON to include the error code
-  toJSON() {
-    return {
-      ...super.toJSON(),
-      code: this.code,
-      userId: this.userId,
-    };
-  }
-}
-
-// Specific error classes
-class UserNotFoundError extends UserError<"USER_NOT_FOUND"> {
-  constructor(userId: string) {
-    super("USER_NOT_FOUND", `User with ID ${userId} was not found`, userId);
-  }
-}
-
-class UserNotAuthorizedError extends UserError<"USER_NOT_AUTHORIZED"> {
-  constructor(userId: string, resource: string) {
-    super(
-      "USER_NOT_AUTHORIZED",
-      `User ${userId} is not authorized to access ${resource}`,
-      userId,
-    );
-  }
-}
-
-// Type-safe error handling
-function handleUserError(error: unknown): void {
-  if (error instanceof UserError) {
-    // TypeScript knows the error code is from the ErrorCode union
-    switch (error.code) {
-      case "USER_NOT_FOUND":
-        console.log("→ Redirecting to user registration page");
-        break;
-      case "USER_NOT_AUTHORIZED":
-        console.log("→ Redirecting to access denied page");
-        break;
-      case "USER_NOT_AUTHENTICATED":
-        console.log("→ Redirecting to login page");
-        break;
-      case "USER_QUOTA_LIMIT_REACHED":
-        console.log("→ Showing upgrade options");
-        break;
-    }
-  }
-}
-```
-
-### Structured Errors with ErrorOptions
-
-For applications that need comprehensive error metadata, `StructuredError` extends `BaseError` with standardized fields for error codes, categories, retryability flags, and structured details:
-
-```typescript
-import { StructuredError } from "@shirudo/base-error";
-
-// Create a structured error with full metadata
-const error = new StructuredError({
-  code: "VALIDATION_FAILED",
-  category: "CLIENT_ERROR",
-  retryable: false,
-  message: "Email failed RFC validation for field users.email",
-  publicCode: "INVALID_EMAIL",
-  publicMessage: "Please enter a valid email address.",
-  details: { field: "email", value: "not-an-email" },
-});
-
-// All fields are strongly typed and accessible
-console.log(error.code); // "VALIDATION_FAILED"
-console.log(error.category); // "CLIENT_ERROR"
-console.log(error.retryable); // false
-console.log(error.details); // { field: "email", value: "not-an-email" }
-
-// All BaseError features work seamlessly
-error.withUserMessage("Please enter a valid email address");
-console.log(JSON.stringify(error, null, 2));
-
-// Safe for clients. Does not include stack, cause, category or details by default.
-console.log(error.toProblemDetails({ status: 400 }));
-// {
-//   status: 400,
-//   detail: "Please enter a valid email address.",
-//   code: "INVALID_EMAIL",
-//   retryable: false
-// }
-```
-
-#### Field Descriptions
-
-- **code**: A unique identifier for the error type (e.g., `"USER_NOT_FOUND"`, `"DATABASE_TIMEOUT"`)
-- **category**: Groups related errors together (e.g., `"AUTH"`, `"VALIDATION"`, `"INFRASTRUCTURE"`)
-- **retryable**: Boolean flag indicating if the operation can be retried
-- **details**: Optional structured data providing additional context
-- **message**: Human-readable technical message for logs (inherited from BaseError)
-- **publicCode**: Optional stable client-facing code for API responses
-- **publicMessage**: Optional client-safe message for API responses
-- **expose**: Optional opt-in to expose technical code/message in public serializers
-- **cause**: Optional underlying error (inherited from BaseError)
-
-#### RFC 9457 Problem Details at boundaries
-
-`StructuredError.toProblemDetails()` is designed as a transport-boundary adapter. In v5, raw `details` are **not** exposed as top-level Problem Details extension members by default. This keeps domain/application error state separate from public HTTP/RPC contracts and avoids accidental collisions with standard members such as `status`, `detail`, or `type`.
-
-```typescript
-const error = new StructuredError({
-  code: "VALIDATION_FAILED",
-  category: "VALIDATION",
-  retryable: false,
-  message: "Email column users.email failed format validation", // technical
-  details: { internalField: "users.email", publicField: "email" },
-});
-
-const problem = error.toProblemDetails({
-  status: 400,
-  type: "https://api.example.com/problems/validation-failed",
-  title: "Validation failed",
-  detail: "Please correct the highlighted fields.", // public/client-safe
-  mapDetails: (details) => ({
-    field: details?.publicField,
-  }),
-});
-
-// {
-//   status: 400,
-//   type: "https://api.example.com/problems/validation-failed",
-//   title: "Validation failed",
-//   detail: "Please correct the highlighted fields.",
-//   code: "VALIDATION_FAILED",
-//   category: "VALIDATION",
-//   retryable: false,
-//   field: "email"
-// }
-```
-
-Exposing details to a client is **always** an explicit projection — there is no
-raw passthrough. If you genuinely want every field, name it in `mapDetails`:
-
-```typescript
-const problem = error.toProblemDetails({
-  status: 400,
-  mapDetails: (details) => ({ ...details }), // deliberate, reviewable
-});
-```
-
-Need the full, unredacted error for logs, Sentry, or your APM? That is a
-separate, server-side path — use `toLogObject()`, which keeps the technical
-message, stack, cause chain and raw `details`. The client-facing serializers
-never carry it.
-
-Safety is invariant: standard Problem Details members (`type`, `title`,
-`status`, `detail`, `instance`) and library members (`code`, `category`,
-`retryable`, `traceId`) **always** win over colliding extension keys. There is
-no override switch — a call site cannot accidentally leak. To set a deliberate
-public category, use the named `publicCategory` option.
-
-#### Creating Domain-Specific Error Classes
-
-```typescript
-import { StructuredError } from "@shirudo/base-error";
-
-// Define your error codes and categories
-type DatabaseErrorCode = "CONNECTION_FAILED" | "QUERY_TIMEOUT" | "DEADLOCK";
-type DatabaseCategory = "CONNECTION" | "EXECUTION" | "CONCURRENCY";
-
-interface DatabaseErrorDetails {
-  query?: string;
-  duration?: number;
-  connectionId?: string;
-}
-
-class DatabaseError extends StructuredError<
-  DatabaseErrorCode,
-  DatabaseCategory,
-  DatabaseErrorDetails
-> {
-  constructor(
-    code: DatabaseErrorCode,
-    message: string,
-    details?: DatabaseErrorDetails,
-    cause?: unknown,
-  ) {
-    const category =
-      code === "CONNECTION_FAILED"
-        ? "CONNECTION"
-        : code === "QUERY_TIMEOUT"
-          ? "EXECUTION"
-          : "CONCURRENCY";
-
     super({
-      code,
-      category,
-      retryable: code !== "DEADLOCK",
-      message,
-      details,
-      cause,
+      code: "USER_NOT_FOUND",
+      category: "NOT_FOUND",
+      retryable: false,
+      message: `User ${userId} not found in primary db`, // technical — for logs
+      publicMessage: "We couldn't find that user.", // safe — for clients
     });
   }
 }
 
-// Usage with full type safety
-try {
-  throw new DatabaseError("QUERY_TIMEOUT", "Query exceeded 30 second timeout", {
-    query: "SELECT * FROM users",
-    duration: 30000,
-  });
-} catch (error) {
-  if (error instanceof DatabaseError) {
-    console.log(`Database error: ${error.code}`);
-    console.log(`Category: ${error.category}`);
-    console.log(`Can retry: ${error.retryable}`);
-    console.log(`Query: ${error.details?.query}`);
-  }
-}
-```
+const err = new UserNotFoundError("123");
 
-#### Integration with Retry Logic
+// Two output paths — keep them straight:
+logger.error(err.toLogObject()); // full truth: message, stack, cause, details
+return err.toProblemDetails({ status: 404 }); // safe projection for the client
 
-```typescript
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  maxAttempts: number = 3,
-): Promise<T> {
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-
-      // Check if error is retryable
-      if (
-        error instanceof StructuredError &&
-        error.retryable &&
-        attempt < maxAttempts
-      ) {
-        console.log(`Attempt ${attempt} failed, retrying...`);
-        await sleep(1000 * attempt); // Exponential backoff
-        continue;
-      }
-
-      // Non-retryable or last attempt
-      throw error;
-    }
-  }
-
-  throw lastError;
-}
-
-// Usage
-const result = await withRetry(async () => {
-  // This might throw a retryable StructuredError
-  return await fetchUserFromDatabase(userId);
+// Exhaustive handling:
+const status = matchError(err, {
+  USER_NOT_FOUND: () => 404,
+  _: () => 500,
 });
 ```
 
-### Type Narrowing with instanceof
+## Documentation
 
-```typescript
-import { BaseError } from "@shirudo/base-error";
+The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-ts/tree/main/docs/guide)
+(run it locally with `pnpm docs:dev`):
 
-class NotFoundError extends BaseError<"NotFoundError"> {
-  constructor(resourceId: string) {
-    super(`Resource ${resourceId} not found`); // Using automatic name inference
-  }
-}
+**Introduction**
+- [Getting started](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/getting-started.md)
+- [Why safe by default](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/safe-by-default.md)
+- [Pitfalls](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/pitfalls.md)
 
-class ValidationError extends BaseError<"ValidationError"> {
-  constructor(field: string, message: string) {
-    super(`${field}: ${message}`); // Using automatic name inference
-    this.field = field;
-  }
+**Core**
+- [BaseError](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/base-error.md)
+- [StructuredError](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/structured-error.md)
+- [Error catalog (`defineErrors`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/catalog.md)
+- [Validation errors](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/validation.md)
+- [Matching errors (`matchError`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/matching.md)
+- [Cause chains](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/cause-chains.md)
+- [Type guards & assertions](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/guards.md)
 
-  field: string;
-}
+**Boundaries**
+- [Problem Details (RFC 9457)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/problem-details.md)
+- [Error responses](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/error-responses.md)
+- [Building API responses](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/building-responses.md)
+- [Observability & logging (incl. PII redaction & `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
 
-function handleError(error: unknown) {
-  // Type narrowing with instanceof
-  if (error instanceof NotFoundError) {
-    // TypeScript knows this is a NotFoundError
-    // error.name has IntelliSense and is typed as "NotFoundError"
-    console.log(`Got a ${error.name} with message: ${error.message}`);
-    // Handle 404 case
-  } else if (error instanceof ValidationError) {
-    // TypeScript knows this is a ValidationError
-    // error.name is typed as "ValidationError" and field is available
-    console.log(`Validation failed for field: ${error.field}`);
-    console.log(`Error type: ${error.name}, message: ${error.message}`);
-    // Handle validation error
-  } else if (error instanceof BaseError) {
-    // TypeScript knows this is some kind of BaseError
-    // error.name is typed based on the generic parameter
-    console.log(`Unknown error type: ${error.name}`);
-    console.log(`Occurred at: ${error.timestampIso}`);
-  } else {
-    console.log("Unknown error:", error);
-  }
-}
-```
+**Reference**
+- [Migration v4 → v5](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/migration.md)
+- [Changelog](CHANGELOG.md)
 
-## Utilities
+## TypeScript
 
-### `guard` function
-
-The package includes a `guard` utility function for runtime assertions with TypeScript type narrowing:
-
-```typescript
-import { BaseError, guard } from "@shirudo/base-error";
-
-class UserNotFoundError extends BaseError<"UserNotFoundError"> {
-  constructor(userId: string) {
-    super(`User ${userId} not found`);
-  }
-}
-
-class ValidationError extends BaseError<"ValidationError"> {
-  constructor(message: string) {
-    super(message);
-  }
-}
-
-// Basic usage
-function processUser(user: User | null) {
-  // Assert that user exists, throw custom error if not
-  guard(user, new UserNotFoundError("current-user"));
-
-  // TypeScript now knows user is not null
-  console.log(user.name); // No TypeScript error
-}
-
-// Validation example
-function validateEmail(email: string) {
-  const isValid = email.includes("@") && email.includes(".");
-  guard(isValid, new ValidationError("Invalid email format"));
-
-  // Continue with valid email
-  return email.toLowerCase();
-}
-
-// Works with any truthy/falsy values
-function processArray(items: unknown[]) {
-  guard(items.length > 0, new ValidationError("Array cannot be empty"));
-
-  // Process non-empty array
-  return items.map((item) => String(item));
-}
-```
-
-The `guard` function:
-
-- Throws the provided `BaseError` instance when the condition is falsy
-- Provides TypeScript type narrowing through assertion signatures
-- Works with any truthy/falsy values, not just booleans
-- Maintains the full error context and stack trace
-
-## Examples
-
-This package includes comprehensive examples demonstrating various use cases:
-
-| Example                                                                         | Description                                                    |
-| ------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| [basic-usage.ts](examples/basic-usage.ts)                                       | Create custom error classes extending BaseError                |
-| [error-handling.ts](examples/error-handling.ts)                                 | Error handling patterns with BaseError                         |
-| [structured-errors-example.ts](examples/structured-errors-example.ts)           | Using StructuredError with codes, categories, and retryability |
-| [error-codes-example.ts](examples/error-codes-example.ts)                       | Type-safe error codes with union types                         |
-| [domain-errors-example.ts](examples/domain-errors-example.ts)                   | Domain error hierarchy with instanceof handling                |
-| [automatic-name-example.ts](examples/automatic-name-example.ts)                 | Automatic name inference feature                               |
-| [problem-details-example.ts](examples/problem-details-example.ts)               | RFC 9457 compliant error responses with `toProblemDetails()`   |
-| [error-response-builder-example.ts](examples/error-response-builder-example.ts) | Type-safe error responses with the builder pattern             |
-
-Run an example:
-
-```bash
-npx tsx examples/basic-usage.ts
-npx tsx examples/problem-details-example.ts
-```
-
-## API
-
-### `BaseError<T extends string>`
-
-```typescript
-class BaseError<T extends string> extends Error {
-  // Constructor with automatic name inference
-  constructor(
-    message: string,
-    cause?: unknown,
-    options?: {
-      name?: string;
-      publicCode?: string;
-      publicMessage?: string;
-      expose?: boolean;
-    },
-  );
-
-  // Properties
-  readonly name: T; // Error type name (automatically inferred)
-  readonly timestamp: number; // Epoch-ms timestamp
-  readonly timestampIso: string; // ISO-8601 timestamp
-  readonly stack?: string; // Stack trace
-  readonly cause?: unknown; // Error cause (if provided)
-
-  // Methods
-  toLogObject(): Record<string, unknown>; // Serialize for logs
-  toJSON(): Record<string, unknown>; // Backwards-compatible log serialization
-  toPublicJSON(options?: {
-    code?: string;
-    message?: string;
-    expose?: boolean;
-    traceId?: string;
-  }): {
-    code: string;
-    message: string;
-    traceId?: string;
-  };
-
-  // User Message Methods (v2.1+)
-  withUserMessage(message: string): this; // Set default user-friendly message
-  withPublicCode(code: string): this; // Set stable public code
-  withPublicMessage(message: string): this; // Set safe public message
-  exposeToClients(expose?: boolean): this; // Opt into technical fallback
-  addLocalizedMessage(lang: string, message: string): this; // Add localized message (prevents duplicates)
-  updateLocalizedMessage(lang: string, message: string): this; // Update/set localized message (allows overwriting)
-  getUserMessage(options?: {
-    preferredLang?: string;
-    fallbackLang?: string;
-  }): string | undefined; // Get appropriate user message
-}
-```
-
-## TypeScript Support
-
-This package is written in TypeScript and includes type definitions. The generic type parameter `T` allows you to specify the exact name of your error class for improved type safety.
+Ships ESM + CommonJS + type declarations. Requires TypeScript 5.x with `strict`
+mode for the full type-safety story.
 
 ## License
 
-MIT
+[MIT](LICENSE)
