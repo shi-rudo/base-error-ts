@@ -1,6 +1,10 @@
 # Proposal 0003 — `fromJSON` wire reconstruction
 
-**Status:** Draft / for discussion — no implementation yet.
+**Status:** Accepted — decisions locked. Single static `StructuredError.fromJSON`
+named `fromJSON`; lenient (safe envelope on malformed input, never throws);
+original `stack`/`timestamp` rehydrated from the payload; whitelist-only,
+prototype-pollution-safe. Positioned for within-context reconstruction / log
+replay (cross-service only via an ACL).
 **Context:** `toLogObject()` / `toJSON()` serialize a (structured) error,
 including the full cause chain. There is no inverse: code that receives that
 JSON can only duck-type it (`isStructuredError`), and `instanceof` does not
