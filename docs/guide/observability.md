@@ -89,6 +89,17 @@ err.redact(["card"], { mask: (v) => "****" + String(v).slice(-4) }); // ****6789
 err.redact(["age"], { mask: () => 0 });                              // keep the type
 ```
 
+For the common "show *which* secret it was without exposing it" case, use the
+built-in `partialMask` — it reveals a prefix/suffix and masks the rest, and
+**fully** masks values too short to reveal safely (and non-strings):
+
+```ts
+import { partialMask } from "@shirudo/base-error";
+
+err.redact(["apiKey"], { mask: partialMask({ keepStart: 7, keepEnd: 4 }) });
+// "sk_live_0123456789AbCd" -> "sk_live…AbCd"
+```
+
 ### Allow-list (higher assurance)
 
 A deny-list is the conventional choice (it matches pino's `redact`), but you

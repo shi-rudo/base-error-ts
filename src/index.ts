@@ -58,6 +58,7 @@ export {
 // Utilities & Type Guards
 // ────────────────────────────────────────────────────────────────
 export { guard } from "./utils/guard.js";
+export { partialMask } from "./utils/redact.js";
 export {
   isBaseError,
   isStructuredError,
