@@ -67,6 +67,22 @@ describe("defineErrors", () => {
     expect(AppErrors.meta("RATE_LIMITED").retryable).toBe(true);
   });
 
+  it("rejects 'meta' as an error code (reserved)", () => {
+    expect(() =>
+      defineErrors({ meta: { category: "X", retryable: false } }),
+    ).toThrow(/reserved/i);
+  });
+
+  it("throws a clear error for an unknown code instead of returning undefined", () => {
+    expect(() => AppErrors.meta("NOPE" as never)).toThrow(/unknown/i);
+  });
+
+  it("returns a copy from meta() so mutating it does not poison the catalog", () => {
+    const row = AppErrors.meta("USER_NOT_FOUND");
+    (row as { httpStatus?: number }).httpStatus = 999;
+    expect(AppErrors.meta("USER_NOT_FOUND").httpStatus).toBe(404);
+  });
+
   it("resolves the boundary status from the catalog", () => {
     const err = AppErrors.USER_NOT_FOUND("x", { details: { userId: "1" } });
     const problem = err.toProblemDetails({

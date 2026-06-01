@@ -108,6 +108,11 @@ export function defineErrors<const T extends Record<string, ErrorSpec>>(
   const api: Record<string, unknown> = {};
 
   for (const code of Object.keys(catalog)) {
+    if (code === "meta") {
+      throw new Error(
+        'defineErrors: "meta" is reserved (it is the metadata accessor) and cannot be used as an error code.',
+      );
+    }
     const spec = catalog[code] as ErrorSpec;
     api[code] = (
       message: string,
@@ -128,7 +133,13 @@ export function defineErrors<const T extends Record<string, ErrorSpec>>(
       });
   }
 
-  api.meta = (code: string) => catalog[code];
+  api.meta = (code: string) => {
+    if (!Object.prototype.hasOwnProperty.call(catalog, code)) {
+      throw new Error(`meta: unknown error code "${code}"`);
+    }
+    // Return a copy so callers cannot mutate the catalog's stored spec.
+    return { ...(catalog[code] as ErrorSpec) };
+  };
 
   return api as Catalog<T>;
 }
