@@ -243,9 +243,16 @@ export class BaseError<
    */
   public redact(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
-    const keySet = new Set(keys);
+    const denied = new Set(keys);
     this.#redactor = (log) =>
-      BaseError.#maskKeys(log, keySet, mask) as Record<string, unknown>;
+      BaseError.#redactWalk(
+        log,
+        (key, value) =>
+          denied.has(key)
+            ? BaseError.#applyMask(mask, value, key)
+            : BaseError.#RECURSE,
+        false,
+      ) as Record<string, unknown>;
     return this;
   }
 
@@ -263,14 +270,26 @@ export class BaseError<
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
     this.#redactor = (log) =>
-      BaseError.#maskExcept(log, allow, mask, false) as Record<string, unknown>;
+      BaseError.#redactWalk(
+        log,
+        (key, value, inData) => {
+          // Always recurse into containers so nested allowed leaves survive.
+          if (Array.isArray(value) || BaseError.#isPlainObject(value)) {
+            return BaseError.#RECURSE;
+          }
+          // Inside a data payload, a leaf survives only if explicitly allowed.
+          return inData && !allow.has(key)
+            ? BaseError.#applyMask(mask, value, key)
+            : value;
+        },
+        false,
+      ) as Record<string, unknown>;
     return this;
   }
 
-  /**
-   * Deep-clones `value`, masking every leaf inside a `details` subtree whose key
-   * is not in `allow`. Container objects are recursed; the envelope is untouched.
-   */
+  /** Sentinel returned by a redaction decision to mean "descend / keep as-is". */
+  static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
+
   /*#__PURE__*/ static #applyMask(
     mask: RedactMask,
     value: unknown,
@@ -279,32 +298,60 @@ export class BaseError<
     return typeof mask === "function" ? mask(value, key) : mask;
   }
 
-  /*#__PURE__*/ static #maskExcept(
+  /** Plain objects (`{}` / `Object.create(null)`) are the only objects we descend into. */
+  /*#__PURE__*/ static #isPlainObject(
     value: unknown,
-    allow: Set<string>,
-    mask: RedactMask,
-    inside: boolean,
+  ): value is Record<string, unknown> {
+    if (value === null || typeof value !== "object") return false;
+    const proto = Object.getPrototypeOf(value) as unknown;
+    return proto === Object.prototype || proto === null;
+  }
+
+  /** Duck-types a serialized structured error (same shape as #serializeCause emits). */
+  /*#__PURE__*/ static #isStructuredShape(
+    value: Record<string, unknown>,
+  ): boolean {
+    return (
+      typeof value.code === "string" &&
+      typeof value.category === "string" &&
+      typeof value.retryable === "boolean"
+    );
+  }
+
+  /**
+   * Single deep-clone walker for redaction. Recurses only into plain objects and
+   * arrays; every other value (string, Date, Map, class instance, …) is a leaf.
+   * `decide(key, value, inData)` returns the replacement for a key, or `#RECURSE`
+   * to descend into a container / keep a leaf unchanged. `inData` tracks whether
+   * we are inside a data payload — a `details` subtree or a plain-object (i.e.
+   * non-structured) cause — so the allow-list never leaks data that lives outside
+   * `details` (e.g. a plain-object cause). The deny-list ignores `inData`.
+   */
+  /*#__PURE__*/ static #redactWalk(
+    value: unknown,
+    decide: (key: string, value: unknown, inData: boolean) => unknown,
+    inData: boolean,
   ): unknown {
     if (Array.isArray(value)) {
-      return value.map((item) =>
-        BaseError.#maskExcept(item, allow, mask, inside),
-      );
+      return value.map((item) => BaseError.#redactWalk(item, decide, inData));
     }
-    if (value !== null && typeof value === "object") {
+    if (BaseError.#isPlainObject(value)) {
       const out: Record<string, unknown> = {};
       for (const [key, val] of Object.entries(value)) {
-        const isLeaf = val === null || typeof val !== "object";
-        if (inside && isLeaf) {
-          out[key] = allow.has(key)
-            ? val
-            : BaseError.#applyMask(mask, val, key);
+        const childInData =
+          inData ||
+          key === "details" ||
+          (key === "cause" &&
+            BaseError.#isPlainObject(val) &&
+            !BaseError.#isStructuredShape(val));
+        const decision = decide(key, val, childInData);
+        if (decision === BaseError.#RECURSE) {
+          out[key] =
+            Array.isArray(val) || BaseError.#isPlainObject(val)
+              ? BaseError.#redactWalk(val, decide, childInData)
+              : val;
         } else {
-          out[key] = BaseError.#maskExcept(
-            val,
-            allow,
-            mask,
-            inside || key === "details",
-          );
+          out[key] = decision;
         }
       }
       return out;
@@ -321,27 +368,6 @@ export class BaseError<
   ): this {
     this.#redactor = redactor;
     return this;
-  }
-
-  /** Deep-clones `value`, masking the value of any key in `keys` at any depth. */
-  /*#__PURE__*/ static #maskKeys(
-    value: unknown,
-    keys: Set<string>,
-    mask: RedactMask,
-  ): unknown {
-    if (Array.isArray(value)) {
-      return value.map((item) => BaseError.#maskKeys(item, keys, mask));
-    }
-    if (value !== null && typeof value === "object") {
-      const out: Record<string, unknown> = {};
-      for (const [key, val] of Object.entries(value)) {
-        out[key] = keys.has(key)
-          ? BaseError.#applyMask(mask, val, key)
-          : BaseError.#maskKeys(val, keys, mask);
-      }
-      return out;
-    }
-    return value;
   }
 
   /**
@@ -412,10 +438,30 @@ export class BaseError<
       return this.#redactor(raw);
     } catch {
       // Fail-closed: a broken redactor must neither crash the logging path nor
-      // leak the unredacted payload. Emit a safe marker instead.
-      return { name: this.name, message: "[log redaction failed]" };
+      // leak the unredacted payload (message/details/stack/cause are dropped).
+      // Keep only the non-sensitive structural fields needed for triage.
+      const safe: Record<string, unknown> = {
+        message: "[log redaction failed]",
+      };
+      for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
+        if (key in raw) {
+          safe[key] = raw[key];
+        }
+      }
+      return safe;
     }
   }
+
+  /** Non-sensitive structural fields preserved in the fail-closed redaction marker. */
+  static readonly #SAFE_TRIAGE_KEYS = [
+    "name",
+    "code",
+    "category",
+    "retryable",
+    "timestamp",
+    "timestampIso",
+    "traceId",
+  ] as const;
 
   /** Backwards-compatible JSON serialization for logging-oriented consumers. */
   public toJSON(): Record<string, unknown> {

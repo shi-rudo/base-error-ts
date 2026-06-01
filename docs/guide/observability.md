@@ -111,8 +111,11 @@ leaf **except** the listed ones, so new fields leak nothing by default:
 err.redactAllow(["userId", "requestId"]); // only these detail leaves survive
 ```
 
-It operates on leaf field names within `details` (and nested cause details);
-the envelope (`message`/`code`/…) is untouched.
+It masks leaf field names inside any data payload — `details`, nested cause
+`details`, and a plain-object (non-structured) cause — so data outside `details`
+can't slip through. The structural envelope (`message`/`code`/…) and structured
+causes' envelopes are untouched. (The technical `message` is structural here;
+scrub free text in it with `redactWith`.)
 
 ### What key redaction can't do
 
@@ -141,8 +144,9 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
   redaction (pino `redact`, winston formatters); for blanket app-wide policy,
   prefer the logger.
 - **Fail-closed**: if a redactor throws, `toLogObject()` does not crash the
-  logging path and does not emit the unredacted payload — it returns a safe
-  `{ name, message: "[log redaction failed]" }` marker instead.
+  logging path and does not emit the unredacted payload. It keeps only the
+  non-sensitive structural fields (`name`/`code`/`category`/`retryable`/
+  timestamps/`traceId`) plus a `[log redaction failed]` marker.
 
 ## Sentry / OpenTelemetry
 
