@@ -6,15 +6,16 @@ lives in [`@shirudo/result`](https://github.com/shi-rudo/result-ts), whose `E`
 is unconstrained — so `StructuredError` already fits as the error type. This
 proposal closes the two remaining DDD gaps:
 
-1. **`toStructuredError`** — a canonical `unknown → StructuredError` coercion.
-   The missing piece at the seam with `@shirudo/result`: the `errorMapper` slot
-   of `fromThrowable` / `fromPromise` and the `errorFn` of `filter` all want a
-   stable way to turn an arbitrary thrown value into a domain error. Also useful
-   standalone in `catch`.
+1. **`toStructuredError`** — a canonical `unknown → StructuredError` coercion
+   that gives any caught value a consistent **structured envelope** at the
+   boundary (it does *not* fabricate a domain error — see the framing note). The
+   missing piece at the seam with `@shirudo/result`: the `errorMapper` slot of
+   `fromThrowable` / `fromPromise` and the `errorFn` of `filter` all want a stable
+   way to wrap an arbitrary thrown value. Also useful standalone in `catch`.
 2. **Validation aggregate** — collect N field-level failures into one error that
-   serializes to RFC 9457 with an `errors[]` extension. The most common
-   DDD/enterprise need (value-object / command validation) that the library
-   cannot express today.
+   can serialize to an RFC 9457 `errors[]` extension **on explicit opt-in**. The
+   most common DDD/enterprise need (value-object / command validation) that the
+   library cannot express today.
 
 Both stay zero-dependency and **do not** depend on `@shirudo/result` (the bridge
 is decoupled — it just happens to fit result-ts's mapper slots).
@@ -79,6 +80,31 @@ export function toStructuredError<
 - Pass-through is by `instanceof StructuredError` only. A duck-typed plain object
   that *looks* structured is treated as foreign and wrapped — reconstructing
   serialized errors is `fromJSON`'s job (proposal 0003), not coercion's.
+
+### Framing: an envelope, not a domain error
+
+An unknown thrown value is almost always an *unexpected*/infrastructure failure
+or a programmer bug — **not** a domain error. `toStructuredError` does not
+fabricate domain semantics; it gives the unexpected failure a consistent,
+loggable, safe-to-serialize **envelope** at the boundary. The honest defaults
+encode exactly that: `code = "UNKNOWN_ERROR"`, `category = "INTERNAL"`,
+`retryable = false`.
+
+This is a boundary/observability tool, not a modeling tool. In particular, do
+**not** use it to swallow programmer errors: a `TypeError`/`RangeError`/assertion
+is a bug, and wrapping it into a tidy envelope where it gets "handled" hides it.
+At a catch-all, prefer to rethrow genuine bugs and coerce only what you mean to
+turn into a response:
+
+```ts
+catch (e) {
+  if (e instanceof TypeError || e instanceof RangeError) throw e; // a bug — surface it
+  return toStructuredError(e).toProblemDetails({ status: 500 });
+}
+```
+
+The library deliberately does **not** auto-classify bugs (a `TypeError` can be
+thrown legitimately) — that judgement stays with the caller.
 
 ### result-ts integration
 
@@ -146,9 +172,10 @@ if (result.issues) throw new ValidationError("Invalid input", { issues: result.i
 // Structurally identical to Standard Schema's `Issue` (standardschema.dev), so
 // validator output from Zod / Valibot / ArkType / TanStack Form pipes straight
 // in with no remapping — and with no dependency (the shape is matched, not
-// imported). Extra fields a validator attaches ride along at runtime.
+// imported). Extra fields a validator attaches are kept for logs but NEVER
+// cross to a client (see `publicIssues` / RFC 9457 mapping).
 export type ValidationIssue = {
-  /** Human-readable, client-safe message. */
+  /** Human-readable message. Keep it client-safe if you choose to expose it. */
   readonly message: string;
   /** Path to the offending value (Standard Schema form). */
   readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
@@ -167,9 +194,27 @@ export class ValidationError extends StructuredError<
   addIssues(issues: ValidationIssue[]): this;
   /** True when at least one issue was collected. */
   hasIssues(): boolean;
-  /** Read-only view of the collected issues. */
+  /** Full collected issues (with any validator extras) — for internal/log use. */
   readonly issues: readonly ValidationIssue[];
+
+  /**
+   * The client-safe projection of the issues: a fixed whitelist
+   * (`message`, `path`, `code?`, `pointer?`) — never raw validator extras.
+   * This is the only shape allowed to cross to a client, and only when the
+   * caller explicitly includes it (see RFC 9457 mapping).
+   */
+  publicIssues(options?: { mapIssue?: (issue: ValidationIssue) => PublicIssue }): PublicIssue[];
 }
+
+/** The fixed, client-safe shape an issue takes on the wire. */
+export type PublicIssue = {
+  message: string;
+  path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
+  /** Included only when the source issue carried one. */
+  code?: string;
+  /** Optional derived string path (e.g. "address.zip") for HTTP clients. */
+  pointer?: string;
+};
 ```
 
 - `code = "VALIDATION_FAILED"`, `category = "VALIDATION"`, `retryable = false`
@@ -178,18 +223,28 @@ export class ValidationError extends StructuredError<
 - Overrides `_tag` to the literal `"ValidationError"` (minification-safe,
   per proposal 0001's reasoning).
 
-### RFC 9457 mapping
+### RFC 9457 mapping — opt-in, fixed safe subset, configurable shape
 
-Validation issues are the **public contract** — they exist to guide the client.
-So `ValidationError.toProblemDetails()` emits them by default as an `errors`
-extension member (unlike normal `details`, which stay internal):
+Issues do **not** cross to a client by default. There is **no exception** to
+safe-by-default: a `ValidationError` stores its full issues internally
+(`toLogObject` has them, with any validator extras), and surfacing them is an
+explicit, reviewable opt-in — exactly like `expose` / `mapDetails` elsewhere.
+The caller, who knows the messages are client-safe, asks for them.
+
+Two mechanical guarantees:
+
+1. **Only a fixed whitelist crosses.** Whatever is stored, `publicIssues()`
+   yields only `{ message, path, code?, pointer? }` — never raw validator extras
+   (a Zod native issue may carry `received`/the rejected input value; those must
+   never reach the wire).
+2. **Crossing is explicit**, reusing the existing `extensions` mechanism:
 
 ```ts
-v.toProblemDetails({ status: 422 });
+v.toProblemDetails({ status: 422, extensions: { errors: v.publicIssues() } });
 // {
 //   status: 422,
 //   detail: "Registration is invalid",
-//   code: "INTERNAL_ERROR",          // still safe-by-default for code
+//   code: "INTERNAL_ERROR",          // still safe-by-default
 //   retryable: false,
 //   errors: [
 //     { message: "Enter a valid email.", path: ["email"] },
@@ -198,22 +253,26 @@ v.toProblemDetails({ status: 422 });
 // }
 ```
 
-Optionally each emitted issue can also carry a derived string `pointer`
-(e.g. `"address.zip"`) alongside the canonical Standard Schema `path` array, for
-HTTP clients that prefer a string key. Canonical form stays `path`.
+An optional `includeIssues: true` convenience flag may do exactly the same
+(emit `publicIssues()` under the configured key) — sugar over the explicit form,
+not a hidden default.
 
-This is a **deliberate, documented exception** to "details never cross": the
-issues are author-written, client-safe strings (the same reasoning that lets
-localized messages surface). It is implemented on top of the existing
-`extensions` mechanism, so the safe-by-default invariant for standard/library
-members is untouched (issues can't clobber `code`/`status`/…).
+#### Standard Schema in, configurable shape out
 
-Options:
+These are two different layers and we use both:
 
-- `toProblemDetails({ status, extensionKey })` — default key `"errors"`; allow
-  `"invalid-params"` (RFC 7807 example style) or a custom name.
-- The status is **not** defaulted by the type — the boundary chooses (commonly
-  400 or 422).
+- **Ingestion = Standard Schema.** `ValidationIssue` matches it, so validator
+  output pipes in unchanged.
+- **Wire shape = the caller's transport contract.** RFC 9457 does **not** mandate
+  any validation format (`invalid-params` was only a non-normative example in
+  RFC 7807's appendix). So the output shape and key are configurable:
+  - Default: a neutral `errors: [{ message, path, code? }]`.
+  - RFC-7807 preset: `invalid-params: [{ name, reason }]`, where `name` is the
+    stringified path and `reason` the message — available via the `mapIssue`
+    hook + an `extensionKey` option.
+  - Any custom shape via `mapIssue`.
+
+Status is never defaulted by the type — the boundary chooses (commonly 400/422).
 
 ### result-ts integration
 
@@ -229,26 +288,39 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 }
 ```
 
+### Resolved decisions
+
+- **Exposure:** opt-in, never default. Surfacing issues is explicit (via
+  `publicIssues()` + `extensions`, or an `includeIssues` sugar flag) — no
+  exception to safe-by-default.
+- **What can cross:** only the fixed `PublicIssue` whitelist
+  (`message`/`path`/`code?`/`pointer?`), never raw validator extras.
+- **Ingestion vs wire:** Standard Schema in; output shape/key configurable
+  (default `errors`/`{message,path,code?}`, RFC-7807 `invalid-params`/`{name,reason}`
+  preset via `mapIssue`).
+- **Subclass vs standalone:** subclass `StructuredError` (keeps `instanceof`,
+  `code`, catalog, match). Resolved.
+- **Issue shape:** Standard Schema's `Issue`. Resolved.
+
 ### Open questions
 
-- **Default extension key:** `errors` (proposed) vs `invalid-params` (RFC 7807
-  appendix). `errors` is the more common modern convention.
-- **Subclass vs standalone:** subclassing `StructuredError` (proposed) keeps it
-  in the ecosystem (`instanceof StructuredError`, `code`, catalog, match). A
-  standalone `AggregateError`-style type would lose that. Recommend subclass.
-- **Issue shape:** matched to Standard Schema's `Issue` (`message` + `path`),
-  so Zod / Valibot / ArkType / TanStack Form output pipes in unchanged and the
-  type stays dependency-free. Resolved.
-- **`toErrorResponse` parity:** should the aggregate also surface issues in
-  `toErrorResponse`'s `details`? Likely yes via the same projection.
+- **`code`/`category` override:** hard-wired `VALIDATION_FAILED`/`VALIDATION` vs
+  letting a caller pick (`BAD_REQUEST`, `INVALID_INPUT`, …). Lean: allow an
+  optional override, default to `VALIDATION_FAILED`/`VALIDATION`.
 
 ### Test plan
 
-- `addIssue`/`addIssues`/`hasIssues`/`issues` accumulation and immutability.
+- `addIssue`/`addIssues`/`hasIssues` accumulation; `issues` getter returns a
+  read-only view (internal array is appended to, not reassigned by callers).
 - `instanceof StructuredError`, `code === "VALIDATION_FAILED"`, stable `_tag`.
-- `toProblemDetails` emits `errors[]`; honors a custom extension key; standard
+- **Default does NOT expose issues**: `toProblemDetails()` without opt-in has no
+  `errors[]`.
+- `publicIssues()` returns only the whitelist; **validator extras
+  (e.g. Zod `received`) never appear** even when present on stored issues.
+- Opt-in via `extensions` / `includeIssues` emits the chosen key/shape; standard
   members still win (issues can't override `code`/`status`).
-- `toLogObject` carries the issues in `details` (full fidelity for logs).
+- `mapIssue` produces the RFC-7807 `invalid-params`/`{name,reason}` shape.
+- `toLogObject` carries the full issues (with extras) for logs.
 - Empty aggregate (no issues) behaves sanely.
 
 ---
@@ -263,8 +335,13 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 ## Decisions to confirm before implementation
 
 1. `toStructuredError` default internal `code` → `"UNKNOWN_ERROR"`?
-2. Validation extension key → `"errors"` (default) with opt-in `"invalid-params"`?
-3. `ValidationError` as a `StructuredError` subclass (recommended)?
+2. Validation issues are **opt-in only** (no default exposure), and only the
+   `PublicIssue` whitelist can ever cross — confirm this over a default-expose
+   convenience.
+3. Default wire shape `errors`/`{message,path,code?}` with an RFC-7807
+   `invalid-params`/`{name,reason}` preset via `mapIssue` — confirm the default.
+4. `ValidationError` as a `StructuredError` subclass (recommended).
+5. Allow optional `code`/`category` override on `ValidationError`?
 
 ## Non-goals
 
