@@ -56,7 +56,7 @@ An explicit `detail` still wins; a missing locale falls back to `publicMessage`
 ## Projecting details {#projecting-details}
 
 Raw `details` never cross into a client response. To surface any of them, write
-an explicit, reviewable projection with `mapDetails` — this is the only path:
+an explicit, reviewable projection with `mapDetails`. This is the only path:
 
 ```ts
 error.toProblemDetails({

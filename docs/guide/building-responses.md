@@ -1,8 +1,8 @@
 # Building API responses
 
-Besides projecting an *error* into a response with
+Besides projecting an _error_ into a response with
 [`toErrorResponse()`](./error-responses), the package ships standalone helpers to
-construct success/error envelopes from scratch — useful at the API layer where
+construct success/error envelopes from scratch, useful at the API layer where
 not every response originates from a thrown error.
 
 ```ts
@@ -16,7 +16,7 @@ import {
 
 ## The discriminated union
 
-Every response is an `ApiResponse<TData>` — a discriminated union on
+Every response is an `ApiResponse<TData>`, a discriminated union on
 `isSuccess`:
 
 ```ts
@@ -35,11 +35,11 @@ if (res.isSuccess) {
 successResponse({ id: "123", name: "Ada" });
 // { isSuccess: true, data: { id: "123", name: "Ada" } }
 
-successResponse();                       // void payload
+successResponse(); // void payload
 createSuccessResponse({ data: { id: "123" } }); // object-syntax variant
 ```
 
-## Error responses — the builder
+## Error responses: the builder
 
 `errorResponse({ code, category, retryable? })` returns a type-safe
 `ErrorResponseBuilder`. (Construct builders through this factory, not the class
@@ -49,26 +49,26 @@ have set, so `build()` produces the exact shape you configured:
 ```ts
 const res = errorResponse({ code: "USER_NOT_FOUND", category: "NOT_FOUND" })
   .httpStatus(404)
-  .message("User 123 not found")            // technical ctx message
-  .localized("en", "User not found")        // client-facing localized message
+  .message("User 123 not found") // technical ctx message
+  .localized("en", "User not found") // client-facing localized message
   .traceId("trace-abc-123")
   .details({ userId: "123" })
   .build();
 ```
 
-| Method | Sets |
-| --- | --- |
-| `httpStatus(code)` | `ctx.httpStatusCode` |
-| `message(msg)` | `ctx.message` (technical) |
-| `localized(locale, msg)` | `ctx.messageLocalized` |
-| `traceId(id)` | top-level `traceId` |
-| `details(obj)` | `error.details` (replaces the details type) |
-| `withCtx(obj)` | merges extra `ctx` fields |
-| `build()` | returns the final `ErrorResponse` |
+| Method                   | Sets                                        |
+| ------------------------ | ------------------------------------------- |
+| `httpStatus(code)`       | `ctx.httpStatusCode`                        |
+| `message(msg)`           | `ctx.message` (technical)                   |
+| `localized(locale, msg)` | `ctx.messageLocalized`                      |
+| `traceId(id)`            | top-level `traceId`                         |
+| `details(obj)`           | `error.details` (replaces the details type) |
+| `withCtx(obj)`           | merges extra `ctx` fields                   |
+| `build()`                | returns the final `ErrorResponse`           |
 
 `retryable` defaults to `false`.
 
-## Error responses — one-shot factory
+## Error responses: one-shot factory
 
 When you don't need the builder, `createErrorResponse` builds the envelope in a
 single call and infers the exact type from the input:
@@ -89,7 +89,7 @@ Only `code` and `category` are required; `retryable` → `false`, `ctx` → `{}`
 ## Builder/factory vs `toErrorResponse()`
 
 - Use [`toErrorResponse()`](./error-responses) when you already hold a
-  `StructuredError` — it applies the safe public projection.
+  `StructuredError`, which applies the safe public projection.
 - Use these builders/factories when you are assembling a response directly at
   the API layer. Their `ctx.message` is the **technical** message; keep
   client-facing text in `localized` or map it explicitly.

@@ -12,7 +12,7 @@ describe("toStructuredError", () => {
     expect(toStructuredError(original)).toBe(original);
   });
 
-  it("has an honest return type — code/category are string, not the option literal", () => {
+  it("has an honest return type: code/category are string, not the option literal", () => {
     // Because a pre-existing StructuredError passes through unchanged, the
     // return type must not promise the option's literal code/category.
     const e = toStructuredError(new Error("x"), {

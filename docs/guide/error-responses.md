@@ -1,7 +1,7 @@
 # Error responses
 
-`toErrorResponse()` produces a discriminated `ErrorResponse` — the mirror of a
-`SuccessResponse` — for RPC-style and HTTP APIs that use a
+`toErrorResponse()` produces a discriminated `ErrorResponse` (the mirror of a
+`SuccessResponse`) for RPC-style and HTTP APIs that use a
 `{ isSuccess, ... }` envelope.
 
 ```ts
@@ -44,12 +44,12 @@ same string **tagged with its locale**, so a client knows which language it got.
 
 You don't assemble `messageLocalized` by hand. Pass `locale` (optionally
 `fallbackLocale`) and `toErrorResponse()` resolves an author-provided
-[localized message](./base-error) from the same source `ctx.message` uses —
+[localized message](./base-error) from the same source `ctx.message` uses,
 tagging it with the locale that actually matched (the fallback, if that's what
-hit). The two fields therefore agree by construction; `messageLocalized` is
+hit). The two fields therefore agree by construction, and `messageLocalized` is
 simply omitted when no locale resolves.
 
-Server-side localization is an opt-in escape hatch — in a typical app the client
+Server-side localization is an opt-in escape hatch. In a typical app the client
 maps the stable `code` to its own translations. See
 [when it makes sense](./base-error#when-server-side-localization-makes-sense).
 
@@ -58,23 +58,23 @@ string sourced outside the error's own locale entries.
 
 ## Options
 
-| Option | Notes |
-| --- | --- |
-| `httpStatusCode` | Placed in `ctx` |
-| `locale` | Preferred locale; resolves `message` + `messageLocalized` |
-| `fallbackLocale` | Locale used when `locale` has no entry |
-| `messageLocalized` | Explicit `{ locale, message }` override (usually omit — derived from `locale`) |
-| `traceId` | Distributed tracing id |
-| `publicCode` | Deliberate client-safe code |
-| `publicCategory` | Deliberate client-safe category |
-| `message` | Public message override |
-| `expose` | Opt in to technical name/category/message |
-| `mapDetails` | Explicit projection into the `details` field |
+| Option             | Notes                                                                         |
+| ------------------ | ----------------------------------------------------------------------------- |
+| `httpStatusCode`   | Placed in `ctx`                                                               |
+| `locale`           | Preferred locale; resolves `message` + `messageLocalized`                     |
+| `fallbackLocale`   | Locale used when `locale` has no entry                                        |
+| `messageLocalized` | Explicit `{ locale, message }` override (usually omit; derived from `locale`) |
+| `traceId`          | Distributed tracing id                                                        |
+| `publicCode`       | Deliberate client-safe code                                                   |
+| `publicCategory`   | Deliberate client-safe category                                               |
+| `message`          | Public message override                                                       |
+| `expose`           | Opt in to technical name/category/message                                     |
+| `mapDetails`       | Explicit projection into the `details` field                                  |
 
 ## Surfacing details
 
 The `details` field is `{}` by default. Populate it the same way as Problem
-Details — with an explicit projection:
+Details: with an explicit projection:
 
 ```ts
 error.toErrorResponse({

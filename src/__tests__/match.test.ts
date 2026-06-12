@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { matchError, StructuredError } from "../index.js";
 
 // A closed union of distinct structured error types, each with a literal code
-// and its own details shape — the shape a catalog produces.
+// and its own details shape (the shape a catalog produces).
 type UserNotFound = StructuredError<
   "USER_NOT_FOUND",
   "NOT_FOUND",
@@ -48,7 +48,7 @@ describe("matchError", () => {
   });
 
   it("infers the result type from the handler return types", () => {
-    // Typed bindings — if matchError regressed to `unknown`, typecheck fails.
+    // Typed bindings: if matchError regressed to `unknown`, typecheck fails.
     const n: number = matchError(userNotFound("1") as AppError, {
       USER_NOT_FOUND: () => 404,
       RATE_LIMITED: () => 429,

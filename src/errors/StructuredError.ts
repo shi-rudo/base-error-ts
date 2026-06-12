@@ -131,12 +131,12 @@ export class StructuredError<
 
   /**
    * Reconstruct a StructuredError from its serialized (`toJSON`/`toLogObject`)
-   * shape — the inverse of {@link toJSON}.
+   * shape. This is the inverse of {@link toJSON}.
    *
    * Intended for reconstruction **within a single trust/bounded-context
    * boundary**: Web Worker / `postMessage` (where `instanceof` is lost across
    * `structuredClone`), job queues / durable storage, and log replay. Across
-   * services, reconstruct then translate through an Anti-Corruption Layer — do
+   * services, reconstruct then translate through an Anti-Corruption Layer; do
    * not treat an upstream's `code` as your own.
    *
    * Lenient and safe: missing fields fall back to safe defaults
@@ -144,7 +144,7 @@ export class StructuredError<
    * envelope instead of throwing; only whitelisted fields are read (no
    * prototype pollution). The original `stack`/`timestamp`, the cause chain, and
    * user/localized messages are restored. Reconstructed fields are **not** an
-   * authority on trust — whoever produced the payload can forge them.
+   * authority on trust: whoever produced the payload can forge them.
    *
    * Always returns a base `StructuredError`: subclass identity and behavior are
    * **not** restored (a `ValidationError` round-trips to a `StructuredError`,
@@ -405,7 +405,7 @@ export class StructuredError<
     };
 
     // Extension members are always an explicit projection chosen by the
-    // boundary layer — raw details never cross implicitly. mapDetails runs only
+    // boundary layer; raw details never cross implicitly. mapDetails runs only
     // when details exist, so the callback never sees `undefined`.
     const extensionMembers = {
       ...(mapDetails && this.details !== undefined
@@ -463,7 +463,7 @@ export class StructuredError<
        * is auto-populated and tagged with the locale that actually matched, so
        * `ctx.message` and `ctx.messageLocalized` agree by construction. Set it
        * explicitly only to inject a localized string from outside the error's
-       * own locale entries — an explicit value overrides the resolved one.
+       * own locale entries. An explicit value overrides the resolved one.
        */
       messageLocalized?: LocalizedMessage;
       /** Trace ID for distributed tracing */
