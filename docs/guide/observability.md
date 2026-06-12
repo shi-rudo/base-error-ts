@@ -25,8 +25,8 @@ logger.error(error.toLogObject());
 ```
 
 It includes the technical `message`, `stack`, the **full serialized cause
-chain**, timestamps, any user/localized messages, and — for
-[`StructuredError`](./structured-error) — `code`, `category`, `retryable` and
+chain**, timestamps, any user/localized messages, and (for
+[`StructuredError`](./structured-error)) `code`, `category`, `retryable` and
 raw `details`.
 
 `toJSON()` is an alias, so `JSON.stringify(error)` produces the same log-grade
@@ -65,7 +65,7 @@ no leak.
 
 ## Redacting PII from logs
 
-In regulated contexts the logs themselves must scrub PII — `details.ssn`
+In regulated contexts the logs themselves must scrub PII; `details.ssn`
 shouldn't reach the sink in plaintext. `redact` configures a **sticky**
 deny-list on the error, so even the auto-serialize path (`JSON.stringify(error)`
 that a logger does) is masked:
@@ -83,7 +83,7 @@ err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTE
 JSON.stringify(err); // also masked
 ```
 
-The mask is configurable — a string, or a **function** of `(value, key)` for
+The mask is configurable: a string, or a **function** of `(value, key)` for
 partial masking or type preservation:
 
 ```ts
@@ -92,7 +92,7 @@ err.redact(["age"], { mask: () => 0 }); // keep the type
 ```
 
 For the common "show _which_ secret it was without exposing it" case, use the
-built-in `partialMask` — it reveals a prefix/suffix and masks the rest, and
+built-in `partialMask`, which reveals a prefix/suffix and masks the rest, and
 **fully** masks values too short to reveal safely (and non-strings):
 
 ```ts
@@ -105,7 +105,7 @@ err.redact(["apiKey"], { mask: partialMask({ keepStart: 7, keepEnd: 4 }) });
 ### Allow-list (higher assurance)
 
 A deny-list is the conventional choice (it matches pino's `redact`), but you
-can't enumerate every PII field — a newly-added `details.passportNumber` would
+can't enumerate every PII field; a newly-added `details.passportNumber` would
 leak. For high-sensitivity data use `redactAllow`, which masks every `details`
 leaf **except** the listed ones, so new fields leak nothing by default:
 
@@ -113,18 +113,18 @@ leaf **except** the listed ones, so new fields leak nothing by default:
 err.redactAllow(["userId", "requestId"]); // only these detail leaves survive
 ```
 
-It masks every leaf inside any **data** region — a `details` subtree (at any
-depth) and a cause's data fields — so data can't slip through wherever it sits.
+It masks every leaf inside any **data** region (a `details` subtree at any
+depth, and a cause's data fields), so data can't slip through wherever it sits.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
 structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`);
 but **any other field on a cause is data** and is masked, so a plain object that
 merely _resembles_ a structured error can't smuggle siblings through. The
-classification is by position, not by shape — there is nothing to spoof. (The
+classification is by position, not by shape, so there is nothing to spoof. (The
 technical `message` is structural here; scrub free text in it with `redactWith`.)
 
 ### What key redaction can't do
 
-Key-based redaction masks the **value at a key** — it cannot catch PII embedded
+Key-based redaction masks the **value at a key**; it cannot catch PII embedded
 in free text, e.g. inside the technical `message` (`"user a@b.com not found"`)
 or a string detail value. For those, use the function form:
 
@@ -133,7 +133,7 @@ err.redactWith((log) => ({ ...log, message: scrub(log.message as string) }));
 ```
 
 `redactWith` is also the composition seam for a **dedicated redaction library**
-when you need patterns, wildcards or regex-based PII detection — this library
+when you need patterns, wildcards or regex-based PII detection. This library
 intentionally stays minimal and delegates that power:
 
 ```ts
@@ -144,7 +144,7 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 
 ### Notes
 
-- **Log path only** — the client serializers are already safe by default.
+- **Log path only**: the client serializers are already safe by default.
 - **Defense-in-depth at the source**, not a replacement for logger-level
   redaction (pino `redact`, winston formatters); for blanket app-wide policy,
   prefer the logger.
@@ -162,7 +162,7 @@ chain is serialized, nested root causes survive the trip:
 Sentry.captureException(error, { extra: error.toLogObject() });
 ```
 
-## Reconstructing — `StructuredError.fromJSON`
+## Reconstructing: `StructuredError.fromJSON`
 
 `fromJSON` is the inverse of `toJSON`: it rebuilds a typed `StructuredError`
 (restoring `code`/`category`/`retryable`/`details`, the original
@@ -175,26 +175,26 @@ matchError(err, { PARSE_FAILED: () => retry(), _: (e) => report(e) });
 
 It is for reconstruction **within one trust/bounded-context boundary**:
 
-- **Worker / `postMessage` / iframe** — `instanceof` is lost across
+- **Worker / `postMessage` / iframe**: `instanceof` is lost across
   `structuredClone`; `fromJSON` restores the typed error.
-- **Job queues / durable storage** — reconstruct an error parked by the same
+- **Job queues / durable storage**: reconstruct an error parked by the same
   system.
-- **Log replay / forensics** — parse a logged error JSON back into an object.
+- **Log replay / forensics**: parse a logged error JSON back into an object.
 
 It is lenient (malformed input → a safe `UNKNOWN_ERROR` envelope, never throws)
 and prototype-pollution-safe (whitelisted fields only). It restores the cause
 chain, the original `stack`/`timestamp`, and user/localized messages.
 
-It always returns a base `StructuredError` — **subclass identity is not
+It always returns a base `StructuredError`; **subclass identity is not
 restored**. A `ValidationError` round-trips to a `StructuredError` (losing
 `publicIssues()`/`addIssue()`; the raw `details.issues` survive as data). Narrow
 on `code`, not on `_tag`/`instanceof`.
 
-::: warning Across services, translate — don't trust
+::: warning Across services, translate. Don't trust
 `fromJSON` rebuilds _shape_, not authority: whoever produced the payload can
 forge `code`/`retryable`. Don't use reconstructed fields for authorization, and
-don't `matchError` on another service's codes as if they were yours —
-reconstruct, then translate through an Anti-Corruption Layer into your own
+don't `matchError` on another service's codes as if they were yours.
+Reconstruct, then translate through an Anti-Corruption Layer into your own
 model. The inter-service contract should be a safe projection (Problem Details /
 a versioned DTO), not the log shape.
 :::

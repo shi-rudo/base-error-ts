@@ -14,7 +14,7 @@ type RetryableError = { retryable: true } & Record<string, unknown>;
  * Uses the strict {@link isRetryableStructuredError} predicate: each error
  * must have the full StructuredError shape (`code`, `category`, `retryable`)
  * in addition to `retryable === true`. Errors that extend `BaseError`
- * directly and only set `retryable: true` will NOT match — for those, use
+ * directly and only set `retryable: true` will NOT match. For those, use
  * {@link someChainRetryable} instead.
  *
  * @param error - The error to check
@@ -38,7 +38,7 @@ export function isChainRetryable(error: unknown): boolean {
  * Unlike {@link isChainRetryable}, this does NOT require the full
  * StructuredError shape (`code`/`category`/`retryable`). Use this when your
  * error hierarchy extends `BaseError` directly and signals retryability via
- * a plain `retryable: true` field — common in DDD-style error hierarchies
+ * a plain `retryable: true` field, common in DDD-style error hierarchies
  * that discriminate by class rather than `code`/`category` strings.
  *
  * @param error - The error to check
@@ -52,7 +52,7 @@ export function isChainRetryable(error: unknown): boolean {
  * }
  *
  * if (someChainRetryable(error)) {
- *   // Retry — works even though ConcurrencyConflictError has no code/category
+ *   // Retry (works even though ConcurrencyConflictError has no code/category)
  * }
  * ```
  */

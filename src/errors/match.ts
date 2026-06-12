@@ -4,7 +4,7 @@ import type { StructuredError } from "./StructuredError.js";
  * Narrows a member of an error union to a single `code`.
  *
  * When `E` is a real union of structured error types (e.g. produced by a
- * catalog), this resolves to the precise member — so `details` is the per-code
+ * catalog), this resolves to the precise member, so `details` is the per-code
  * type. When `E` is a single `StructuredError<"A" | "B">` there is nothing to
  * narrow, so it falls back to `E` instead of `never`.
  */
@@ -22,7 +22,7 @@ type Cases<E extends StructuredError<string, string>> = {
   [K in E["code"]]?: (error: CaseArg<E, K>) => unknown;
 } & { _?: (error: E) => unknown };
 
-/** The union of every handler's return type — the result of `matchError`. */
+/** The union of every handler's return type. This is the result of `matchError`. */
 type Result<C> = {
   [K in keyof C]: C[K] extends (...args: never[]) => infer R ? R : never;
 }[keyof C];
@@ -47,8 +47,8 @@ type Exhaustive<
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
  *
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
- * error types and you omit a handler, it is a **compile error** — unless you
- * provide a `_` catch-all. Each handler receives the error narrowed to its
+ * error types and you omit a handler, it is a **compile error** (unless you
+ * provide a `_` catch-all). Each handler receives the error narrowed to its
  * case, so `details` is the precise per-code type, and the return type is the
  * union of the handler return types.
  *

@@ -3,7 +3,7 @@ import { StructuredError } from "./StructuredError.js";
 /**
  * A single validation issue. Structurally identical to Standard Schema's
  * `Issue` (standardschema.dev), so Zod / Valibot / ArkType / TanStack Form
- * output pipes in unchanged — and with no dependency. Extra fields a validator
+ * output pipes in unchanged, with no dependency. Extra fields a validator
  * attaches are kept for logs but never cross to a client.
  */
 export type ValidationIssue = {
@@ -103,7 +103,7 @@ export class ValidationError<
 
   /**
    * Client-safe projection of the issues. Returns only the fixed whitelist
-   * (`message`, `path`, `code?`, `pointer?`) — never raw validator extras.
+   * (`message`, `path`, `code?`, `pointer?`); raw validator extras are never included.
    * Provide `mapIssue` to emit a fully custom wire shape (e.g. RFC-7807
    * `{ name, reason }`).
    */

@@ -69,13 +69,13 @@ const problem = error.toProblemDetails({
 ```
 
 Need the full, unredacted error for logs/Sentry/APM? That is a separate,
-server-side path — use `toLogObject()`, which keeps the technical message,
+server-side path: use `toLogObject()`, which keeps the technical message,
 stack, cause chain and raw `details`. The client-facing serializers never carry
 internal state.
 
 ## Collision behavior
 
-Safety is invariant. Standard/library fields always win — there is no override
+Safety is invariant. Standard/library fields always win; there is no override
 switch, so a call site cannot accidentally leak:
 
 ```ts
@@ -90,7 +90,10 @@ const error = new StructuredError({
 const problem = error.toProblemDetails({
   status: 400,
   detail: "Public detail",
-  mapDetails: (details) => ({ status: details?.status, detail: details?.detail }),
+  mapDetails: (details) => ({
+    status: details?.status,
+    detail: details?.detail,
+  }),
 });
 
 // problem.status === 400  (library member wins)
@@ -102,5 +105,5 @@ const problem = error.toProblemDetails({
 - `detail`: public/client-safe Problem Details detail. When omitted, a safe public message is used (the technical `message` is only emitted when `expose` is set).
 - `publicCode` / `publicCategory`: deliberate, client-safe code and category overrides.
 - `extensions`: explicit public extension members.
-- `mapDetails`: the only way to surface `details` in a client response — an explicit, reviewable projection.
+- `mapDetails`: the only way to surface `details` in a client response (an explicit, reviewable projection).
 - `expose`: opt in to emitting the technical name/category/message.

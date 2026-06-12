@@ -32,7 +32,12 @@ interface DbDetails {
 }
 
 class DatabaseError extends StructuredError<DbCode, DbCategory, DbDetails> {
-  constructor(code: DbCode, message: string, details?: DbDetails, cause?: unknown) {
+  constructor(
+    code: DbCode,
+    message: string,
+    details?: DbDetails,
+    cause?: unknown,
+  ) {
     super({
       code,
       category:
@@ -52,23 +57,23 @@ class DatabaseError extends StructuredError<DbCode, DbCategory, DbDetails> {
 
 ## Options
 
-| Option | Type | Notes |
-| --- | --- | --- |
-| `code` | `TCode` | Programmatic, internal error code |
-| `category` | `TCategory` | Internal grouping |
-| `retryable` | `boolean` | Drives retry logic |
-| `message` | `string` | Technical message (logs) |
-| `details` | `TDetails` | Structured context — **internal**, never auto-exposed |
-| `publicCode` | `TPublicCode` | Stable client-safe code |
-| `publicMessage` | `string` | Client-safe message |
-| `expose` | `boolean` | Allow technical fallback in public serializers |
-| `cause` | `unknown` | Underlying error |
+| Option          | Type          | Notes                                                 |
+| --------------- | ------------- | ----------------------------------------------------- |
+| `code`          | `TCode`       | Programmatic, internal error code                     |
+| `category`      | `TCategory`   | Internal grouping                                     |
+| `retryable`     | `boolean`     | Drives retry logic                                    |
+| `message`       | `string`      | Technical message (logs)                              |
+| `details`       | `TDetails`    | Structured context (**internal**, never auto-exposed) |
+| `publicCode`    | `TPublicCode` | Stable client-safe code                               |
+| `publicMessage` | `string`      | Client-safe message                                   |
+| `expose`        | `boolean`     | Allow technical fallback in public serializers        |
+| `cause`         | `unknown`     | Underlying error                                      |
 
 ## `code` vs `publicCode`
 
 The internal `code` (`DB_UNIQUE_VIOLATION`) is for your logs and your own
 control flow. Map it to a stable `publicCode` (`EMAIL_ALREADY_REGISTERED`) when
-the boundary should expose a code at all — see
+the boundary should expose a code at all. See
 [Problem Details](./problem-details).
 
 ## Serialization

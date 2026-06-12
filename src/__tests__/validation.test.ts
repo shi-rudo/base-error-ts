@@ -66,7 +66,7 @@ describe("ValidationError", () => {
     });
   });
 
-  describe("publicIssues — safe whitelist", () => {
+  describe("publicIssues: safe whitelist", () => {
     it("projects message/path and derives a pointer from the path", () => {
       const v = new ValidationError("x").addIssue({
         message: "Required",

@@ -33,7 +33,7 @@ import { BaseError } from "@shirudo/base-error";
 
 class UserNotFoundError extends BaseError<"UserNotFoundError"> {
   constructor(userId: string) {
-    // Technical message — for logs, never shown to clients by default
+    // Technical message: for logs, never shown to clients by default
     super(`User with id ${userId} not found in database lookup`);
     this.withUserMessage(`We couldn't find that user.`);
   }
@@ -47,10 +47,10 @@ throw new UserNotFoundError("123");
 The library splits every error into **two output paths**. Keeping them straight
 is the whole point of the design.
 
-| Path | Method | What it contains |
-| --- | --- | --- |
-| **Observability** (logs, Sentry, APM) | `toLogObject()` / `toJSON()` | Everything — technical message, stack, cause chain, raw `details` |
-| **Client / user-facing** | `toPublicJSON()` · `toProblemDetails()` · `toErrorResponse()` | Safe by default — nothing internal leaks unless you project it explicitly |
+| Path                                  | Method                                                        | What it contains                                                         |
+| ------------------------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Observability** (logs, Sentry, APM) | `toLogObject()` / `toJSON()`                                  | Everything: technical message, stack, cause chain, raw `details`         |
+| **Client / user-facing**              | `toPublicJSON()` · `toProblemDetails()` · `toErrorResponse()` | Safe by default: nothing internal leaks unless you project it explicitly |
 
 ```ts
 const err = new UserNotFoundError("123");

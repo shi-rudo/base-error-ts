@@ -2,12 +2,12 @@ import type { RedactMask } from "../errors/BaseError.js";
 
 /**
  * Builds a {@link RedactMask} that reveals a prefix and/or suffix of a string
- * value and masks the middle — e.g. to show *which* API key it was without
- * exposing it (`sk_live…AbCd`).
+ * value and masks the middle (e.g. to show *which* API key it was without
+ * exposing it, as in `sk_live…AbCd`).
  *
  * Safe by construction:
  * - a value too short to safely reveal (`length <= keepStart + keepEnd`) is
- *   masked **entirely** — never partially exposed;
+ *   masked **entirely**, never partially exposed;
  * - non-string values are masked entirely.
  *
  * @param options - `keepStart` (default 0), `keepEnd` (default 4), `fill`
