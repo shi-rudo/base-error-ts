@@ -5,9 +5,16 @@
 `{ isSuccess, ... }` envelope.
 
 ```ts
+const error = new StructuredError({
+  code: "USER_NOT_FOUND",
+  category: "NOT_FOUND",
+  retryable: false,
+  message: "User 123 not found",
+}).addLocalizedMessage("de", "Benutzer nicht gefunden");
+
 const response = error.toErrorResponse({
   httpStatusCode: 404,
-  messageLocalized: { locale: "en", message: "User not found" },
+  locale: "de",
   traceId: "trace-abc-123",
 });
 // {
@@ -17,7 +24,11 @@ const response = error.toErrorResponse({
 //     category: "INTERNAL",
 //     retryable: false,
 //     traceId: "trace-abc-123",
-//     ctx: { httpStatusCode: 404, message: "An unexpected error occurred.", messageLocalized: {...} },
+//     ctx: {
+//       httpStatusCode: 404,
+//       message: "Benutzer nicht gefunden",
+//       messageLocalized: { locale: "de", message: "Benutzer nicht gefunden" },
+//     },
 //     details: {}
 //   }
 // }
@@ -26,12 +37,33 @@ const response = error.toErrorResponse({
 Like [Problem Details](./problem-details), it is safe by default and shares the
 same vocabulary.
 
+## Localized messages
+
+`ctx.message` is the rendered client-safe string; `ctx.messageLocalized` is that
+same string **tagged with its locale**, so a client knows which language it got.
+
+You don't assemble `messageLocalized` by hand. Pass `locale` (optionally
+`fallbackLocale`) and `toErrorResponse()` resolves an author-provided
+[localized message](./base-error) from the same source `ctx.message` uses —
+tagging it with the locale that actually matched (the fallback, if that's what
+hit). The two fields therefore agree by construction; `messageLocalized` is
+simply omitted when no locale resolves.
+
+Server-side localization is an opt-in escape hatch — in a typical app the client
+maps the stable `code` to its own translations. See
+[when it makes sense](./base-error#when-server-side-localization-makes-sense).
+
+An explicit `messageLocalized` option still wins, for injecting a localized
+string sourced outside the error's own locale entries.
+
 ## Options
 
 | Option | Notes |
 | --- | --- |
 | `httpStatusCode` | Placed in `ctx` |
-| `messageLocalized` | `{ locale, message }` for client i18n |
+| `locale` | Preferred locale; resolves `message` + `messageLocalized` |
+| `fallbackLocale` | Locale used when `locale` has no entry |
+| `messageLocalized` | Explicit `{ locale, message }` override (usually omit — derived from `locale`) |
 | `traceId` | Distributed tracing id |
 | `publicCode` | Deliberate client-safe code |
 | `publicCategory` | Deliberate client-safe category |

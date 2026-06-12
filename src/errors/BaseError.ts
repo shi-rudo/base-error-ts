@@ -541,6 +541,33 @@ export class BaseError<
   }
 
   /**
+   * Resolves a single client-safe localized message from the author-provided
+   * locale entries: the preferred `locale` first, then `fallbackLocale`. Returns
+   * the matched message **tagged with the locale that actually produced it**, or
+   * `undefined` when neither has an entry.
+   *
+   * This is the single source of truth for locale resolution, shared by
+   * {@link toPublicJSON} (which renders the string) and the response serializers
+   * (which also tag it with its locale via `messageLocalized`). Author-provided
+   * localized messages are client-safe by design, so this resolves them without
+   * needing `expose`; the default user message is never surfaced here.
+   */
+  protected resolveLocalizedMessage(
+    locale?: string,
+    fallbackLocale?: string,
+  ): { locale: string; message: string } | undefined {
+    if (locale !== undefined) {
+      const message = this._localizedMessages.get(locale);
+      if (message !== undefined) return { locale, message };
+    }
+    if (fallbackLocale !== undefined) {
+      const message = this._localizedMessages.get(fallbackLocale);
+      if (message !== undefined) return { locale: fallbackLocale, message };
+    }
+    return undefined;
+  }
+
+  /**
    * Serializes the error for client-facing responses.
    *
    * This method is safe by default: it does not expose the technical error name,
@@ -553,14 +580,10 @@ export class BaseError<
       options.code ??
       this._publicCode ??
       (expose ? this.name : DEFAULT_PUBLIC_ERROR_CODE);
-    // Author-provided localized messages are client-safe by design, so a
-    // requested locale resolves them without needing `expose`. Only explicit
-    // locale entries are used here — the default user message is not leaked.
-    const localized =
-      (options.locale && this._localizedMessages.get(options.locale)) ||
-      (options.fallbackLocale &&
-        this._localizedMessages.get(options.fallbackLocale)) ||
-      undefined;
+    const localized = this.resolveLocalizedMessage(
+      options.locale,
+      options.fallbackLocale,
+    )?.message;
     const message =
       options.message ??
       localized ??
