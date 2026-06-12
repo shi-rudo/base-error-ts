@@ -4,7 +4,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "@shirudo/base-error",
   description:
-    "Cross-environment base error class for TypeScript — safe-by-default public projection, structured errors, RFC 9457 Problem Details.",
+    "Cross-environment base error class for TypeScript: safe-by-default public projection, structured errors, RFC 9457 Problem Details.",
   // GitHub Pages project site is served from /base-error-ts/
   base: "/base-error-ts/",
   lastUpdated: true,
@@ -21,7 +21,10 @@ export default defineConfig({
             text: "Changelog",
             link: "https://github.com/shi-rudo/base-error-ts/blob/main/CHANGELOG.md",
           },
-          { text: "npm", link: "https://www.npmjs.com/package/@shirudo/base-error" },
+          {
+            text: "npm",
+            link: "https://www.npmjs.com/package/@shirudo/base-error",
+          },
         ],
       },
     ],
@@ -53,7 +56,10 @@ export default defineConfig({
           items: [
             { text: "Problem Details", link: "/guide/problem-details" },
             { text: "Error responses", link: "/guide/error-responses" },
-            { text: "Building API responses", link: "/guide/building-responses" },
+            {
+              text: "Building API responses",
+              link: "/guide/building-responses",
+            },
             { text: "Observability & logging", link: "/guide/observability" },
           ],
         },
@@ -71,8 +77,7 @@ export default defineConfig({
     search: { provider: "local" },
 
     editLink: {
-      pattern:
-        "https://github.com/shi-rudo/base-error-ts/edit/main/docs/:path",
+      pattern: "https://github.com/shi-rudo/base-error-ts/edit/main/docs/:path",
       text: "Edit this page on GitHub",
     },
 

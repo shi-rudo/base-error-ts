@@ -1,7 +1,7 @@
 # Matching errors
 
 `matchError` dispatches on a structured error's `code` with **compile-time
-exhaustiveness** and per-case type narrowing — the ergonomic way to handle a
+exhaustiveness** and per-case type narrowing, the ergonomic way to handle a
 closed set of domain errors as a tagged union.
 
 ```ts
@@ -17,7 +17,7 @@ const status = matchError(err, {
 ## Exhaustiveness
 
 When `err`'s type is a closed union of error types, omitting a `code` is a
-**compile error** — add the case, or opt out with a `_` catch-all:
+**compile error**. Add the case, or opt out with a `_` catch-all:
 
 ```ts
 matchError(err, {
@@ -36,18 +36,26 @@ Each handler receives the error narrowed to its case, so `details` is the
 precise per-code type:
 
 ```ts
-type UserNotFound = StructuredError<"USER_NOT_FOUND", "NOT_FOUND", { userId: string }>;
-type RateLimited  = StructuredError<"RATE_LIMITED", "RATE_LIMIT", { retryAfter: number }>;
+type UserNotFound = StructuredError<
+  "USER_NOT_FOUND",
+  "NOT_FOUND",
+  { userId: string }
+>;
+type RateLimited = StructuredError<
+  "RATE_LIMITED",
+  "RATE_LIMIT",
+  { retryAfter: number }
+>;
 type AppError = UserNotFound | RateLimited;
 
 matchError(err as AppError, {
-  USER_NOT_FOUND: (e) => e.details?.userId,    // { userId: string } | undefined
-  RATE_LIMITED:   (e) => e.details?.retryAfter, // { retryAfter: number } | undefined
+  USER_NOT_FOUND: (e) => e.details?.userId, // { userId: string } | undefined
+  RATE_LIMITED: (e) => e.details?.retryAfter, // { retryAfter: number } | undefined
 });
 ```
 
 Full per-case narrowing needs a **real union** of distinct error types (each
-with a literal `code`) — exactly what a future [error
+with a literal `code`), exactly what a future [error
 catalog](https://github.com/shi-rudo/base-error-ts/blob/main/proposals/0001-error-catalog-and-match.md)
 produces. For a single `StructuredError<"A" | "B">`, only `code` narrows.
 

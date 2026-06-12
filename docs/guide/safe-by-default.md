@@ -7,7 +7,7 @@ regulated and enterprise contexts it is frequently a compliance finding.
 
 This library treats the boundary of your application the way DDD treats the
 boundary of a bounded context: what crosses it is a deliberate, **published**
-representation — never the internal model by accident.
+representation, never the internal model by accident.
 
 ## The guarantee is invariant
 
@@ -39,19 +39,19 @@ err.toProblemDetails({ status: 409 });
 There is **no override switch**. Standard Problem Details members
 (`type`, `title`, `status`, `detail`, `instance`) and library members
 (`code`, `category`, `retryable`, `traceId`) always win over colliding
-extension keys. A call site cannot accidentally leak — and you never have to
+extension keys. A call site cannot accidentally leak, and you never have to
 check a flag to know whether a given response is safe.
 
 ## Exposing things is always explicit
 
-When you *do* want to surface information, you say so by name:
+When you _do_ want to surface information, you say so by name:
 
-- [`publicCode`](./problem-details#public-code-message-category) / `publicMessage` / `publicCategory` — deliberate public values.
-- [`expose`](./problem-details#exposing-technical-fields) — opt in to the technical name/category/message.
-- [`mapDetails`](./problem-details#projecting-details) — the only way to surface `details`, as a reviewable projection.
+- [`publicCode`](./problem-details#public-code-message-category) / `publicMessage` / `publicCategory`: deliberate public values.
+- [`expose`](./problem-details#exposing-technical-fields): opt in to the technical name/category/message.
+- [`mapDetails`](./problem-details#projecting-details): the only way to surface `details`, as a reviewable projection.
 
 ## "But I need the full error for Sentry"
 
-You do — and you get it, on a **separate** path. See
+You do, and you get it on a **separate** path. See
 [Observability & logging](./observability). The strictness here applies only to
 the user-facing path; `toLogObject()` keeps the full, unredacted error.

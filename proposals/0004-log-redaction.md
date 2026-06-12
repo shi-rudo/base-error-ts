@@ -1,20 +1,20 @@
-# Proposal 0004 — redaction hook on the log path
+# Proposal 0004: redaction hook on the log path
 
-**Status:** Accepted — decisions locked (see *Decisions*). Built test-first.
+**Status:** Accepted. Decisions locked (see _Decisions_). Built test-first.
 **Context:** `toLogObject()`/`toJSON()` are the full-fidelity observability
 payload (technical message, stack, cause chain, raw `details`). In regulated
 contexts the **logs themselves** must scrub PII (a `details.ssn` shouldn't hit
 the log sink in plaintext). This adds an opt-in redaction transform on the log
-path. The client path is unaffected — it is already safe by default.
+path. The client path is unaffected, as it is already safe by default.
 
 Defense-in-depth at the source; **not** a replacement for logger-level
-redaction (see *Positioning*). Zero-dependency.
+redaction (see _Positioning_). Zero-dependency.
 
 ---
 
 ## The design driver: redaction must be sticky on the instance
 
-Logs are usually produced by a logger **auto-serializing** the error —
+Logs are usually produced by a logger **auto-serializing** the error:
 `JSON.stringify(error)` → `toJSON()` with **no arguments**. A per-call option on
 `toLogObject({...})` would miss that path entirely. So redaction is configured
 **on the instance** (chainable), and the zero-arg `toLogObject()`/`toJSON()`
@@ -23,7 +23,7 @@ applies it.
 ## API
 
 ```ts
-// Level 1 — declarative key redaction (deny-list, deep), chainable & sticky
+// Level 1: declarative key redaction (deny-list, deep), chainable & sticky
 const err = new StructuredError({
   code: "USER_UPDATE_FAILED",
   category: "PERSISTENCE",
@@ -33,14 +33,14 @@ const err = new StructuredError({
 }).redact(["email", "ssn"]);
 
 err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTED]" }
-JSON.stringify(err);       // also masked — covers the logger path
+JSON.stringify(err); // also masked: covers the logger path
 
 // configurable mask, default "[REDACTED]"
 err.redact(["ssn"], { mask: "******" });
 ```
 
 ```ts
-// Level 2 — function redactor: full control (allow-list, message scrubbing)
+// Level 2: function redactor, full control (allow-list, message scrubbing)
 err.redactWith((log) => ({
   ...log,
   message: scrub(log.message as string),
@@ -56,13 +56,13 @@ redactWith(redactor: (log: Record<string, unknown>) => Record<string, unknown>):
 ```
 
 `redact` deep-walks the assembled log object and replaces the value of any
-matching key (at any depth — so nested `details` and serialized cause details
+matching key (at any depth, so nested `details` and serialized cause details
 are covered) with the mask. `redactWith` receives the whole log object and
 returns the redacted version (use it for allow-lists or scrubbing the `message`,
 which key-redaction can't do to a string). The last call wins (one redactor per
 instance).
 
-## Implementation note — the `buildLogObject` seam
+## Implementation note: the `buildLogObject` seam
 
 Redaction must apply to the **complete** assembled object (including
 `code`/`category`/`details`). To avoid double-redaction or missing the
@@ -83,7 +83,7 @@ Same output as today when no redactor is set (behavior-preserving refactor).
 - **Defense-in-depth, not the policy engine.** App-wide PII policy is often
   better at the logger layer (pino `redact`, winston formatters). This feature
   makes per-error/per-family redaction ergonomic and travels with the error to
-  any sink — but it is best-effort and not a substitute for logger-level
+  any sink, but it is best-effort and not a substitute for logger-level
   redaction. The docs will say so.
 - **Best-effort.** A deny-list can't know every PII field; for high sensitivity
   use `redactWith` with an allow-list.
@@ -97,7 +97,7 @@ Same output as today when no redactor is set (behavior-preserving refactor).
    scrubbing via the `redactWith` function form.
 4. **Deep** key matching over the whole assembled log object (covers nested
    `details` and cause details).
-5. **No global mutable redactor** (`BaseError.setRedactor`) — global state is a
+5. **No global mutable redactor** (`BaseError.setRedactor`): global state is a
    testability/SSR smell. Per-instance only in v1.
 
 ## Open question
@@ -121,5 +121,5 @@ Same output as today when no redactor is set (behavior-preserving refactor).
 ## Non-goals
 
 - No global/static redactor.
-- Not a PII detector — the caller names the keys (or supplies a function).
+- Not a PII detector; the caller names the keys (or supplies a function).
 - No new runtime dependencies.
