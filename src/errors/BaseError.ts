@@ -33,8 +33,8 @@ export type PublicErrorOptions<TCode extends string = string> = {
   traceId?: string;
   /**
    * Preferred locale for the client-safe message. When set and a matching
-   * user/localized message exists, it is used as the public message — these
-   * are author-provided, client-safe strings, so they surface without `expose`.
+   * user/localized message exists, it is used as the public message (these
+   * are author-provided, client-safe strings, so they surface without `expose`).
    */
   locale?: string;
   /** Fallback locale used when the preferred locale has no message. */
@@ -49,16 +49,16 @@ export type PublicErrorJSON<TCode extends string = string> = {
 
 /**
  * Replacement used by {@link BaseError.redact}/{@link BaseError.redactAllow}.
- * Either a fixed value, or a function of the original `(value, key)` — useful
+ * Either a fixed value, or a function of the original `(value, key)`: useful
  * for partial masking (`****6789`) or preserving the value's type.
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
 /**
  * Where a node sits in the log tree, for `redactAllow`'s structure-vs-data
- * decision: `"root"` (top-level envelope, kept), `"cause"` (a cause's top level
- * — structural envelope keys kept, the rest data), `"data"` (a `details`
- * subtree or a cause's foreign subtree — every leaf is data). The deny-list
+ * decision: `"root"` (top-level envelope, kept), `"cause"` (a cause's top level,
+ * structural envelope keys kept, the rest data), `"data"` (a `details`
+ * subtree or a cause's foreign subtree, where every leaf is data). The deny-list
  * (`redact`) ignores it.
  */
 type RedactRegion = "root" | "cause" | "data";
@@ -101,7 +101,7 @@ export class BaseError<
    *
    * Because the fallback is `constructor.name`, a build that minifies class
    * names will mangle it. For a stable discriminant either pass an explicit
-   * `name`, or override `_tag` with a literal — the latter also narrows the
+   * `name`, or override `_tag` with a literal, which also narrows the
    * type:
    *
    * @example
@@ -150,7 +150,7 @@ export class BaseError<
 
     // Resolve the error's stable identity once. An explicit `name` wins;
     // otherwise fall back to the constructor name. Both `name` and `_tag`
-    // derive from it so they can never diverge — and passing an explicit
+    // derive from it so they can never diverge. Passing an explicit
     // `name` stabilizes the discriminant under class-name minification.
     const resolvedName = options.name ?? this.constructor.name;
     this.name = resolvedName as T;
@@ -171,9 +171,9 @@ export class BaseError<
     this.stack = this.#captureStack();
   }
 
-  // ————————————————————————————————————————————————————————————————
+  // ----------------------------------------------------------------
   // Methods for User-Friendly Messages
-  // ————————————————————————————————————————————————————————————————
+  // ----------------------------------------------------------------
 
   /**
    * Sets the default user-friendly message.
@@ -267,16 +267,16 @@ export class BaseError<
 
   /**
    * Allow-list redaction (higher assurance than {@link redact}): within any
-   * **data** region — a `details` subtree (at any depth) and the data-bearing
-   * fields of a `cause` — masks every leaf whose key is **not** listed, so a
+   * **data** region (a `details` subtree at any depth and the data-bearing
+   * fields of a `cause`): masks every leaf whose key is **not** listed, so a
    * newly-added field leaks nothing by default. Container objects are recursed
    * so nested allowed leaves survive. The structural envelope (`message`/`code`/
    * …) at the top level, and a cause's top-level structural envelope keys
-   * (`name`/`message`/`stack`/`code`/`category`/`retryable`), are kept — but a
+   * (`name`/`message`/`stack`/`code`/`category`/`retryable`), are kept. A
    * cause's foreign fields (anything outside that fixed set, and everything
    * nested beneath them) are treated as data, so a plain object that merely
-   * *looks* like a structured error cannot smuggle siblings — or envelope-named
-   * keys buried in foreign subtrees — through. Sticky; last redactor wins.
+   * *looks* like a structured error cannot smuggle siblings (or envelope-named
+   * keys buried in foreign subtrees) through. Sticky; last redactor wins.
    *
    * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`.
@@ -312,7 +312,7 @@ export class BaseError<
    * **top level of a cause**. Everything else under a cause (foreign siblings
    * and anything nested beneath them, plus `details`) is treated as data, so a
    * plain object mimicking the structured shape cannot smuggle sensitive
-   * siblings — or envelope-named keys buried in foreign subtrees — past
+   * siblings (or envelope-named keys buried in foreign subtrees) past
    * `redactAllow`. Private: it must not become a process-wide redaction toggle.
    */
   static readonly #ENVELOPE_KEYS: ReadonlySet<string> = new Set([
@@ -334,7 +334,7 @@ export class BaseError<
 
   /**
    * Whether the walker should descend into `value`. A **plain object**
-   * (`{}` / `Object.create(null)`) is always a container — even when empty, so
+   * (`{}` / `Object.create(null)`) is always a container, even when empty, so
    * it is preserved as `{}` rather than masked or collapsed. Any **other**
    * object is a container only if it carries its own enumerable keys: a class
    * instance with own fields *is* descended (so a deny/allow list reaches keys
@@ -361,13 +361,13 @@ export class BaseError<
    *
    * `region` classifies where we are, so the allow-list can distinguish the
    * structural envelope from data:
-   * - `"root"` — the top-level error envelope (kept verbatim by the allow-list);
-   * - `"cause"` — at a `cause`'s top level; the structural envelope keys
+   * - `"root"`: the top-level error envelope (kept verbatim by the allow-list);
+   * - `"cause"`: at a `cause`'s top level; the structural envelope keys
    *   (`#ENVELOPE_KEYS`) are kept, all other leaves are data;
-   * - `"data"` — inside a `details` subtree or a cause's foreign subtree; every
+   * - `"data"`: inside a `details` subtree or a cause's foreign subtree; every
    *   leaf is data.
    *
-   * The transition is by key name only — no duck-typing — so a cause that
+   * The transition is by key name only, not duck-typing, so a cause that
    * merely resembles a structured error cannot reclassify its data as envelope.
    * The deny-list ignores `region`.
    */
@@ -408,8 +408,8 @@ export class BaseError<
   /**
    * Region a child key enters. `details` → data (data is sticky for the whole
    * subtree); `cause` → cause. Inside a `cause`, only the structural envelope
-   * keys stay `cause`; every other (foreign) child — and therefore everything
-   * nested beneath it — drops to data, so envelope-named keys buried in a
+   * keys stay `cause`; every other (foreign) child, and therefore everything
+   * nested beneath it, drops to data, so envelope-named keys buried in a
    * cause's foreign subtrees cannot be mistaken for the cause's own envelope.
    */
   /*#__PURE__*/ static #childRegion(
@@ -426,7 +426,7 @@ export class BaseError<
   }
 
   /**
-   * Sets a custom redactor applied to the full log object — use for allow-lists
+   * Sets a custom redactor applied to the full log object. Use for allow-lists
    * or scrubbing the technical `message`. Sticky; the last redactor wins.
    */
   public redactWith(
@@ -523,7 +523,7 @@ export class BaseError<
    * marker. Only those a given error's `buildLogObject()` actually emits are
    * copied (guarded by `key in raw`), so `code`/`category`/`retryable` appear
    * for a `StructuredError` but are simply absent for a plain `BaseError`.
-   * `traceId` is intentionally not listed — it is a serialization parameter of
+   * `traceId` is intentionally not listed: it is a serialization parameter of
    * the client path, never a log-object field.
    */
   static readonly #SAFE_TRIAGE_KEYS = [
@@ -633,9 +633,9 @@ export class BaseError<
     return parts.join("\nCaused by: ");
   }
 
-  // ————————————————————————————————————————————————————————————————
+  // ----------------------------------------------------------------
   // Internal helpers
-  // ————————————————————————————————————————————————————————————————
+  // ----------------------------------------------------------------
 
   /**
    * Sets the cause property as non-enumerable (like native Error.cause).

@@ -1,6 +1,6 @@
 # Error catalog
 
-`defineErrors` turns a declarative spec into a typed factory per `code` — a
+`defineErrors` turns a declarative spec into a typed factory per `code`, a
 single source of truth for `category`, `retryable`, HTTP status and the public
 mapping. It is the governance complement to [`matchError`](./matching): the
 catalog defines the closed set, `matchError` consumes it exhaustively.
@@ -38,7 +38,7 @@ throw AppErrors.USER_NOT_FOUND("user 123 missing in primary db", {
 throw AppErrors.RATE_LIMITED("too many requests");
 ```
 
-The result is a tagged `StructuredError` discriminated by `code` — not a class
+The result is a tagged `StructuredError` discriminated by `code`, not a class
 per code. `instanceof StructuredError` and `code` are the runtime checks; if you
 truly need per-code `instanceof` (e.g. a framework exception filter), hand-write
 a subclass as before.
@@ -68,7 +68,10 @@ type AppError = CatalogError<typeof AppErrors>;
 function toResponse(err: AppError) {
   return matchError(err, {
     USER_NOT_FOUND: (e) =>
-      e.toProblemDetails({ status: 404, extensions: { userId: e.details?.userId } }),
+      e.toProblemDetails({
+        status: 404,
+        extensions: { userId: e.details?.userId },
+      }),
     RATE_LIMITED: (e) => e.toProblemDetails({ status: 429 }),
   });
 }

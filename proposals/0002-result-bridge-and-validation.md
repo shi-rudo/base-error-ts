@@ -1,29 +1,29 @@
-# Proposal 0002 — `toStructuredError` bridge & validation aggregate
+# Proposal 0002: `toStructuredError` bridge & validation aggregate
 
-**Status:** Accepted — decisions locked (see *Decisions* below). Implementation
+**Status:** Accepted. Decisions locked (see _Decisions_ below). Implementation
 sequenced: `toStructuredError` first, validation aggregate second.
-**Context:** `Result<T, E>` is intentionally *out of scope* for this library and
+**Context:** `Result<T, E>` is intentionally _out of scope_ for this library and
 lives in [`@shirudo/result`](https://github.com/shi-rudo/result-ts), whose `E`
-is unconstrained — so `StructuredError` already fits as the error type. This
+is unconstrained, so `StructuredError` already fits as the error type. This
 proposal closes the two remaining DDD gaps:
 
-1. **`toStructuredError`** — a canonical `unknown → StructuredError` coercion
+1. **`toStructuredError`:** a canonical `unknown → StructuredError` coercion
    that gives any caught value a consistent **structured envelope** at the
-   boundary (it does *not* fabricate a domain error — see the framing note). The
+   boundary (it does _not_ fabricate a domain error; see the framing note). The
    missing piece at the seam with `@shirudo/result`: the `errorMapper` slot of
    `fromThrowable` / `fromPromise` and the `errorFn` of `filter` all want a stable
    way to wrap an arbitrary thrown value. Also useful standalone in `catch`.
-2. **Validation aggregate** — collect N field-level failures into one error that
+2. **Validation aggregate:** collect N field-level failures into one error that
    can serialize to an RFC 9457 `errors[]` extension **on explicit opt-in**. The
    most common DDD/enterprise need (value-object / command validation) that the
    library cannot express today.
 
 Both stay zero-dependency and **do not** depend on `@shirudo/result` (the bridge
-is decoupled — it just happens to fit result-ts's mapper slots).
+is decoupled; it just happens to fit result-ts's mapper slots).
 
 ---
 
-## Part 1 — `toStructuredError`
+## Part 1: `toStructuredError`
 
 Guarantee a `StructuredError` from any caught value.
 
@@ -63,29 +63,32 @@ type CoerceOptions<TCode extends string, TCategory extends string> = {
 export function toStructuredError<
   TCode extends string = "UNKNOWN_ERROR",
   TCategory extends string = "INTERNAL",
->(value: unknown, options?: CoerceOptions<TCode, TCategory>): StructuredError<TCode, TCategory>;
+>(
+  value: unknown,
+  options?: CoerceOptions<TCode, TCategory>,
+): StructuredError<TCode, TCategory>;
 ```
 
 ### Behavior
 
-| Input `value` | Result |
-| --- | --- |
-| already a `StructuredError` **instance** | returned as-is (no double-wrap, options ignored) |
-| any other `Error` (incl. plain `BaseError`) | new `StructuredError`: `message = value.message`, `cause = value`, defaults from options |
-| `string` | `message = value`, no cause, defaults from options |
+| Input `value`                                   | Result                                                                                                      |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| already a `StructuredError` **instance**        | returned as-is (no double-wrap, options ignored)                                                            |
+| any other `Error` (incl. plain `BaseError`)     | new `StructuredError`: `message = value.message`, `cause = value`, defaults from options                    |
+| `string`                                        | `message = value`, no cause, defaults from options                                                          |
 | anything else (number, object, null, undefined) | `message = options.message ?? "Unknown error"`, `cause = value` (preserved for logs), defaults from options |
 
 - The original value is preserved as `cause` whenever it is an `Error` or a
   non-string object, so the chain/stack survives (the Anti-Corruption-Layer
   "wrap the foreign thing" pattern).
 - Pass-through is by `instanceof StructuredError` only. A duck-typed plain object
-  that *looks* structured is treated as foreign and wrapped — reconstructing
+  that _looks_ structured is treated as foreign and wrapped. Reconstructing
   serialized errors is `fromJSON`'s job (proposal 0003), not coercion's.
 
 ### Framing: an envelope, not a domain error
 
-An unknown thrown value is almost always an *unexpected*/infrastructure failure
-or a programmer bug — **not** a domain error. `toStructuredError` does not
+An unknown thrown value is almost always an _unexpected_/infrastructure failure
+or a programmer bug, **not** a domain error. `toStructuredError` does not
 fabricate domain semantics; it gives the unexpected failure a consistent,
 loggable, safe-to-serialize **envelope** at the boundary. The honest defaults
 encode exactly that: `code = "UNKNOWN_ERROR"`, `category = "INTERNAL"`,
@@ -99,13 +102,13 @@ turn into a response:
 
 ```ts
 catch (e) {
-  if (e instanceof TypeError || e instanceof RangeError) throw e; // a bug — surface it
+  if (e instanceof TypeError || e instanceof RangeError) throw e; // a bug: surface it
   return toStructuredError(e).toProblemDetails({ status: 500 });
 }
 ```
 
 The library deliberately does **not** auto-classify bugs (a `TypeError` can be
-thrown legitimately) — that judgement stays with the caller.
+thrown legitimately); that judgement stays with the caller.
 
 ### result-ts integration
 
@@ -113,13 +116,16 @@ thrown legitimately) — that judgement stays with the caller.
 import { Result } from "@shirudo/result";
 import { toStructuredError } from "@shirudo/base-error";
 
-// errorMapper slot — no hand-written mapper:
+// errorMapper slot: no hand-written mapper.
 const r = Result.fromThrowable(() => JSON.parse(input), toStructuredError);
 
 // or customized per call site:
-const r2 = Result.fromPromise(
-  db.query(sql),
-  (e) => toStructuredError(e, { code: "DB_ERROR", category: "INFRASTRUCTURE", retryable: true }),
+const r2 = Result.fromPromise(db.query(sql), (e) =>
+  toStructuredError(e, {
+    code: "DB_ERROR",
+    category: "INFRASTRUCTURE",
+    retryable: true,
+  }),
 );
 ```
 
@@ -140,14 +146,14 @@ const r2 = Result.fromPromise(
 - `Error` → message/cause preserved, defaults applied.
 - `string`, `number`, `null`, `undefined`, plain object → correct fallback +
   cause preservation.
-- Options override code/category/retryable/message/public*.
+- Options override code/category/retryable/message/public\*.
 - Typed: literal `code`/`category` from options flow into the return type
   (verified via `tsc`).
 - Plugs into a `(unknown) => StructuredError` mapper slot (type-level).
 
 ---
 
-## Part 2 — Validation aggregate
+## Part 2: Validation aggregate
 
 Collect multiple field failures into one error and emit RFC 9457 `errors[]`.
 
@@ -155,13 +161,15 @@ Collect multiple field failures into one error and emit RFC 9457 `errors[]`.
 import { ValidationError } from "@shirudo/base-error";
 
 const v = new ValidationError("Registration is invalid");
-if (!isEmail(email)) v.addIssue({ message: "Enter a valid email.", path: ["email"] });
+if (!isEmail(email))
+  v.addIssue({ message: "Enter a valid email.", path: ["email"] });
 if (age < 18) v.addIssue({ message: "Must be 18 or older.", path: ["age"] });
 if (v.hasIssues()) throw v;
 
 // Or pipe a validator's issues straight in (Standard Schema):
 const result = schema["~standard"].validate(input);
-if (result.issues) throw new ValidationError("Invalid input", { issues: result.issues });
+if (result.issues)
+  throw new ValidationError("Invalid input", { issues: result.issues });
 ```
 
 ### Types & API
@@ -169,7 +177,7 @@ if (result.issues) throw new ValidationError("Invalid input", { issues: result.i
 ```ts
 // Structurally identical to Standard Schema's `Issue` (standardschema.dev), so
 // validator output from Zod / Valibot / ArkType / TanStack Form pipes straight
-// in with no remapping — and with no dependency (the shape is matched, not
+// in with no remapping, and with no dependency (the shape is matched, not
 // imported). Extra fields a validator attaches are kept for logs but NEVER
 // cross to a client (see `publicIssues` / RFC 9457 mapping).
 export type ValidationIssue = {
@@ -184,7 +192,10 @@ export class ValidationError extends StructuredError<
   "VALIDATION",
   { issues: ValidationIssue[] }
 > {
-  constructor(message: string, options?: { issues?: ValidationIssue[]; cause?: unknown });
+  constructor(
+    message: string,
+    options?: { issues?: ValidationIssue[]; cause?: unknown },
+  );
 
   /** Append an issue; returns `this` for chaining. */
   addIssue(issue: ValidationIssue): this;
@@ -192,16 +203,18 @@ export class ValidationError extends StructuredError<
   addIssues(issues: ValidationIssue[]): this;
   /** True when at least one issue was collected. */
   hasIssues(): boolean;
-  /** Full collected issues (with any validator extras) — for internal/log use. */
+  /** Full collected issues (with any validator extras), for internal/log use. */
   readonly issues: readonly ValidationIssue[];
 
   /**
    * The client-safe projection of the issues: a fixed whitelist
-   * (`message`, `path`, `code?`, `pointer?`) — never raw validator extras.
+   * (`message`, `path`, `code?`, `pointer?`); never raw validator extras.
    * This is the only shape allowed to cross to a client, and only when the
    * caller explicitly includes it (see RFC 9457 mapping).
    */
-  publicIssues(options?: { mapIssue?: (issue: ValidationIssue) => PublicIssue }): PublicIssue[];
+  publicIssues(options?: {
+    mapIssue?: (issue: ValidationIssue) => PublicIssue;
+  }): PublicIssue[];
 }
 
 /** The fixed, client-safe shape an issue takes on the wire. */
@@ -221,18 +234,18 @@ export type PublicIssue = {
 - Overrides `_tag` to the literal `"ValidationError"` (minification-safe,
   per proposal 0001's reasoning).
 
-### RFC 9457 mapping — opt-in, fixed safe subset, configurable shape
+### RFC 9457 mapping: opt-in, fixed safe subset, configurable shape
 
 Issues do **not** cross to a client by default. There is **no exception** to
 safe-by-default: a `ValidationError` stores its full issues internally
 (`toLogObject` has them, with any validator extras), and surfacing them is an
-explicit, reviewable opt-in — exactly like `expose` / `mapDetails` elsewhere.
+explicit, reviewable opt-in, exactly like `expose` / `mapDetails` elsewhere.
 The caller, who knows the messages are client-safe, asks for them.
 
 Two mechanical guarantees:
 
 1. **Only a fixed whitelist crosses.** Whatever is stored, `publicIssues()`
-   yields only `{ message, path, code?, pointer? }` — never raw validator extras
+   yields only `{ message, path, code?, pointer? }`, never raw validator extras
    (a Zod native issue may carry `received`/the rejected input value; those must
    never reach the wire).
 2. **Crossing is explicit**, reusing the existing `extensions` mechanism:
@@ -252,7 +265,7 @@ v.toProblemDetails({ status: 422, extensions: { errors: v.publicIssues() } });
 ```
 
 An optional `includeIssues: true` convenience flag may do exactly the same
-(emit `publicIssues()` under the configured key) — sugar over the explicit form,
+(emit `publicIssues()` under the configured key), sugar over the explicit form,
 not a hidden default.
 
 #### Standard Schema in, configurable shape out
@@ -266,20 +279,22 @@ These are two different layers and we use both:
   RFC 7807's appendix). So the output shape and key are configurable:
   - Default: a neutral `errors: [{ message, path, code? }]`.
   - RFC-7807 preset: `invalid-params: [{ name, reason }]`, where `name` is the
-    stringified path and `reason` the message — available via the `mapIssue`
+    stringified path and `reason` the message, available via the `mapIssue`
     hook + an `extensionKey` option.
   - Any custom shape via `mapIssue`.
 
-Status is never defaulted by the type — the boundary chooses (commonly 400/422).
+Status is never defaulted by the type; the boundary chooses (commonly 400/422).
 
 ### result-ts integration
 
 `Result` short-circuits on the first `Err`, so multi-error accumulation is
-imperative (collect issues, then one `ValidationError`) — the idiomatic pattern.
+imperative (collect issues, then one `ValidationError`): the idiomatic pattern.
 Once built, it composes like any error:
 
 ```ts
-function parseRegistration(input: unknown): Result<Registration, ValidationError> {
+function parseRegistration(
+  input: unknown,
+): Result<Registration, ValidationError> {
   const v = new ValidationError("Registration is invalid");
   // ...collect issues...
   return v.hasIssues() ? Result.err(v) : Result.ok(registration);
@@ -289,7 +304,7 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 ### Resolved decisions
 
 - **Exposure:** opt-in, never default. Surfacing issues is explicit (via
-  `publicIssues()` + `extensions`, or an `includeIssues` sugar flag) — no
+  `publicIssues()` + `extensions`, or an `includeIssues` sugar flag). No
   exception to safe-by-default.
 - **What can cross:** only the fixed `PublicIssue` whitelist
   (`message`/`path`/`code?`/`pointer?`), never raw validator extras.
@@ -324,9 +339,9 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 
 ## Sequencing
 
-1. **`toStructuredError`** first — tiny, pure, immediately closes the result-ts
+1. **`toStructuredError`** first: tiny, pure, immediately closes the result-ts
    seam. Low risk.
-2. **Validation aggregate** second — larger (new class + RFC 9457 projection +
+2. **Validation aggregate** second: larger (new class + RFC 9457 projection +
    docs). Dogfood the `errors[]` shape before locking the extension key.
 
 ## Decisions (locked)
@@ -343,7 +358,7 @@ function parseRegistration(input: unknown): Result<Registration, ValidationError
 
 ## Non-goals
 
-- No `Result` type here — that's `@shirudo/result`.
+- No `Result` type here; that's `@shirudo/result`.
 - No applicative/accumulating validation combinators (imperative collection is
   the v1 story).
 - No new runtime dependencies; no dependency on `@shirudo/result`.

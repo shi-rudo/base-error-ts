@@ -59,8 +59,8 @@ export type Catalog<T extends Record<string, ErrorSpec>> = {
 };
 
 /**
- * The union of every error type a catalog can produce — the closed set to pass
- * to {@link matchError}. `meta` is excluded automatically.
+ * The union of every error type a catalog can produce. Pass this closed set to
+ * {@link matchError}. `meta` is excluded automatically.
  *
  * @example
  * ```ts
@@ -82,7 +82,7 @@ export type CatalogError<C> = {
  * Returns a typed factory per `code` (with `category`, `retryable` and the
  * public mapping baked in) plus a `meta(code)` accessor for boundary metadata
  * such as `httpStatus`. Errors are tagged instances of `StructuredError`
- * discriminated by `code` — not a class per code (see proposal 0001).
+ * discriminated by `code`, not a class per code (see proposal 0001).
  *
  * @example
  * ```ts

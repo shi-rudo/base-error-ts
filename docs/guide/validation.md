@@ -1,14 +1,15 @@
 # Validation errors
 
 `ValidationError` collects multiple field-level failures into one
-[`StructuredError`](./structured-error), and surfaces them — **on explicit
-opt-in** — as a safe RFC 9457 `errors[]` extension.
+[`StructuredError`](./structured-error), and surfaces them as a safe RFC 9457
+`errors[]` extension on explicit opt-in.
 
 ```ts
 import { ValidationError } from "@shirudo/base-error";
 
 const v = new ValidationError("Registration is invalid");
-if (!isEmail(email)) v.addIssue({ message: "Enter a valid email.", path: ["email"] });
+if (!isEmail(email))
+  v.addIssue({ message: "Enter a valid email.", path: ["email"] });
 if (age < 18) v.addIssue({ message: "Must be 18 or older.", path: ["age"] });
 if (v.hasIssues()) throw v;
 ```
@@ -32,12 +33,12 @@ if (result.issues) {
 
 ## Exposing issues safely
 
-Issues are **not** exposed by default — there is no exception to
+Issues are **not** exposed by default. There is no exception to
 [safe-by-default](./safe-by-default). The stored issues (with any validator
 extras) are kept for logs; surfacing them to a client is an explicit opt-in, and
 only a fixed whitelist can ever cross.
 
-`publicIssues()` yields that whitelist — `{ message, path, code?, pointer? }`,
+`publicIssues()` yields that whitelist: `{ message, path, code?, pointer? }`,
 **never** raw validator extras (a Zod-native issue may carry the rejected input
 value; it can never reach the wire). A `pointer` string (e.g. `"address.zip"`)
 is derived from the path for HTTP clients.
@@ -73,7 +74,7 @@ v.toProblemDetails({
 
 ## Logs keep the full truth
 
-`toLogObject()` carries the complete issues — including any validator extras —
+`toLogObject()` carries the complete issues (including any validator extras),
 so observability loses nothing while the client sees only the whitelist:
 
 ```ts
