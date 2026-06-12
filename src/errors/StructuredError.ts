@@ -457,7 +457,14 @@ export class StructuredError<
     options: {
       /** HTTP status code */
       httpStatusCode?: number;
-      /** Localized message for client display */
+      /**
+       * Localized message for client display. Usually omit this: when `locale`
+       * (or `fallbackLocale`) resolves an author-provided localized message, it
+       * is auto-populated and tagged with the locale that actually matched, so
+       * `ctx.message` and `ctx.messageLocalized` agree by construction. Set it
+       * explicitly only to inject a localized string from outside the error's
+       * own locale entries — an explicit value overrides the resolved one.
+       */
       messageLocalized?: LocalizedMessage;
       /** Trace ID for distributed tracing */
       traceId?: string;
@@ -514,6 +521,12 @@ export class StructuredError<
       locale,
       fallbackLocale,
     });
+    // Single source of truth: derive the locale-tagged message from the same
+    // resolution `toPublicJSON` used for `ctx.message`, so the two never
+    // diverge. An explicit `messageLocalized` wins, for strings sourced outside
+    // the error's own locale entries.
+    const resolvedLocalized =
+      messageLocalized ?? this.resolveLocalizedMessage(locale, fallbackLocale);
 
     return {
       isSuccess: false,
@@ -527,7 +540,9 @@ export class StructuredError<
         ctx: {
           ...(httpStatusCode !== undefined && { httpStatusCode }),
           message: publicJson.message,
-          ...(messageLocalized !== undefined && { messageLocalized }),
+          ...(resolvedLocalized !== undefined && {
+            messageLocalized: resolvedLocalized,
+          }),
         },
         details: (mapDetails && this.details !== undefined
           ? mapDetails(this.details)

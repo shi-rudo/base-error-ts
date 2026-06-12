@@ -530,6 +530,52 @@ describe("StructuredError", () => {
         "Wir konnten diesen Benutzer nicht finden.",
       );
     });
+
+    it("derives messageLocalized from the resolved locale", () => {
+      const res = makeError().toErrorResponse({ locale: "de" });
+      expect(res.error.ctx.messageLocalized).toEqual({
+        locale: "de",
+        message: "Wir konnten diesen Benutzer nicht finden.",
+      });
+      // message and messageLocalized.message agree by construction
+      expect(res.error.ctx.messageLocalized?.message).toBe(
+        res.error.ctx.message,
+      );
+    });
+
+    it("tags messageLocalized with the actually-matched fallback locale", () => {
+      const res = makeError().toErrorResponse({
+        locale: "fr",
+        fallbackLocale: "en",
+      });
+      expect(res.error.ctx.messageLocalized).toEqual({
+        locale: "en",
+        message: "We couldn't find that user.",
+      });
+    });
+
+    it("omits messageLocalized when no locale resolves", () => {
+      // no locale requested at all
+      expect(
+        makeError().toErrorResponse({}).error.ctx.messageLocalized,
+      ).toBeUndefined();
+      // requested locale (and no fallback) has no entry
+      expect(
+        makeError().toErrorResponse({ locale: "fr" }).error.ctx
+          .messageLocalized,
+      ).toBeUndefined();
+    });
+
+    it("lets an explicit messageLocalized override the resolved locale", () => {
+      const res = makeError().toErrorResponse({
+        locale: "de",
+        messageLocalized: { locale: "es", message: "No encontrado" },
+      });
+      expect(res.error.ctx.messageLocalized).toEqual({
+        locale: "es",
+        message: "No encontrado",
+      });
+    });
   });
 
   describe("toProblemDetails", () => {
