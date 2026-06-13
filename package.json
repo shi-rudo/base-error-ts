@@ -55,6 +55,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./presentation": {
+      "types": "./dist/presentation/index.d.ts",
+      "import": "./dist/presentation/index.js",
+      "require": "./dist/presentation/index.cjs"
     }
   },
   "scripts": {
