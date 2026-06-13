@@ -1,18 +1,8 @@
 // ────────────────────────────────────────────────────────────────
 // Error Classes
 // ────────────────────────────────────────────────────────────────
-export {
-  BaseError,
-  DEFAULT_PUBLIC_ERROR_CATEGORY,
-  DEFAULT_PUBLIC_ERROR_CODE,
-  DEFAULT_PUBLIC_ERROR_MESSAGE,
-} from "./errors/BaseError.js";
-export type {
-  BaseErrorOptions,
-  PublicErrorJSON,
-  PublicErrorOptions,
-  RedactMask,
-} from "./errors/BaseError.js";
+export { BaseError } from "./errors/BaseError.js";
+export type { BaseErrorOptions, RedactMask } from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
 export { matchError } from "./errors/match.js";
@@ -27,32 +17,6 @@ export type {
   ValidationErrorOptions,
   PublicIssuesOptions,
 } from "./errors/validation.js";
-
-// ────────────────────────────────────────────────────────────────
-// API Response Types
-// ────────────────────────────────────────────────────────────────
-export type {
-  LocalizedMessage,
-  SuccessResponse,
-  ErrorDetails,
-  ErrorResponse,
-  ApiResponse,
-} from "./response/types.js";
-export type {
-  ProblemDetails,
-  ProblemDetailsOptions,
-} from "./response/ProblemDetails.js";
-
-// ────────────────────────────────────────────────────────────────
-// API Response Builder & Factories
-// ────────────────────────────────────────────────────────────────
-export { ErrorResponseBuilder } from "./response/builder.js";
-export {
-  errorResponse,
-  successResponse,
-  createErrorResponse,
-  createSuccessResponse,
-} from "./response/factories.js";
 
 // ────────────────────────────────────────────────────────────────
 // Utilities & Type Guards

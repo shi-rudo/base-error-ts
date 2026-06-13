@@ -10,7 +10,6 @@
  * @template TCode - Union type of error codes (e.g., "USER_NOT_FOUND" | "VALIDATION_FAILED")
  * @template TCategory - Union type of error categories (e.g., "AUTH" | "VALIDATION")
  * @template TDetails - Type of structured details object, defaults to Record<string, unknown>
- * @template TPublicCode - Union type of safe public error codes
  *
  * @example
  * ```ts
@@ -50,7 +49,6 @@ export type ErrorOptions<
   // Using Record<string, {}> as default for better compatibility with strict frameworks
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   TDetails extends Record<string, unknown> = Record<string, {}>,
-  TPublicCode extends string = string,
 > = {
   /**
    * Unique identifier for the error type.
@@ -85,25 +83,6 @@ export type ErrorOptions<
    * @example "Failed to connect to PostgreSQL database at localhost:5432"
    */
   message: string;
-
-  /**
-   * Stable, client-safe error code.
-   * Use this to map detailed domain or infrastructure codes to public API codes.
-   *
-   * @example "EMAIL_ALREADY_REGISTERED", "SERVICE_UNAVAILABLE"
-   */
-  publicCode?: TPublicCode;
-
-  /**
-   * Client-safe message. The technical `message` remains reserved for logs.
-   */
-  publicMessage?: string;
-
-  /**
-   * Allows technical code/message fallback in explicit public serializers.
-   * Defaults to false.
-   */
-  expose?: boolean;
 
   /**
    * Optional structured data providing additional error context.

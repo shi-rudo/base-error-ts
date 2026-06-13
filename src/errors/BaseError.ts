@@ -6,45 +6,9 @@ interface V8ErrorConstructor {
   ): void;
 }
 
-export const DEFAULT_PUBLIC_ERROR_CODE = "INTERNAL_ERROR" as const;
-export const DEFAULT_PUBLIC_ERROR_CATEGORY = "INTERNAL" as const;
-export const DEFAULT_PUBLIC_ERROR_MESSAGE =
-  "An unexpected error occurred." as const;
-
-export type BaseErrorOptions<TPublicCode extends string = string> = {
+export type BaseErrorOptions = {
   /** Override the runtime error name. Intended for framework errors with stable codes. */
   name?: string;
-  /** Stable, client-safe error code. */
-  publicCode?: TPublicCode;
-  /** Client-safe message. */
-  publicMessage?: string;
-  /** Allows technical name/message fallback in explicit public serialization. */
-  expose?: boolean;
-};
-
-export type PublicErrorOptions<TCode extends string = string> = {
-  /** Per-call public code override. */
-  code?: TCode;
-  /** Per-call public message override. */
-  message?: string;
-  /** Per-call exposure override. */
-  expose?: boolean;
-  /** Optional correlation id for public responses. */
-  traceId?: string;
-  /**
-   * Preferred locale for the client-safe message. When set and a matching
-   * user/localized message exists, it is used as the public message (these
-   * are author-provided, client-safe strings, so they surface without `expose`).
-   */
-  locale?: string;
-  /** Fallback locale used when the preferred locale has no message. */
-  fallbackLocale?: string;
-};
-
-export type PublicErrorJSON<TCode extends string = string> = {
-  code: TCode;
-  message: string;
-  traceId?: string;
 };
 
 /**
@@ -70,23 +34,17 @@ type RedactRegion = "root" | "cause" | "data";
  * gracefully where it is not, and produces the richest stack trace the host
  * can provide.
  *
- * This class includes support for default and localized user-friendly messages.
- *
  * @example
  * ```ts
  * // Using automatic name inference
  * class UserNotFoundError extends BaseError<'UserNotFoundError'> {
  * constructor(userId: string) {
  * super(`User with id ${userId} not found in database lookup`); // Technical message
- * this.withUserMessage(`User ${userId} was not found.`); // User-friendly message
  * }
  * }
  * ```
  */
-export class BaseError<
-  T extends string,
-  TPublicCode extends string = string,
-> extends Error {
+export class BaseError<T extends string> extends Error {
   /**
    * Nominal type brand - makes each subclass structurally distinct at compile time.
    * Using 'this' ensures every subclass gets its own unique type identity.
@@ -124,12 +82,6 @@ export class BaseError<
   /** Rich, filtered stack where the host supports it. */
   public override readonly stack?: string;
 
-  // --- Properties for user-friendly messages ---
-  private _defaultUserMessage?: string;
-  private _localizedMessages = new Map<string, string>();
-  private _publicCode?: TPublicCode;
-  private _publicMessage?: string;
-  private _expose = false;
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
 
   /**
@@ -137,13 +89,13 @@ export class BaseError<
    *
    * @param message – Human-readable explanation (name will be inferred from constructor)
    * @param cause   – Optional underlying error or extra context
-   * @param options – Optional public serialization and runtime name settings
+   * @param options – Optional runtime name settings
    */
   // The /*#__PURE__*/ pragma lets tree-shakers know the constructor is side-effect free
   public /*#__PURE__*/ constructor(
     message: string,
     cause?: unknown,
-    options: BaseErrorOptions<TPublicCode> = {},
+    options: BaseErrorOptions = {},
   ) {
     // Always call super with just message for TypeScript compatibility
     super(message);
@@ -155,9 +107,6 @@ export class BaseError<
     const resolvedName = options.name ?? this.constructor.name;
     this.name = resolvedName as T;
     this._tag = resolvedName;
-    this._publicCode = options.publicCode;
-    this._publicMessage = options.publicMessage;
-    this._expose = options.expose ?? false;
 
     // Handle cause with native support when available, fallback otherwise
     if (cause !== undefined) {
@@ -169,76 +118,6 @@ export class BaseError<
 
     // Cross-runtime best-effort stack collection
     this.stack = this.#captureStack();
-  }
-
-  // ----------------------------------------------------------------
-  // Methods for User-Friendly Messages
-  // ----------------------------------------------------------------
-
-  /**
-   * Sets the default user-friendly message.
-   * This is used as a fallback when a specific localization is not available.
-   * @param message The default user-friendly message (typically in English).
-   * @returns The error instance for chaining.
-   */
-  public withUserMessage(message: string): this {
-    this._defaultUserMessage = message;
-    return this;
-  }
-
-  /**
-   * Adds a user-friendly message for a specific language.
-   * Throws an error if a message for the given language already exists.
-   * @param lang The language code (e.g., 'de', 'es', 'fr-CA').
-   * @param message The localized message.
-   * @returns The error instance for chaining.
-   * @throws Error if a message for the given language already exists.
-   */
-  public addLocalizedMessage(lang: string, message: string): this {
-    if (this._localizedMessages.has(lang)) {
-      throw new Error(
-        `Localized message for language '${lang}' already exists. Use updateLocalizedMessage() to modify existing messages.`,
-      );
-    }
-    this._localizedMessages.set(lang, message);
-    return this;
-  }
-
-  /**
-   * Updates or sets a user-friendly message for a specific language.
-   * This method allows overwriting existing messages for the same language.
-   * @param lang The language code (e.g., 'de', 'es', 'fr-CA').
-   * @param message The localized message.
-   * @returns The error instance for chaining.
-   */
-  public updateLocalizedMessage(lang: string, message: string): this {
-    this._localizedMessages.set(lang, message);
-    return this;
-  }
-
-  /**
-   * Sets a stable, client-safe error code for public serialization.
-   * Use this to map internal domain or infrastructure failures to API codes.
-   */
-  public withPublicCode(code: TPublicCode): this {
-    this._publicCode = code;
-    return this;
-  }
-
-  /**
-   * Sets a client-safe message for public serialization.
-   */
-  public withPublicMessage(message: string): this {
-    this._publicMessage = message;
-    return this;
-  }
-
-  /**
-   * Enables or disables technical name/message fallback for public serialization.
-   */
-  public exposeToClients(expose = true): this {
-    this._expose = expose;
-    return this;
   }
 
   /**
@@ -437,32 +316,6 @@ export class BaseError<
   }
 
   /**
-   * Retrieves the most appropriate user-friendly message based on language preference.
-   * The fallback order is: preferred language -> fallback language -> default message.
-   * @param options - Language preference options.
-   * @returns The user-friendly message, or `undefined` if none is set.
-   */
-  public getUserMessage(options?: {
-    preferredLang?: string;
-    fallbackLang?: string;
-  }): string | undefined {
-    const { preferredLang, fallbackLang } = options || {};
-
-    // 1. Try to get the message for the preferred language.
-    if (preferredLang && this._localizedMessages.has(preferredLang)) {
-      return this._localizedMessages.get(preferredLang);
-    }
-
-    // 2. If not found, try the fallback language (e.g., 'en').
-    if (fallbackLang && this._localizedMessages.has(fallbackLang)) {
-      return this._localizedMessages.get(fallbackLang);
-    }
-
-    // 3. If still not found, return the default user message.
-    return this._defaultUserMessage;
-  }
-
-  /**
    * Assembles the raw log object (no redaction). Subclasses override this to
    * add their own fields; the public {@link toLogObject} applies redaction to
    * the complete assembled object.
@@ -479,14 +332,6 @@ export class BaseError<
       stack,
       cause: this.#serializeCause(cause, new Set()),
     };
-
-    // Add user messages to the JSON output for logging if they exist
-    if (this._defaultUserMessage !== undefined) {
-      json.userMessage = this._defaultUserMessage;
-    }
-    if (this._localizedMessages.size > 0) {
-      json.localizedMessages = Object.fromEntries(this._localizedMessages);
-    }
 
     return json;
   }
@@ -538,69 +383,6 @@ export class BaseError<
   /** Backwards-compatible JSON serialization for logging-oriented consumers. */
   public toJSON(): Record<string, unknown> {
     return this.toLogObject();
-  }
-
-  /**
-   * Resolves a single client-safe localized message from the author-provided
-   * locale entries: the preferred `locale` first, then `fallbackLocale`. Returns
-   * the matched message **tagged with the locale that actually produced it**, or
-   * `undefined` when neither has an entry.
-   *
-   * This is the single source of truth for locale resolution, shared by
-   * {@link toPublicJSON} (which renders the string) and the response serializers
-   * (which also tag it with its locale via `messageLocalized`). Author-provided
-   * localized messages are client-safe by design, so this resolves them without
-   * needing `expose`; the default user message is never surfaced here.
-   */
-  protected resolveLocalizedMessage(
-    locale?: string,
-    fallbackLocale?: string,
-  ): { locale: string; message: string } | undefined {
-    if (locale !== undefined) {
-      const message = this._localizedMessages.get(locale);
-      if (message !== undefined) return { locale, message };
-    }
-    if (fallbackLocale !== undefined) {
-      const message = this._localizedMessages.get(fallbackLocale);
-      if (message !== undefined) return { locale: fallbackLocale, message };
-    }
-    return undefined;
-  }
-
-  /**
-   * Serializes the error for client-facing responses.
-   *
-   * This method is safe by default: it does not expose the technical error name,
-   * technical message, stack trace, cause chain, or structured details unless
-   * explicitly configured with public fields or `expose`.
-   */
-  public toPublicJSON(options: PublicErrorOptions = {}): PublicErrorJSON {
-    const expose = options.expose ?? this._expose;
-    const code =
-      options.code ??
-      this._publicCode ??
-      (expose ? this.name : DEFAULT_PUBLIC_ERROR_CODE);
-    const localized = this.resolveLocalizedMessage(
-      options.locale,
-      options.fallbackLocale,
-    )?.message;
-    const message =
-      options.message ??
-      localized ??
-      this._publicMessage ??
-      (expose
-        ? (this.getUserMessage() ?? this.message)
-        : DEFAULT_PUBLIC_ERROR_MESSAGE);
-
-    return {
-      code,
-      message,
-      ...(options.traceId !== undefined && { traceId: options.traceId }),
-    };
-  }
-
-  protected shouldExposeToClients(): boolean {
-    return this._expose;
   }
 
   /** Readable one-liner plus full nested cause chain. */

@@ -12,7 +12,6 @@ const AppErrors = defineErrors({
     category: "NOT_FOUND",
     retryable: false,
     httpStatus: 404,
-    publicMessage: "The requested user was not found.",
     details: {} as { userId: string },
   },
   RATE_LIMITED: {
@@ -37,23 +36,6 @@ describe("defineErrors", () => {
     expect(err.retryable).toBe(false);
     expect(err.message).toBe("user 123 missing in primary db");
     expect(err.details).toEqual({ userId: "123" });
-  });
-
-  it("applies the catalog publicMessage to the safe projection", () => {
-    const err = AppErrors.USER_NOT_FOUND("technical detail", {
-      details: { userId: "1" },
-    });
-    expect(err.toProblemDetails({ status: 404 }).detail).toBe(
-      "The requested user was not found.",
-    );
-  });
-
-  it("lets a per-call publicMessage override the catalog default", () => {
-    const err = AppErrors.USER_NOT_FOUND("technical", {
-      details: { userId: "1" },
-      publicMessage: "No such account.",
-    });
-    expect(err.toPublicJSON().message).toBe("No such account.");
   });
 
   it("preserves a provided cause", () => {
@@ -93,10 +75,8 @@ describe("defineErrors", () => {
 
   it("resolves the boundary status from the catalog", () => {
     const err = AppErrors.USER_NOT_FOUND("x", { details: { userId: "1" } });
-    const problem = err.toProblemDetails({
-      status: AppErrors.meta(err.code).httpStatus,
-    });
-    expect(problem.status).toBe(404);
+    const status = AppErrors.meta(err.code).httpStatus;
+    expect(status).toBe(404);
   });
 
   it("produces a union that matchError handles exhaustively with narrowing", () => {

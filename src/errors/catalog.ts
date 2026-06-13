@@ -13,10 +13,6 @@ export type ErrorSpec = {
   retryable: boolean;
   /** HTTP status for this code, surfaced via `meta()` for boundary code. */
   httpStatus?: number;
-  /** Stable, client-safe public code. */
-  publicCode?: string;
-  /** Default client-safe message for this code. */
-  publicMessage?: string;
   /** Type marker for this code's structured details (runtime value ignored). */
   details?: Record<string, unknown>;
 };
@@ -29,8 +25,6 @@ type CategoryOf<S> = S extends { category: infer C extends string }
 type FactoryBaseOptions = {
   /** Underlying cause to preserve in the chain. */
   cause?: unknown;
-  /** Per-instance public message override (defaults to the spec's). */
-  publicMessage?: string;
 };
 
 /**
@@ -91,7 +85,6 @@ export type CatalogError<C> = {
  *     category: "NOT_FOUND",
  *     retryable: false,
  *     httpStatus: 404,
- *     publicMessage: "The requested user was not found.",
  *     details: {} as { userId: string },
  *   },
  *   RATE_LIMITED: { category: "RATE_LIMIT", retryable: true, httpStatus: 429 },
@@ -99,7 +92,7 @@ export type CatalogError<C> = {
  *
  * throw AppErrors.USER_NOT_FOUND("user 123 missing", { details: { userId: "123" } });
  *
- * const problem = err.toProblemDetails({ status: AppErrors.meta(err.code).httpStatus });
+ * const status = AppErrors.meta(err.code).httpStatus;
  * ```
  */
 export function defineErrors<const T extends Record<string, ErrorSpec>>(
@@ -124,11 +117,6 @@ export function defineErrors<const T extends Record<string, ErrorSpec>>(
         retryable: spec.retryable,
         message,
         ...(options?.details !== undefined && { details: options.details }),
-        ...(spec.publicCode !== undefined && { publicCode: spec.publicCode }),
-        ...(() => {
-          const publicMessage = options?.publicMessage ?? spec.publicMessage;
-          return publicMessage !== undefined ? { publicMessage } : {};
-        })(),
         ...(options?.cause !== undefined && { cause: options.cause }),
       });
   }
