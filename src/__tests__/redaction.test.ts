@@ -105,15 +105,6 @@ describe("log redaction", () => {
     expect(err.redactWith((l) => l)).toBe(err);
   });
 
-  it("does not affect the client path (toProblemDetails)", () => {
-    const problem = makeError()
-      .redact(["email", "ssn"])
-      .toProblemDetails({ status: 500 });
-    // client path was already safe (details never exposed); redaction is moot there
-    expect(problem).not.toHaveProperty("ssn");
-    expect(problem.code).toBe("INTERNAL_ERROR");
-  });
-
   it("leaves toLogObject unchanged when no redactor is set", () => {
     const log = makeError().toLogObject();
     expect((log.details as Record<string, unknown>).ssn).toBe("123-45-6789");

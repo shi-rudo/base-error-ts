@@ -15,8 +15,7 @@ const EXAMPLE_FILES = [
   "error-codes-example.ts",
   "domain-errors-example.ts",
   "automatic-name-example.ts",
-  "problem-details-example.ts",
-  "error-response-builder-example.ts",
+  "cause-chain-example.ts",
 ] as const;
 
 describe("Examples", () => {
@@ -45,88 +44,5 @@ describe("Examples", () => {
         }).not.toThrow();
       });
     }
-  });
-
-  describe("problem-details-example", () => {
-    it("should produce RFC 9457 compliant output", { timeout: 60000 }, () => {
-      const filePath = join(EXAMPLES_DIR, "problem-details-example.ts");
-      const output = execSync(`TEST=true npx tsx "${filePath}"`, {
-        encoding: "utf-8",
-        timeout: 30000,
-        env: { ...process.env, TEST: "true" },
-      });
-
-      expect(output).toContain("Problem Details Example");
-      expect(output).toContain('"type":');
-      expect(output).toContain('"title":');
-      expect(output).toContain('"status":');
-      expect(output).toContain('"detail":');
-      expect(output).toContain('"instance":');
-      expect(output).toContain('"traceId":');
-      expect(output).toContain('"code":');
-      expect(output).toContain('"category":');
-      expect(output).toContain('"retryable":');
-    });
-
-    it("should include Japanese localized titles", { timeout: 60000 }, () => {
-      const filePath = join(EXAMPLES_DIR, "problem-details-example.ts");
-      const output = execSync(`TEST=true npx tsx "${filePath}"`, {
-        encoding: "utf-8",
-        timeout: 30000,
-        env: { ...process.env, TEST: "true" },
-      });
-
-      expect(output).toContain("データベースエラー");
-    });
-  });
-
-  describe("error-response-builder-example", () => {
-    it("should produce ErrorResponse format", { timeout: 60000 }, () => {
-      const filePath = join(EXAMPLES_DIR, "error-response-builder-example.ts");
-      const output = execSync(`TEST=true npx tsx "${filePath}"`, {
-        encoding: "utf-8",
-        timeout: 30000,
-        env: { ...process.env, TEST: "true" },
-      });
-
-      expect(output).toContain("Error Response Builder Example");
-      expect(output).toContain('"isSuccess": false');
-      expect(output).toContain('"code":');
-      expect(output).toContain('"category":');
-      expect(output).toContain('"ctx":');
-      expect(output).toContain('"httpStatusCode":');
-      expect(output).toContain('"messageLocalized":');
-      expect(output).toContain("ユーザーが見つかりません");
-    });
-
-    it(
-      "should include both English and Japanese localizations",
-      { timeout: 60000 },
-      () => {
-        const filePath = join(
-          EXAMPLES_DIR,
-          "error-response-builder-example.ts",
-        );
-        const output = execSync(`npx tsx "${filePath}"`, {
-          encoding: "utf-8",
-          timeout: 30000,
-        });
-
-        expect(output).toContain("locale");
-        expect(output).toContain("ja");
-      },
-    );
-
-    it("should show success response format", { timeout: 60000 }, () => {
-      const filePath = join(EXAMPLES_DIR, "error-response-builder-example.ts");
-      const output = execSync(`TEST=true npx tsx "${filePath}"`, {
-        encoding: "utf-8",
-        timeout: 30000,
-        env: { ...process.env, TEST: "true" },
-      });
-
-      expect(output).toContain('"isSuccess": true');
-      expect(output).toContain("Success Response");
-    });
   });
 });

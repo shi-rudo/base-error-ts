@@ -59,9 +59,7 @@ function processOrder(orderId: string) {
       "ITEM_OUT_OF_STOCK",
       "Product iPhone 15 Pro is currently out of stock",
       { orderId, itemId: "iphone-15-pro", stockLevel: 0 },
-    )
-      .withUserMessage("Sorry, this item is currently out of stock.")
-      .addLocalizedMessage("es", "Lo sentimos, este artículo está agotado.");
+    );
   }
 
   if (orderId === "payment-failed") {
@@ -69,8 +67,6 @@ function processOrder(orderId: string) {
       "PAYMENT_FAILED",
       "Payment was declined by the card issuer",
       { orderId, paymentMethod: "visa-1234" },
-    ).withUserMessage(
-      "Your payment was declined. Please try another payment method.",
     );
   }
 
@@ -81,8 +77,6 @@ function processOrder(orderId: string) {
       "Payment gateway did not respond in time",
       { orderId, paymentMethod: "stripe", timeout: 30000 },
       gatewayError,
-    ).withUserMessage(
-      "We're experiencing technical difficulties. Please try again.",
     );
   }
 
@@ -91,7 +85,7 @@ function processOrder(orderId: string) {
       "INVALID_SHIPPING_ADDRESS",
       "Shipping address is missing required field: postal code",
       { orderId, address: { street: "123 Main St", city: "Boston" } },
-    ).withUserMessage("Please provide a complete shipping address.");
+    );
   }
 
   return { orderId, status: "success" };
@@ -116,7 +110,6 @@ async function handleOrderWithRetry(
         console.log(`  Category: ${error.category}`);
         console.log(`  Retryable: ${error.retryable}`);
         console.log(`  Message: ${error.message}`);
-        console.log(`  User Message: ${error.getUserMessage()}`);
 
         // Only retry if error is retryable and we have attempts left
         if (error.retryable && attempt < maxRetries) {
@@ -148,10 +141,7 @@ async function main() {
       console.log(`Category: ${error.category}`);
       console.log(`Retryable: ${error.retryable}`);
       console.log(`Details:`, error.details);
-      console.log(`User Message: ${error.getUserMessage()}`);
-      console.log(
-        `User Message (ES): ${error.getUserMessage({ preferredLang: "es" })}`,
-      );
+      console.log(`Message: ${error.message}`);
     }
   }
 

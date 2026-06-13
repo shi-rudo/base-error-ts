@@ -66,27 +66,11 @@ function main() {
 // Example functions that throw custom errors
 function validateUser(user: { name: string; email: string }) {
   if (!user.name) {
-    const error = new ValidationError("Name is required", "name");
-    // Add user-friendly messages with duplicate prevention
-    error
-      .withUserMessage("Please provide a name.")
-      .addLocalizedMessage("en", "Name is required.")
-      .addLocalizedMessage("es", "Se requiere un nombre.")
-      .addLocalizedMessage("fr", "Un nom est requis.");
-    throw error;
+    throw new ValidationError("Name is required", "name");
   }
 
   if (!user.email.includes("@")) {
-    const error = new ValidationError("Invalid email format", "email");
-    error
-      .withUserMessage("Please provide a valid email address.")
-      .addLocalizedMessage("en", "Please enter a valid email address.")
-      .addLocalizedMessage(
-        "es",
-        "Por favor ingrese una dirección de correo válida.",
-      )
-      .addLocalizedMessage("fr", "Veuillez saisir une adresse e-mail valide.");
-    throw error;
+    throw new ValidationError("Invalid email format", "email");
   }
 }
 

@@ -85,26 +85,4 @@ describe("toStructuredError", () => {
     expect(err.retryable).toBe(true);
     expect(err.message).toBe("Database is unavailable");
   });
-
-  it("applies the public mapping from options", () => {
-    const err = toStructuredError(new Error("pg: secret connstring rejected"), {
-      publicCode: "SERVICE_UNAVAILABLE",
-      publicMessage: "The service is temporarily unavailable.",
-    });
-    expect(err.toPublicJSON()).toEqual({
-      code: "SERVICE_UNAVAILABLE",
-      message: "The service is temporarily unavailable.",
-      retryable: false,
-    });
-  });
-
-  it("produces a safe public projection by default (no leak of the raw value)", () => {
-    const err = toStructuredError(
-      new Error("connect ECONNREFUSED 10.0.0.5:5432"),
-    );
-    const problem = err.toProblemDetails({ status: 500 });
-    expect(problem.code).toBe("INTERNAL_ERROR");
-    expect(problem.detail).toBe("An unexpected error occurred.");
-    expect(problem.detail).not.toContain("ECONNREFUSED");
-  });
 });

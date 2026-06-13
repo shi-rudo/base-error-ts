@@ -11,10 +11,6 @@ export type CoerceOptions = {
   retryable?: boolean;
   /** Override the technical message (otherwise derived from the value). */
   message?: string;
-  /** Stable, client-safe public code for the fallback. */
-  publicCode?: string;
-  /** Client-safe public message for the fallback. */
-  publicMessage?: string;
 };
 
 export function toStructuredError(
@@ -52,9 +48,5 @@ export function toStructuredError(
     retryable,
     message,
     ...(cause !== undefined && { cause }),
-    ...(options.publicCode !== undefined && { publicCode: options.publicCode }),
-    ...(options.publicMessage !== undefined && {
-      publicMessage: options.publicMessage,
-    }),
   });
 }

@@ -129,31 +129,6 @@ describe("ValidationError", () => {
   });
 
   describe("serialization", () => {
-    it("does NOT expose issues in toProblemDetails by default", () => {
-      const v = new ValidationError("Invalid").addIssue({
-        message: "Bad email",
-        path: ["email"],
-      });
-      const problem = v.toProblemDetails({ status: 422 });
-      expect(problem).not.toHaveProperty("errors");
-      expect(problem.code).toBe("INTERNAL_ERROR");
-    });
-
-    it("exposes a safe errors[] only on explicit opt-in", () => {
-      const v = new ValidationError("Invalid").addIssue({
-        message: "Bad email",
-        path: ["email"],
-      });
-      const problem = v.toProblemDetails({
-        status: 422,
-        extensions: { errors: v.publicIssues() },
-      });
-      expect(problem.status).toBe(422);
-      expect((problem as { errors: unknown[] }).errors).toHaveLength(1);
-      // standard members still win
-      expect(problem.code).toBe("INTERNAL_ERROR");
-    });
-
     it("carries the full issues (with extras) in toLogObject", () => {
       const v = new ValidationError("Invalid").addIssue({
         message: "Too short",

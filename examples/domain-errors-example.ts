@@ -2,9 +2,8 @@
  * Domain Errors Example
  *
  * This example demonstrates a best-practice approach for modeling re-usable
- * domain errors using BaseError. It shows how to create an error hierarchy,
- * separate technical from user-facing messages, and handle specific error
- * types gracefully using `instanceof`.
+ * domain errors using BaseError. It shows how to create an error hierarchy
+ * and handle specific error types gracefully using `instanceof`.
  */
 import { BaseError } from "../src/index.js";
 
@@ -18,11 +17,6 @@ class UserServiceError extends BaseError<"UserServiceError"> {
   ) {
     // The `message` here is for technical logs and debugging.
     super(`User service failure: ${message}`, cause);
-
-    // Provide a generic, safe fallback message for any unhandled user service error.
-    this.withUserMessage(
-      "An unexpected error occurred while managing user data. Please try again later.",
-    );
   }
 
   // Override toJSON to add domain-specific context to structured logs.
@@ -44,10 +38,6 @@ class UserNotFoundError extends UserServiceError {
   constructor(userId: string) {
     // Technical message with specific details.
     super(`User with ID '${userId}' not found.`, userId);
-
-    // Simple, safe message for the end-user.
-    this.withUserMessage("The user you are looking for does not exist.");
-    this.addLocalizedMessage("es", "El usuario que busca no existe.");
   }
 }
 
@@ -62,10 +52,6 @@ class UserValidationError extends UserServiceError {
   ) {
     // Technical message for developers and logs.
     super(`Validation failed for field '${field}': ${reason}`, userId);
-
-    // A user-friendly message that is safe to display in a UI.
-    this.withUserMessage(`Please correct the '${field}' field.`);
-    this.addLocalizedMessage("es", `Por favor, corrija el campo '${field}'.`);
   }
 
   // Add the specific fields to the JSON output for better structured logging.
@@ -86,15 +72,6 @@ class DuplicateUserError extends UserServiceError {
   constructor(email: string, cause?: unknown) {
     // Technical message for logs.
     super(`A user with the email '${email}' already exists.`, undefined, cause);
-
-    // User-friendly message.
-    this.withUserMessage(
-      "This email address is already registered. Please try logging in.",
-    );
-    this.addLocalizedMessage(
-      "es",
-      "Esta dirección de correo electrónico ya está registrada. Por favor, intente iniciar sesión.",
-    );
   }
 }
 
@@ -148,25 +125,21 @@ function handleUserRequest(userData: {
     // Check for the most specific error types first.
     if (error instanceof DuplicateUserError) {
       console.log("Caught Specific Error: DuplicateUserError");
-      const userMessage = error.getUserMessage({ preferredLang: "es" });
-      console.log(`  -> User Message: "${userMessage}"`);
+      console.log(`  -> Message: "${error.message}"`);
     } else if (error instanceof UserValidationError) {
       console.log("Caught Specific Error: UserValidationError");
       // `error` is now typed as UserValidationError.
       // We can safely access its specific properties like `field`.
       console.log(`  -> Validation failed on field: ${error.field}`);
-      const userMessage = error.getUserMessage();
-      console.log(`  -> User Message: "${userMessage}"`);
+      console.log(`  -> Message: "${error.message}"`);
     } else if (error instanceof UserNotFoundError) {
       console.log("Caught Specific Error: UserNotFoundError");
       // `error` is typed as UserNotFoundError here.
-      const userMessage = error.getUserMessage();
-      console.log(`  -> User Message: "${userMessage}"`);
+      console.log(`  -> Message: "${error.message}"`);
     } else if (error instanceof UserServiceError) {
       // This acts as a catch-all for any other user service errors.
       console.log("Caught Generic Error: UserServiceError");
-      const userMessage = error.getUserMessage();
-      console.log(`  -> User Message: "${userMessage}"`);
+      console.log(`  -> Message: "${error.message}"`);
     } else {
       // Handle unexpected, non-domain errors.
       console.log("Caught Unknown Error");

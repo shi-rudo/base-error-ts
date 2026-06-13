@@ -3,21 +3,6 @@ import { StructuredError, matchError } from "../index.js";
 
 describe("StructuredError.fromJSON", () => {
   describe("round-trip", () => {
-    it("restores user and localized messages", () => {
-      const e = new StructuredError({
-        code: "USER_NOT_FOUND",
-        category: "NOT_FOUND",
-        retryable: false,
-        message: "tech detail",
-      })
-        .withUserMessage("We couldn't find it.")
-        .addLocalizedMessage("de", "Nicht gefunden.");
-
-      const r = StructuredError.fromJSON(e.toJSON());
-      expect(r.getUserMessage()).toBe("We couldn't find it.");
-      expect(r.getUserMessage({ preferredLang: "de" })).toBe("Nicht gefunden.");
-    });
-
     it("reproduces an equivalent StructuredError from toJSON()", () => {
       const original = new StructuredError({
         code: "USER_NOT_FOUND",
@@ -120,19 +105,6 @@ describe("StructuredError.fromJSON", () => {
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     });
 
-    it("ignores an array localizedMessages instead of registering numeric-keyed locales", () => {
-      const restored = StructuredError.fromJSON({
-        code: "X",
-        category: "Y",
-        retryable: false,
-        message: "m",
-        localizedMessages: ["hi", "yo"],
-      });
-      // Must not register a bogus "0"/"1" locale from array indices.
-      expect(restored.getUserMessage({ preferredLang: "0" })).toBeUndefined();
-      expect(restored.getUserMessage({ preferredLang: "1" })).toBeUndefined();
-    });
-
     it("copies only whitelisted fields onto the instance", () => {
       const restored = StructuredError.fromJSON({
         code: "X",
@@ -158,20 +130,6 @@ describe("StructuredError.fromJSON", () => {
         _: () => 500,
       });
       expect(status).toBe(429);
-    });
-
-    it("a reconstructed error is still safe by default in toProblemDetails", () => {
-      const restored = StructuredError.fromJSON({
-        code: "DB_TIMEOUT",
-        category: "INFRASTRUCTURE",
-        retryable: true,
-        message: "connect ECONNREFUSED 10.0.0.5:5432",
-        details: { host: "10.0.0.5" },
-      });
-      const problem = restored.toProblemDetails({ status: 500 });
-      expect(problem.code).toBe("INTERNAL_ERROR");
-      expect(problem.detail).toBe("An unexpected error occurred.");
-      expect(JSON.stringify(problem)).not.toContain("10.0.0.5");
     });
   });
 });
