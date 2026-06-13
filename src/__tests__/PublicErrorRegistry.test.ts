@@ -85,4 +85,33 @@ describe("PublicErrorRegistry", () => {
     });
     expect(r.resolve({})).toEqual({ found: false, matcherThrew: true });
   });
+
+  it("carries matcherThrew on a successful match when an earlier matcher threw", () => {
+    const r = new PublicErrorRegistry()
+      .register({
+        match: (_e: unknown): _e is never => {
+          throw new Error("boom");
+        },
+        definition: def("throws"),
+      })
+      .register({ match: (e): e is object => true, definition: def("ok") });
+    const res = r.resolve({});
+    expect(res).toMatchObject({
+      found: true,
+      via: "predicate",
+      matcherThrew: true,
+    });
+    if (res.found) expect(res.definition.publicCode).toBe("ok");
+  });
+
+  it("treats a throwing `code` getter as no code, without throwing", () => {
+    const r = new PublicErrorRegistry().registerByCode("x", def("x"));
+    const err = {
+      get code(): string {
+        throw new Error("boom");
+      },
+    };
+    expect(() => r.resolve(err)).not.toThrow();
+    expect(r.resolve(err)).toEqual({ found: false, matcherThrew: false });
+  });
 });

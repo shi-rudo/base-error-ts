@@ -159,4 +159,22 @@ describe("LocalizedMessageSet", () => {
       expect(set.get("")).toBeUndefined();
     });
   });
+
+  describe("getCanonical (fast path)", () => {
+    it("looks up an already-canonical key without re-canonicalizing", () => {
+      const set = make();
+      expect(set.getCanonical("de")).toBe(
+        "Ihre Zahlung konnte nicht verarbeitet werden.",
+      );
+      expect(set.getCanonical("en")).toBe(
+        "Your payment could not be processed.",
+      );
+    });
+
+    it("does not canonicalize its argument: a non-canonical spelling misses", () => {
+      const set = make();
+      expect(set.getCanonical("DE")).toBeUndefined();
+      expect(set.getCanonical("de-de")).toBeUndefined();
+    });
+  });
 });

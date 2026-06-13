@@ -26,6 +26,12 @@ export type PresentationOutcome =
       via: "code" | "predicate";
       publicCode: string;
       projection: "not_configured" | "succeeded" | "failed";
+      /**
+       * Present only when a predicate matcher threw before this match was
+       * found. The match is still correct; this surfaces the broken matcher for
+       * telemetry (a fallback is reported as `matcher_failed` instead).
+       */
+      matcherThrew?: true;
     }
   | { kind: "fallback"; reason: "no_definition" | "matcher_failed" };
 
@@ -103,7 +109,12 @@ export class PublicErrorPresenter {
         projection = "not_configured";
       } else {
         try {
-          view = { ...view, details: definition.projectDetails(error) };
+          const details = definition.projectDetails(error);
+          // Only attach when present, so a projection returning undefined does
+          // not leave a stray `details: undefined` own property on the view.
+          if (details !== undefined) {
+            view = { ...view, details };
+          }
           projection = "succeeded";
         } catch {
           // Matched view stands without details; only the projection failed.
@@ -116,6 +127,7 @@ export class PublicErrorPresenter {
         via: resolution.via,
         publicCode: definition.publicCode,
         projection,
+        ...(resolution.matcherThrew && { matcherThrew: true }),
       };
     } else {
       const resolved = resolveUserMessage(

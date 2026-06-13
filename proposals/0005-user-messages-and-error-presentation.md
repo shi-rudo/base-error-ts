@@ -164,6 +164,7 @@ const messages = new LocalizedMessageSet({
 messages.baseLocale; // "en"
 messages.has("de"); // true
 messages.get("de"); // "Ihre Zahlung konnte nicht verarbeitet werden."
+messages.getCanonical("de"); // fast path: assumes an already-canonical key
 messages.entries(); // readonly [locale, text][] over canonical keys
 ```
 
@@ -331,6 +332,8 @@ type PresentationOutcome =
       via: "code" | "predicate";
       publicCode: string;
       projection: "not_configured" | "succeeded" | "failed";
+      // present only when a predicate matcher threw before this match was found
+      matcherThrew?: true;
     }
   | { kind: "fallback"; reason: "no_definition" | "matcher_failed" };
 
@@ -617,7 +620,11 @@ response is a breaking change to the wire contract that frontends consume.
     `onPresent` observer; the observer is fire-and-forget and cannot influence
     or break presentation (a throwing observer is swallowed).
 14. A throwing predicate matcher is a miss; a throwing `projectDetails` yields
-    the matched view without `details`. Both are reported through the observer.
+    the matched view without `details`. Both are reported through the observer:
+    a matcher failure that ends in a fallback is `reason: "matcher_failed"`, and
+    one that a later matcher recovers from sets `matcherThrew: true` on the
+    matched outcome. A `projectDetails` that returns `undefined` (rather than
+    throwing) leaves no `details` property and reports `projection: "succeeded"`.
     No exception from registered user code escapes `present()`.
 15. Registry type safety holds at the registration boundary only; stored
     definitions are type-erased; runtime resilience at projection time

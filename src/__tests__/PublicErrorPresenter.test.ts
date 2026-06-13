@@ -209,4 +209,73 @@ describe("PublicErrorPresenter", () => {
       expect(presenter.present({}).code).toBe("internal_error");
     });
   });
+
+  describe("hardening", () => {
+    it("stays total when the error's `code` getter throws", () => {
+      const registry = new PublicErrorRegistry().registerByCode(
+        "payment.declined",
+        { publicCode: "payment.declined", userMessages: paymentMessages },
+      );
+      const presenter = new PublicErrorPresenter({ registry, fallback });
+      const err = {
+        get code(): string {
+          throw new Error("boom");
+        },
+      };
+      expect(() => presenter.present(err)).not.toThrow();
+      expect(presenter.present(err).code).toBe("internal_error");
+    });
+
+    it("omits details (no stray undefined) when projectDetails returns undefined", () => {
+      const onPresent = vi.fn();
+      const registry = new PublicErrorRegistry().registerByCode<
+        { code: string },
+        string | undefined
+      >("a", {
+        publicCode: "a",
+        userMessages: paymentMessages,
+        projectDetails: () => undefined,
+      });
+      const presenter = new PublicErrorPresenter({
+        registry,
+        fallback,
+        onPresent,
+      });
+
+      const view = presenter.present({ code: "a" });
+      expect("details" in view).toBe(false);
+      expect(onPresent.mock.calls[0]?.[2]).toMatchObject({
+        kind: "matched",
+        projection: "succeeded",
+      });
+    });
+
+    it("flags matcherThrew on a matched outcome when an earlier matcher threw", () => {
+      const onPresent = vi.fn();
+      const registry = new PublicErrorRegistry()
+        .register({
+          match: (_e: unknown): _e is never => {
+            throw new Error("boom");
+          },
+          definition: { publicCode: "x", userMessages: paymentMessages },
+        })
+        .register({
+          match: (e): e is object => true,
+          definition: { publicCode: "ok", userMessages: paymentMessages },
+        });
+      const presenter = new PublicErrorPresenter({
+        registry,
+        fallback,
+        onPresent,
+      });
+
+      presenter.present({});
+      expect(onPresent.mock.calls[0]?.[2]).toMatchObject({
+        kind: "matched",
+        via: "predicate",
+        publicCode: "ok",
+        matcherThrew: true,
+      });
+    });
+  });
 });

@@ -48,7 +48,8 @@ export function resolveUserMessage(
     for (const [depth, tag] of truncationChain(canonical).entries()) {
       if (seen.has(tag)) continue;
       seen.add(tag);
-      const message = set.get(tag);
+      // Tags from the truncation chain are already canonical; skip re-canonicalizing.
+      const message = set.getCanonical(tag);
       if (message !== undefined) {
         return {
           locale: tag,
@@ -61,7 +62,7 @@ export function resolveUserMessage(
   }
 
   // Floor: the baseLocale entry is guaranteed to exist by the set's invariant.
-  const baseMessage = set.get(set.baseLocale);
+  const baseMessage = set.getCanonical(set.baseLocale);
   if (baseMessage !== undefined) {
     return { locale: set.baseLocale, message: baseMessage, match: "base" };
   }

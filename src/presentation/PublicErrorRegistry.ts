@@ -9,7 +9,13 @@ type AnyDefinition = PublicErrorDefinition<unknown, unknown>;
  * matcher (`matcher_failed`).
  */
 export type RegistryResolution =
-  | { found: true; via: "code" | "predicate"; definition: AnyDefinition }
+  | {
+      found: true;
+      via: "code" | "predicate";
+      definition: AnyDefinition;
+      /** True when a predicate matcher threw before this match was found. */
+      matcherThrew: boolean;
+    }
   | { found: false; matcherThrew: boolean };
 
 /**
@@ -68,7 +74,7 @@ export class PublicErrorRegistry {
     if (code !== undefined) {
       const definition = this.#byCode.get(code);
       if (definition !== undefined) {
-        return { found: true, via: "code", definition };
+        return { found: true, via: "code", definition, matcherThrew: false };
       }
     }
 
@@ -82,7 +88,7 @@ export class PublicErrorRegistry {
         continue;
       }
       if (matched) {
-        return { found: true, via: "predicate", definition };
+        return { found: true, via: "predicate", definition, matcherThrew };
       }
     }
 
@@ -90,11 +96,21 @@ export class PublicErrorRegistry {
   }
 }
 
-/** The string `code` of an error-like object, or `undefined`. */
+/**
+ * The string `code` of an error-like object, or `undefined`. Deliberately
+ * looser than `isStructuredError` (src/errors/guards.ts): it requires only a
+ * string `code`, not `category`/`retryable`, so any error carrying a public
+ * code can be routed. The property read is guarded: a throwing `code` getter
+ * must not break the presenter's totality, so it is treated as no code.
+ */
 function readCode(error: unknown): string | undefined {
   if (typeof error === "object" && error !== null && "code" in error) {
-    const code = (error as { code: unknown }).code;
-    if (typeof code === "string") return code;
+    try {
+      const code = (error as { code: unknown }).code;
+      if (typeof code === "string") return code;
+    } catch {
+      return undefined;
+    }
   }
   return undefined;
 }

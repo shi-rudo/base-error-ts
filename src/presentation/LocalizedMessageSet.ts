@@ -83,6 +83,17 @@ export class LocalizedMessageSet {
     return key === undefined ? undefined : this.#messages.get(key);
   }
 
+  /**
+   * Fast-path lookup for a key that is **already canonical**. Skips
+   * canonicalization, so the caller is responsible for passing a canonical tag
+   * (a non-canonical spelling misses). Used by the resolver, which already
+   * canonicalizes once and walks canonical truncation tags; prefer {@link get}
+   * for untrusted input.
+   */
+  public getCanonical(canonicalLocale: string): string | undefined {
+    return this.#messages.get(canonicalLocale);
+  }
+
   /** A copy of the entries as `[canonicalLocale, message]` pairs. */
   public entries(): ReadonlyArray<readonly [string, string]> {
     return [...this.#messages.entries()];
