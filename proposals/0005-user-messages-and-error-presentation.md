@@ -223,14 +223,15 @@ Dedupe is preference-order-first, and this is a pinned design decision, not
 implementation freedom:
 
 ```text
-locales=[de-CH, fr, de], set={de, fr}, baseLocale=en
+locales=[de-CH, fr, de], set={en, de, fr}, baseLocale=en
 candidates after expansion + dedupe: de-CH, de, fr, en
 result: { locale: "de", matchedPreferenceIndex: 0, match: "parent" }
 ```
 
-The duplicate `de` at input position 2 does **not** win as `exact`: the
-truncation chain of the first entry (`de-CH`) already consumed `de`. Preference
-order dominates exactness, consistent with RFC 4647 lookup semantics.
+The set must contain its `baseLocale` entry (`en`) to be constructable. The
+duplicate `de` at input position 2 does **not** win as `exact`: the truncation
+chain of the first entry (`de-CH`) already consumed `de`. Preference order
+dominates exactness, consistent with RFC 4647 lookup semantics.
 
 ### `PublicErrorDefinition`, typed per error
 
@@ -325,11 +326,13 @@ type PublicErrorView<TDetails = never> = {
 };
 
 type PresentationOutcome =
-  | { kind: "matched"; via: "code" | "predicate"; publicCode: string }
   | {
-      kind: "fallback";
-      reason: "no_definition" | "projection_failed" | "matcher_failed";
-    };
+      kind: "matched";
+      via: "code" | "predicate";
+      publicCode: string;
+      projection: "not_configured" | "succeeded" | "failed";
+    }
+  | { kind: "fallback"; reason: "no_definition" | "matcher_failed" };
 
 interface PublicErrorPresenterOptions {
   registry: PublicErrorRegistry;
@@ -405,14 +408,18 @@ break it. Predicate matchers and `projectDetails` are user code. Two rules:
   continues with the next matcher. The outcome reports `matcher_failed`.
 - **`projectDetails` throws** -> the definition still counts as matched; the
   view is delivered **without** `details` (`code`, `message`, `locale` come from
-  the definition as usual). The outcome reports `projection_failed`.
+  the definition as usual). The outcome is `kind: "matched"` with
+  `projection: "failed"`, **not** a fallback: a broken projection is not a
+  fallback, the matched definition still produced the view.
 
 A full fallback to `internal_error` on a broken projection would be
 overcautious: `publicCode` and the static message are safe, only the projection
 failed. The user gets the correct error class; the operator gets the telemetry
 event. This is the same "as much correct information as is safely possible"
 philosophy as a locale miss. No exception from registered user code escapes
-`present()`.
+`present()`. A matched outcome always records `projection`
+(`not_configured` when the definition has no `projectDetails`, otherwise
+`succeeded` or `failed`).
 
 ### Observability of degradation
 
