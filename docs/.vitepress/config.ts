@@ -15,7 +15,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Migration", link: "/guide/migration" },
       {
-        text: "v5",
+        text: "v6",
         items: [
           {
             text: "Changelog",
