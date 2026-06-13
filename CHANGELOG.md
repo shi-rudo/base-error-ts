@@ -1,5 +1,25 @@
 # Changelog
 
+## 6.0.0 - 2026-06-13
+
+### Breaking Changes
+
+- The core is now purely technical. Localization, the `expose` flag, and every public serializer were removed from `BaseError` and `StructuredError`. Removed: `toPublicJSON()`, `toProblemDetails()`, `toErrorResponse()`, `withUserMessage()`, `addLocalizedMessage()`, `updateLocalizedMessage()`, `getUserMessage()`, `withPublicCode()`, `withPublicMessage()`, `exposeToClients()`, the `expose` flag, and `publicCode`/`publicMessage` on `ErrorOptions` and the catalog `ErrorSpec`. The `TPublicCode` generic parameter is gone.
+- Removed the entire response layer: `errorResponse`, `successResponse`, `createErrorResponse`, `createSuccessResponse`, `ErrorResponseBuilder`, `ApiResponse`, `SuccessResponse`, `ErrorResponse`, `LocalizedMessage`, and the `ProblemDetails` / `ProblemDetailsOptions` types.
+- `StructuredError.fromJSON` no longer restores user or localized messages.
+- `defineErrors` keeps `httpStatus` and `meta(code)` but no longer accepts `publicCode` / `publicMessage`.
+- Requires Node.js `>=20`.
+
+See the [migration guide](./MIGRATION.md) for the removed-API to replacement mapping.
+
+### Added
+
+- New optional subpath export `@shirudo/base-error/presentation` for safe, localized, transport-neutral public output: `LocalizedMessageSet`, `resolveUserMessage`, `PublicErrorDefinition`, `PublicErrorRegistry` (with `assertCoverage`), and a total `PublicErrorPresenter` that produces a `PublicErrorView`. Transport (HTTP status, gRPC, CLI exit code) is a consumer adapter concern.
+
+### Changed
+
+- The module and edge boundaries are enforced by ESLint: the core may not import the presentation module, and library source may not use Node globals (`process`, `Buffer`) or `node:*` imports. The runtime-pure suite also runs on workerd (via `@cloudflare/vitest-pool-workers`) in CI.
+
 ## 5.0.0 - 2026-06-01
 
 ### Breaking Changes
