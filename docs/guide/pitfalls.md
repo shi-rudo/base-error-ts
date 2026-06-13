@@ -17,16 +17,17 @@ Response.json(error); // ← same
 return error; // ← framework auto-serializes via toJSON → leak
 ```
 
-Anything that auto-serializes an object reaches `toJSON()` and bypasses the safe
-path. **Always call a client serializer explicitly:**
+Anything that auto-serializes an object reaches `toJSON()`. Never send
+`toLogObject()` / `toJSON()` output to a client. **Produce the client payload
+through the [presenter](./presentation):**
 
 ```ts
-res.json(error.toProblemDetails({ status: 500 })); // ✓ safe
-res.json(error.toErrorResponse({ httpStatusCode: 500 })); // ✓ safe
+const view = presenter.present(error, { locales }); // ✓ safe public view
+res.status(status).json(view);
 ```
 
-Rule of thumb: `toLogObject()` / `toJSON()` go to your logger; never to a
-response.
+Rule of thumb: `toLogObject()` / `toJSON()` go to your logger; the presenter's
+`PublicErrorView` goes to the response.
 
 ## 2. `StructuredError.name` is the `code`, not `"StructuredError"`
 
@@ -40,39 +41,22 @@ e.name; // "USER_NOT_FOUND", not "StructuredError"
 So `err.name === "StructuredError"` is always false. Use `instanceof`,
 `isStructuredError(err)`, or switch on `err.code`.
 
-## 3. Extension keys that collide with reserved members are silently dropped
+## 3. `present` is total: an unmapped error becomes the generic fallback
 
-[Safe-by-default is invariant](./safe-by-default): standard members (`type`,
-`title`, `status`, `detail`, `instance`) and library members (`code`,
-`category`, `retryable`, `traceId`) always win. An `extensions` key or a
-`mapDetails` output using one of those names is **silently discarded**, with
-no error:
+`PublicErrorPresenter.present` never throws and never leaks. If an error matches
+no registry entry, it degrades to the generic localized fallback, **silently**
+from the caller's point of view:
 
 ```ts
-error.toProblemDetails({
-  status: 400,
-  extensions: { status: 422, code: "X" }, // both ignored (reserved)
-});
+presenter.present(somethingUnregistered, { locales });
+// { code: "INTERNAL_ERROR", message: "Something went wrong...", locale: "en" }
 ```
 
-This is the price of the guarantee. Name your extension members anything other
-than the reserved keys above.
+That is the safety guarantee, but it can hide a missing registration. Use the
+`onPresent` hook to surface `kind: "fallback"` outcomes to your telemetry so an
+unmapped error class shows up as a metric rather than a generic 500.
 
-## 4. `expose: true` at construction is sticky
-
-Setting `expose` on the constructor flips **every** client serialization of that
-instance to include technical fields; it is not a per-response decision:
-
-```ts
-new StructuredError({ /* … */ expose: true });
-// every toProblemDetails()/toPublicJSON() on this instance now exposes internals
-```
-
-Prefer per-call control (`toProblemDetails({ expose: true })`) or, better,
-explicit `publicCode` / `publicMessage` / `publicCategory`. Reserve constructor
-`expose` for errors that are public by their very nature.
-
-## 5. Class-name minification and the `_tag` discriminant
+## 4. Class-name minification and the `_tag` discriminant
 
 `_tag` (and an inferred `name`) fall back to `this.constructor.name`, which most
 production minifiers mangle by default (esbuild `keepNames: false`, terser/swc

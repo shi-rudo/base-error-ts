@@ -54,18 +54,16 @@ export default defineConfig({
         {
           text: "Boundaries",
           items: [
-            { text: "Problem Details", link: "/guide/problem-details" },
-            { text: "Error responses", link: "/guide/error-responses" },
             {
-              text: "Building API responses",
-              link: "/guide/building-responses",
+              text: "Public error presentation",
+              link: "/guide/presentation",
             },
             { text: "Observability & logging", link: "/guide/observability" },
           ],
         },
         {
           text: "Reference",
-          items: [{ text: "Migration v4 → v5", link: "/guide/migration" }],
+          items: [{ text: "Migration", link: "/guide/migration" }],
         },
       ],
     },

@@ -1,9 +1,9 @@
 # Error catalog
 
 `defineErrors` turns a declarative spec into a typed factory per `code`, a
-single source of truth for `category`, `retryable`, HTTP status and the public
-mapping. It is the governance complement to [`matchError`](./matching): the
-catalog defines the closed set, `matchError` consumes it exhaustively.
+single source of truth for `category`, `retryable` and HTTP status. It is the
+governance complement to [`matchError`](./matching): the catalog defines the
+closed set, `matchError` consumes it exhaustively.
 
 ```ts
 import { defineErrors } from "@shirudo/base-error";
@@ -13,7 +13,6 @@ export const AppErrors = defineErrors({
     category: "NOT_FOUND",
     retryable: false,
     httpStatus: 404,
-    publicMessage: "The requested user was not found.",
     details: {} as { userId: string }, // per-code details type (value ignored)
   },
   RATE_LIMITED: {
@@ -47,13 +46,18 @@ a subclass as before.
 
 `meta(code)` returns a copy of the static spec row, so the boundary resolves
 status from the catalog instead of guessing it (`code` is typed to the catalog's
-keys; an unknown code throws a clear error rather than returning `undefined`):
+keys; an unknown code throws a clear error rather than returning `undefined`).
+Feed it into your transport adapter:
 
 ```ts
-const problem = err.toProblemDetails({
-  status: AppErrors.meta(err.code).httpStatus,
-});
+const status = AppErrors.meta(err.code).httpStatus ?? 500;
+const view = presenter.present(err, { locales });
+return Response.json(view, { status });
 ```
+
+The catalog supplies the transport metadata (`httpStatus`); the
+[presentation layer](./presentation) supplies the client-safe public code and
+localized message. The two stay decoupled.
 
 ## Composing with `matchError`
 
@@ -65,30 +69,26 @@ import type { CatalogError } from "@shirudo/base-error";
 
 type AppError = CatalogError<typeof AppErrors>;
 
-function toResponse(err: AppError) {
+function httpStatusFor(err: AppError): number {
   return matchError(err, {
-    USER_NOT_FOUND: (e) =>
-      e.toProblemDetails({
-        status: 404,
-        extensions: { userId: e.details?.userId },
-      }),
-    RATE_LIMITED: (e) => e.toProblemDetails({ status: 429 }),
+    USER_NOT_FOUND: (e) => AppErrors.meta(e.code).httpStatus ?? 404,
+    RATE_LIMITED: (e) => AppErrors.meta(e.code).httpStatus ?? 429,
   });
 }
 ```
 
 Add a code to the catalog and every `matchError` without a `_` stops compiling
 until you handle it. The catalog defines the set; the compiler keeps your
-handling complete; the safe serializers do the projection.
+handling complete; the [presentation layer](./presentation) does the
+client-facing projection.
 
 ## Per-call overrides
 
-A factory call can still override the public message and attach a cause:
+A factory call can attach structured details and a cause:
 
 ```ts
-AppErrors.USER_NOT_FOUND("technical", {
+AppErrors.USER_NOT_FOUND("user 1 missing in primary db", {
   details: { userId: "1" },
-  publicMessage: "No such account.",
   cause: dbError,
 });
 ```

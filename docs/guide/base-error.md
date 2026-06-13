@@ -1,8 +1,10 @@
 # BaseError
 
-`BaseError<T, TPublicCode>` is the foundation. Extend it for bespoke errors, or
-reach for [`StructuredError`](./structured-error) when you want typed codes and
-categories out of the box.
+`BaseError<T>` is the foundation. Extend it for bespoke errors, or reach for
+[`StructuredError`](./structured-error) when you want typed codes and categories
+out of the box. It is purely technical: it models the failure for your logs and
+control flow. Client-facing text is produced separately, by the
+[presentation layer](./presentation).
 
 ```ts
 import { BaseError } from "@shirudo/base-error";
@@ -25,10 +27,7 @@ new BaseError(
   message: string,
   cause?: unknown,
   options?: {
-    name?: string;        // override the runtime name (defaults to constructor name)
-    publicCode?: string;  // stable, client-safe code
-    publicMessage?: string; // client-safe message
-    expose?: boolean;     // allow technical fallback in public serializers
+    name?: string; // override the runtime name (defaults to constructor name)
   },
 );
 ```
@@ -45,55 +44,33 @@ new BaseError(
 | `timestamp`    | Epoch-ms number                                              |
 | `timestampIso` | ISO-8601 string                                              |
 
-## User-facing & public messages
+`BaseError` gives you automatic name inference, cause chaining, cross-runtime
+stack capture and timestamps out of the box.
 
-A fluent, chainable API configures what the error may show to humans and
-clients:
+## Redaction
 
-```ts
-const err = new PaymentDeclinedError("insufficient funds")
-  .withUserMessage("Your card was declined.")
-  .addLocalizedMessage("de", "Ihre Karte wurde abgelehnt.")
-  .withPublicCode("PAYMENT_DECLINED")
-  .withPublicMessage("Your payment could not be processed.");
-```
+PII redaction scrubs the **log** path (see
+[Observability & logging](./observability) for the full treatment):
 
-| Method                              | Purpose                                |
-| ----------------------------------- | -------------------------------------- |
-| `withUserMessage(msg)`              | Default user-friendly message          |
-| `addLocalizedMessage(lang, msg)`    | Add a localized message                |
-| `updateLocalizedMessage(lang, msg)` | Update an existing localized message   |
-| `withPublicCode(code)`              | Stable client-safe code                |
-| `withPublicMessage(msg)`            | Client-safe message                    |
-| `exposeToClients(expose?)`          | Opt in to exposing technical fields    |
-| `getUserMessage(options?)`          | Resolve the user message (with locale) |
-
-### When server-side localization makes sense
-
-Localization is usually a presentation concern: the client maps the stable
-`code` to its own translations, so most apps never need a localized message on
-the error at all. The `code` is the real contract, and `addLocalizedMessage` is an
-**opt-in escape hatch** for the paths where the server renders the final text
-and no UI sits in between:
-
-- **No UI in between:** emails, push notifications, SMS, where the server produces
-  the text the human reads.
-- **Clients that can't localize:** third-party integrations, a CLI, a simple
-  public API that returns plain text.
-- **Data only the server has:** interpolation with values the UI doesn't know.
-
-For everything else, prefer the `code` and let the client localize. When you do
-add localized messages, [`toErrorResponse()`](./error-responses#localized-messages)
-and [`toProblemDetails()`](./problem-details) resolve them by `locale` for you.
+| Method                        | Purpose                                                        |
+| ----------------------------- | -------------------------------------------------------------- |
+| `redact(keys, options?)`      | Sticky deny-list: mask the given keys (deep) in log output     |
+| `redactAllow(keys, options?)` | Sticky allow-list: mask every data leaf except the listed ones |
+| `redactWith(fn)`              | Arbitrary transform of the log object (composition seam)       |
 
 ## Serialization
 
-| Method                   | Path          | Contents                                                          |
-| ------------------------ | ------------- | ----------------------------------------------------------------- |
-| `toLogObject()`          | Observability | name, message, stack, full cause chain, timestamps, user messages |
-| `toJSON()`               | Observability | alias of `toLogObject()`                                          |
-| `toPublicJSON(options?)` | Client        | safe `{ code, message, traceId? }`                                |
-| `toString()`             | N/A           | one-liner plus the full nested cause chain                        |
+| Method          | Path          | Contents                                           |
+| --------------- | ------------- | -------------------------------------------------- |
+| `toLogObject()` | Observability | name, message, stack, full cause chain, timestamps |
+| `toJSON()`      | Observability | alias of `toLogObject()`                           |
+| `toString()`    | N/A           | one-liner plus the full nested cause chain         |
+
+`toLogObject()` / `toJSON()` are **internal, full-fidelity log output**. They are
+not safe to send to clients: they carry the technical message, stack and cause
+chain. For client-facing text, use the [presentation layer](./presentation),
+which projects an explicit allowlist (a public code, a resolved localized
+message, and any deliberately projected details).
 
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.

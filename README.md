@@ -6,20 +6,21 @@
 [![Tests](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml/badge.svg)](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml)
 
 A cross-environment base error class for TypeScript targeting Node.js, modern browsers,
-and edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). Structured
-errors, RFC 9457 Problem Details, and a public projection that **never leaks
+and edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). A purely
+technical core, plus an optional presentation layer that produces safe, localized
+client-facing output. The core has no client serializer, so it **never leaks
 internal state by default**. Zero runtime dependencies.
 
 ## Features
 
 - 🌐 **Cross-platform**: Node.js, browsers, edge; rich stack traces, preserved cause chains.
-- 🔒 **Safe by default, invariant**: client serializers never expose technical messages, internal codes/categories, or raw details unless you explicitly project them.
-- 🧱 **Structured errors**: typed `code` / `category` / `retryable` / `details`, RFC 9457 Problem Details, discriminated API responses.
+- 🔒 **Safe by default**: the core has no public serializer; client output is produced only by the presentation layer's explicit allowlist.
+- 🧱 **Structured errors**: typed `code` / `category` / `retryable` / `details`.
 - 🎯 **Exhaustive `matchError`**: compile-time-checked dispatch on `code`.
 - 📒 **Error catalog**: `defineErrors` generates typed factories from one declarative spec.
 - ✅ **Validation aggregate**: collect field issues (Standard Schema compatible) into one error.
 - 🔁 **Wire round-trip**: `toLogObject` / `fromJSON` for same-context reconstruction & log replay.
-- 🌍 **i18n**: locale-aware public messages.
+- 🌍 **Public presentation**: `@shirudo/base-error/presentation` for localized, transport-neutral public views.
 - 🛡️ **PII redaction**: opt-in, sticky log-path redaction (`redact` / `redactAllow` / `partialMask`).
 
 ## Installation
@@ -40,23 +41,26 @@ class UserNotFoundError extends StructuredError<"USER_NOT_FOUND", "NOT_FOUND"> {
       category: "NOT_FOUND",
       retryable: false,
       message: `User ${userId} not found in primary db`, // technical (for logs)
-      publicMessage: "We couldn't find that user.", // safe (for clients)
     });
   }
 }
 
 const err = new UserNotFoundError("123");
 
-// Two output paths; keep them straight:
-logger.error(err.toLogObject()); // full truth: message, stack, cause, details
-return err.toProblemDetails({ status: 404 }); // safe projection for the client
+// The technical truth goes to your logger:
+logger.error(err.toLogObject()); // message, stack, cause, details
 
-// Exhaustive handling:
+// Exhaustive handling on the stable code:
 const status = matchError(err, {
   USER_NOT_FOUND: () => 404,
   _: () => 500,
 });
 ```
+
+For safe, localized client-facing output, use the optional presentation layer
+(`@shirudo/base-error/presentation`): register a `PublicErrorPresenter` at your
+boundary and call `present(error, { locales })` to get a transport-neutral
+`PublicErrorView`. See the [presentation guide](docs/guide/presentation.md).
 
 ## Documentation
 
@@ -81,14 +85,12 @@ The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-t
 
 **Boundaries**
 
-- [Problem Details (RFC 9457)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/problem-details.md)
-- [Error responses](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/error-responses.md)
-- [Building API responses](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/building-responses.md)
+- [Public error presentation](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/presentation.md)
 - [Observability & logging (incl. PII redaction & `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
 
 **Reference**
 
-- [Migration v4 → v5](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/migration.md)
+- [Migration](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/migration.md)
 - [Changelog](CHANGELOG.md)
 
 ## TypeScript

@@ -9,15 +9,21 @@ This library treats the boundary of your application the way DDD treats the
 boundary of a bounded context: what crosses it is a deliberate, **published**
 representation, never the internal model by accident.
 
-## The guarantee is invariant
+## Safe by default means: the core has no client path
 
-The client-facing serializers (`toPublicJSON`, `toProblemDetails`,
-`toErrorResponse`) emit only safe values by default:
+The core (`@shirudo/base-error`) is purely technical. There is **no public
+serializer** on a `BaseError` or `StructuredError`. That is the guarantee:
 
-- The technical `message` is replaced by a safe public message.
-- The internal `code` becomes a stable public code (`INTERNAL_ERROR` by default).
-- The internal `category` is omitted.
-- Raw `details`, `cause` and `stack` are never present.
+- The stable `code` is the contract. It is for logs, control flow and tests.
+- The technical `message`, `details`, `cause` and `stack` live only in
+  `toLogObject()` / `toJSON()`, which are **internal** full-fidelity log output.
+- Client-facing output is produced **exclusively** by the
+  [presentation layer](./presentation), through an explicit allowlist: a public
+  code, a resolved localized message, and any fields you deliberately project.
+
+Because the core exposes nothing client-facing, there is no override flag to
+audit and no accidental-leak call site to find. To send anything to a client you
+must reach for the presenter, and the presenter only emits what you registered.
 
 ```ts
 const err = new StructuredError({
@@ -27,31 +33,37 @@ const err = new StructuredError({
   message: "duplicate key value violates unique constraint users_email_key",
 });
 
-err.toProblemDetails({ status: 409 });
-// {
-//   status: 409,
-//   detail: "An unexpected error occurred.",
-//   code: "INTERNAL_ERROR",
-//   retryable: false
-// }
+// Internal, full-fidelity. Goes to your logger, never to a client.
+logger.error(err.toLogObject());
+
+// Client-facing. Only what the registry maps and the definition projects.
+const view = presenter.present(err, { locales: ["en"] });
+// { code: "INTERNAL_ERROR", message: "Something went wrong...", locale: "en" }
 ```
 
-There is **no override switch**. Standard Problem Details members
-(`type`, `title`, `status`, `detail`, `instance`) and library members
-(`code`, `category`, `retryable`, `traceId`) always win over colliding
-extension keys. A call site cannot accidentally leak, and you never have to
-check a flag to know whether a given response is safe.
+An unmapped error degrades to the presenter's generic localized fallback. The
+technical message is never reached on the public path.
 
 ## Exposing things is always explicit
 
-When you _do_ want to surface information, you say so by name:
+When you _do_ want to surface information, you say so by name in a
+[`PublicErrorDefinition`](./presentation#publicerrordefinition):
 
-- [`publicCode`](./problem-details#public-code-message-category) / `publicMessage` / `publicCategory`: deliberate public values.
-- [`expose`](./problem-details#exposing-technical-fields): opt in to the technical name/category/message.
-- [`mapDetails`](./problem-details#projecting-details): the only way to surface `details`, as a reviewable projection.
+- `publicCode`: the deliberate, client-safe code (distinct from the technical
+  `code`).
+- `userMessages`: the client-safe localized text, as a `LocalizedMessageSet`.
+- `projectDetails`: the only way `details` reach the public view, as a
+  reviewable, typed projection. The raw error is never spread.
+
+## Redaction scrubs the log path
+
+The log path is the one that carries the full technical truth, so that is where
+redaction applies. `redact` / `redactAllow` configure a **sticky** mask on the
+error so even an auto-serialize (`JSON.stringify(error)` that a logger does) is
+scrubbed. See [Observability & logging](./observability).
 
 ## "But I need the full error for Sentry"
 
-You do, and you get it on a **separate** path. See
-[Observability & logging](./observability). The strictness here applies only to
-the user-facing path; `toLogObject()` keeps the full, unredacted error.
+You do, and you get it on the log path: `toLogObject()` keeps the full,
+(optionally redacted) error. The client path is a separate concern handled by the
+presenter. See [Observability & logging](./observability).
