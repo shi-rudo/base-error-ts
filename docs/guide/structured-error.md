@@ -57,29 +57,31 @@ class DatabaseError extends StructuredError<DbCode, DbCategory, DbDetails> {
 
 ## Options
 
-| Option          | Type          | Notes                                                 |
-| --------------- | ------------- | ----------------------------------------------------- |
-| `code`          | `TCode`       | Programmatic, internal error code                     |
-| `category`      | `TCategory`   | Internal grouping                                     |
-| `retryable`     | `boolean`     | Drives retry logic                                    |
-| `message`       | `string`      | Technical message (logs)                              |
-| `details`       | `TDetails`    | Structured context (**internal**, never auto-exposed) |
-| `publicCode`    | `TPublicCode` | Stable client-safe code                               |
-| `publicMessage` | `string`      | Client-safe message                                   |
-| `expose`        | `boolean`     | Allow technical fallback in public serializers        |
-| `cause`         | `unknown`     | Underlying error                                      |
+| Option      | Type        | Notes                                                 |
+| ----------- | ----------- | ----------------------------------------------------- |
+| `code`      | `TCode`     | Programmatic, internal error code                     |
+| `category`  | `TCategory` | Internal grouping                                     |
+| `retryable` | `boolean`   | Drives retry logic                                    |
+| `message`   | `string`    | Technical message (logs)                              |
+| `details`   | `TDetails`  | Structured context (**internal**, never auto-exposed) |
+| `cause`     | `unknown`   | Underlying error                                      |
 
-## `code` vs `publicCode`
+## The `code` is the contract
 
-The internal `code` (`DB_UNIQUE_VIOLATION`) is for your logs and your own
-control flow. Map it to a stable `publicCode` (`EMAIL_ALREADY_REGISTERED`) when
-the boundary should expose a code at all. See
-[Problem Details](./problem-details).
+The `code` (`DB_UNIQUE_VIOLATION`) is what your logs, control flow and tests
+switch on. It is stable and machine-readable. When the boundary needs to show a
+client-facing code or message, map the technical `code` to a public code and
+localized text in the [presentation layer](./presentation). The error itself
+stays purely technical.
 
 ## Serialization
 
-Beyond [`BaseError`](./base-error#serialization), `StructuredError` adds:
+Beyond [`BaseError`](./base-error#serialization), `StructuredError`'s
+`toLogObject()` / `toJSON()` also carry `code`, `category`, `retryable` and raw
+`details`. These are internal, full-fidelity log output, not client-safe. For
+public output, see the [presentation layer](./presentation).
 
-- `toProblemDetails()` → [RFC 9457 Problem Details](./problem-details)
-- `toErrorResponse()` → [discriminated API responses](./error-responses)
-- `toLogObject()` also carries `code`, `category`, `retryable` and raw `details`
+`StructuredError.fromJSON(payload)` is the inverse: it reconstructs a typed
+`StructuredError` (`code`, `category`, `retryable`, `details`, the original
+`stack` / `timestamp`, and the cause chain) from the serialized shape. See
+[Observability & logging](./observability).

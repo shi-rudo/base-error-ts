@@ -1,8 +1,8 @@
 # Validation errors
 
 `ValidationError` collects multiple field-level failures into one
-[`StructuredError`](./structured-error), and surfaces them as a safe RFC 9457
-`errors[]` extension on explicit opt-in.
+[`StructuredError`](./structured-error), and exposes a safe, whitelisted view of
+them on explicit opt-in via `publicIssues()`.
 
 ```ts
 import { ValidationError } from "@shirudo/base-error";
@@ -44,31 +44,38 @@ value; it can never reach the wire). A `pointer` string (e.g. `"address.zip"`)
 is derived from the path for HTTP clients.
 
 ```ts
-v.toProblemDetails({ status: 422, extensions: { errors: v.publicIssues() } });
-// {
-//   status: 422,
-//   detail: "Registration is invalid",
-//   code: "INTERNAL_ERROR",        // standard members still win
-//   retryable: false,
-//   errors: [
-//     { message: "Enter a valid email.", path: ["email"], pointer: "email" },
-//   ],
-// }
+v.publicIssues();
+// [{ message: "Enter a valid email.", path: ["email"], pointer: "email" }]
 ```
 
-### Custom wire shape (e.g. RFC 7807)
-
-RFC 9457 mandates no validation format (`invalid-params` was only a non-normative
-RFC 7807 example). Use `mapIssue` to emit any shape:
+This whitelist is the safe payload to surface at the boundary. Project it onto a
+public view via the [presentation layer](./presentation), where
+`projectDetails` is the explicit allowlist that lets vetted error data through:
 
 ```ts
-v.toProblemDetails({
-  status: 422,
-  extensions: {
-    "invalid-params": v.publicIssues({
-      mapIssue: (i) => ({ name: (i.path ?? []).join("."), reason: i.message }),
-    }),
-  },
+import { LocalizedMessageSet } from "@shirudo/base-error/presentation";
+import type { PublicErrorDefinition } from "@shirudo/base-error/presentation";
+
+const validationDefinition: PublicErrorDefinition<
+  ValidationError,
+  { issues: ReturnType<ValidationError["publicIssues"]> }
+> = {
+  publicCode: "VALIDATION_FAILED",
+  userMessages: new LocalizedMessageSet({
+    baseLocale: "en",
+    messages: { en: "Please correct the highlighted fields." },
+  }),
+  projectDetails: (error) => ({ issues: error.publicIssues() }),
+};
+```
+
+### Custom wire shape
+
+Use `mapIssue` to emit any per-issue shape your client expects:
+
+```ts
+v.publicIssues({
+  mapIssue: (i) => ({ name: (i.path ?? []).join("."), reason: i.message }),
 });
 ```
 

@@ -1,109 +1,108 @@
-# Migration Guide: v4 to v5
+# Migration Guide
 
-v5 tightens `StructuredError.toProblemDetails()` so the default is safer for enterprise APIs and more aligned with DDD boundaries.
+## v5 to v6
 
-## What changed?
+v6 splits the library in two. The core (`@shirudo/base-error`) is now **purely
+technical**: it models the failure for your logs and control flow and has no
+client-facing serializer. All public, localized presentation moved to a
+separate, optional subpath module, `@shirudo/base-error/presentation`.
 
-In v4, `StructuredError.details` were automatically spread as top-level Problem Details extension members:
+This removes the entire response/serialization layer from the core. The win is
+that "safe by default" is now structural: the core literally cannot emit a client
+payload, so a leak requires deliberately reaching for the presentation layer,
+which only emits what you registered.
+
+> **Engines**: v6 requires Node.js `>=20`.
+
+### What was removed, and what replaces it
+
+| Removed (v5)                                                                                                                                                                          | Replacement (v6)                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `toProblemDetails()`, `toErrorResponse()`, `toPublicJSON()`                                                                                                                           | A `PublicErrorPresenter` at the boundary: register definitions, call `present(error, { locales })` to get a `PublicErrorView`, map it to your transport. |
+| `withUserMessage()`, `addLocalizedMessage()`, `updateLocalizedMessage()`, `getUserMessage()`                                                                                          | `PublicErrorDefinition.userMessages`, a `LocalizedMessageSet` keyed by `publicCode` at the boundary.                                                     |
+| `expose` flag (and `exposeToClients()`)                                                                                                                                               | Removed. The core has no public serializer; never send `toLogObject()` output to a client.                                                               |
+| `publicCode` / `publicMessage` on `ErrorOptions` and the catalog `ErrorSpec`                                                                                                          | `publicCode` lives on a `PublicErrorDefinition`; `publicMessage` becomes `userMessages` (a `LocalizedMessageSet`).                                       |
+| `errorResponse`, `successResponse`, `createErrorResponse`, `createSuccessResponse`, `ErrorResponseBuilder`, `ApiResponse`, `SuccessResponse`, `ErrorResponse`, `ProblemDetails` types | Build your wire shape in a transport adapter from a `PublicErrorView`.                                                                                   |
+| `LocalizedMessage`, `ProblemDetailsOptions`, `messageLocalized`, `.localized()`                                                                                                       | Resolved by `resolveUserMessage` / the presenter; the view's `message` and `locale` carry the result.                                                    |
+
+The catalog keeps `httpStatus` and `meta(code)`. Resolve a status from the
+catalog (`AppErrors.meta(err.code).httpStatus`) in your transport adapter, then
+attach it to the presenter's `PublicErrorView`.
+
+### Before and after
 
 ```ts
-const error = new StructuredError({
-  code: "VALIDATION_FAILED",
-  category: "VALIDATION",
-  retryable: false,
-  message: "Validation failed",
-  details: { field: "email" },
-});
+// ── BEFORE (old v5 API, removed) ─────────────────────────────────
+class UserNotFoundError extends StructuredError<"USER_NOT_FOUND", "NOT_FOUND"> {
+  constructor(userId: string) {
+    super({
+      code: "USER_NOT_FOUND",
+      category: "NOT_FOUND",
+      retryable: false,
+      message: `User ${userId} not found`,
+      publicCode: "ACCOUNT_NOT_FOUND",
+      publicMessage: "We could not find that account.",
+    });
+  }
+}
 
-const problem = error.toProblemDetails({ status: 400 });
-// v4: problem.field === "email"
+const err = new UserNotFoundError("123");
+return Response.json(err.toProblemDetails({ status: 404 }), { status: 404 });
 ```
 
-In v5, raw details are not exposed by default:
-
 ```ts
-const problem = error.toProblemDetails({ status: 400 });
-// v5: problem.field === undefined
-```
+// ── AFTER (v6) ───────────────────────────────────────────────────
+// 1. The error stays purely technical.
+class UserNotFoundError extends StructuredError<"USER_NOT_FOUND", "NOT_FOUND"> {
+  constructor(userId: string) {
+    super({
+      code: "USER_NOT_FOUND",
+      category: "NOT_FOUND",
+      retryable: false,
+      message: `User ${userId} not found`,
+    });
+  }
+}
 
-This prevents accidental leaking of internal domain/application state and prevents `details` from silently overriding fields such as `status`, `detail`, `code`, or `traceId`.
+// 2. Presentation lives at the boundary.
+import {
+  LocalizedMessageSet,
+  PublicErrorRegistry,
+  PublicErrorPresenter,
+} from "@shirudo/base-error/presentation";
 
-## Recommended enterprise/DDD migration
-
-Map domain/application details at the HTTP/RPC boundary:
-
-```ts
-const problem = error.toProblemDetails({
-  status: 400,
-  title: "Validation failed",
-  detail: "Please correct the highlighted fields.",
-  mapDetails: (details) => ({
-    field: details?.field,
+const registry = new PublicErrorRegistry().registerByCode("USER_NOT_FOUND", {
+  publicCode: "ACCOUNT_NOT_FOUND",
+  userMessages: new LocalizedMessageSet({
+    baseLocale: "en",
+    messages: { en: "We could not find that account." },
   }),
 });
-```
 
-Use explicit extensions when the boundary already knows the public shape:
-
-```ts
-const problem = error.toProblemDetails({
-  status: 429,
-  title: "Too many requests",
-  detail: "Please retry later.",
-  extensions: {
-    retryAfterSeconds: 60,
+const presenter = new PublicErrorPresenter({
+  registry,
+  fallback: {
+    publicCode: "INTERNAL_ERROR",
+    userMessages: new LocalizedMessageSet({
+      baseLocale: "en",
+      messages: { en: "Something went wrong. Please try again." },
+    }),
   },
 });
+
+// 3. Map the transport-neutral view to your channel.
+const err = new UserNotFoundError("123");
+const view = presenter.present(err, { locales: ["en"] });
+return Response.json(view, { status: 404 });
 ```
 
-## Reproducing v4-style output
+See the [presentation guide](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/presentation.md)
+for the full surface.
 
-There is no raw passthrough in v5. If you genuinely want every detail field in a
-client response, name them in an explicit projection:
+## v4 to v5 (historical)
 
-```ts
-const problem = error.toProblemDetails({
-  status: 400,
-  mapDetails: (details) => ({ ...details }), // deliberate and reviewable
-});
-```
-
-Need the full, unredacted error for logs/Sentry/APM? That is a separate,
-server-side path: use `toLogObject()`, which keeps the technical message,
-stack, cause chain and raw `details`. The client-facing serializers never carry
-internal state.
-
-## Collision behavior
-
-Safety is invariant. Standard/library fields always win; there is no override
-switch, so a call site cannot accidentally leak:
-
-```ts
-const error = new StructuredError({
-  code: "VALIDATION_FAILED",
-  category: "VALIDATION",
-  retryable: false,
-  message: "Technical message",
-  details: { status: 200, detail: "Unsafe detail" },
-});
-
-const problem = error.toProblemDetails({
-  status: 400,
-  detail: "Public detail",
-  mapDetails: (details) => ({
-    status: details?.status,
-    detail: details?.detail,
-  }),
-});
-
-// problem.status === 400  (library member wins)
-// problem.detail === "Public detail"
-```
-
-## Option summary
-
-- `detail`: public/client-safe Problem Details detail. When omitted, a safe public message is used (the technical `message` is only emitted when `expose` is set).
-- `publicCode` / `publicCategory`: deliberate, client-safe code and category overrides.
-- `extensions`: explicit public extension members.
-- `mapDetails`: the only way to surface `details` in a client response (an explicit, reviewable projection).
-- `expose`: opt in to emitting the technical name/category/message.
+v5 tightened `StructuredError.toProblemDetails()` so the default was safer for
+enterprise APIs. That serializer was **removed entirely in v6** (see above), so
+this section is retained only for projects upgrading directly from v4 and then on
+to v6. For the v4-to-v5 details, see the
+[CHANGELOG](https://github.com/shi-rudo/base-error-ts/blob/main/CHANGELOG.md).

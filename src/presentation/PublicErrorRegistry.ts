@@ -68,6 +68,21 @@ export class PublicErrorRegistry {
     return this;
   }
 
+  /**
+   * Asserts that every code in `knownCodes` has a `registerByCode` definition,
+   * throwing with the list of unregistered codes otherwise. An opt-in
+   * completeness check for the consumer's composition root: the library does
+   * not know the universe of codes, so the caller supplies it.
+   */
+  public assertCoverage(knownCodes: readonly string[]): void {
+    const missing = knownCodes.filter((code) => !this.#byCode.has(code));
+    if (missing.length > 0) {
+      throw new Error(
+        `PublicErrorRegistry: no definition registered for code(s): ${missing.join(", ")}.`,
+      );
+    }
+  }
+
   /** Resolves the definition for `error`, or a miss. */
   public resolve(error: unknown): RegistryResolution {
     const code = readCode(error);

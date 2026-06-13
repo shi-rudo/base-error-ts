@@ -2,7 +2,8 @@
 
 The strictness of the client-facing path exists _because_ there is a separate,
 full-fidelity path for your backend. Logs, Sentry and APM should see everything;
-clients should not. The library keeps these apart so you never have to choose.
+clients should not. The core carries only this log path; the client path is the
+[presentation layer](./presentation), kept apart so you never have to choose.
 
 ## `toLogObject()`
 
@@ -25,9 +26,8 @@ logger.error(error.toLogObject());
 ```
 
 It includes the technical `message`, `stack`, the **full serialized cause
-chain**, timestamps, any user/localized messages, and (for
-[`StructuredError`](./structured-error)) `code`, `category`, `retryable` and
-raw `details`.
+chain**, timestamps, and (for [`StructuredError`](./structured-error)) `code`,
+`category`, `retryable` and raw `details`.
 
 `toJSON()` is an alias, so `JSON.stringify(error)` produces the same log-grade
 output.
@@ -44,24 +44,21 @@ try {
     retryable: false,
     message: "duplicate key value violates unique constraint users_email_key",
     details: { table: "users", constraint: "users_email_key" },
-    publicCode: "EMAIL_ALREADY_REGISTERED",
-    publicMessage: "That email address is already in use.",
     cause,
   });
 
   // 1. Full truth → observability
   logger.error(error.toLogObject());
 
-  // 2. Safe projection → client
-  return Response.json(error.toProblemDetails({ status: 409 }), {
-    status: 409,
-  });
+  // 2. Safe projection → client (presentation layer)
+  const view = presenter.present(error, { locales: ["en"] });
+  return Response.json(view, { status: 409 });
 }
 ```
 
 The log carries the constraint name and cause chain; the HTTP response carries
-only `EMAIL_ALREADY_REGISTERED` and a safe message. Same error, two audiences,
-no leak.
+only the public code and a safe localized message produced by the
+[presenter](./presentation). Same error, two audiences, no leak.
 
 ## Redacting PII from logs
 
@@ -144,7 +141,8 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 
 ### Notes
 
-- **Log path only**: the client serializers are already safe by default.
+- **Log path only**: the client path (the [presenter](./presentation)) emits
+  only an explicit allowlist, so it is already safe by default.
 - **Defense-in-depth at the source**, not a replacement for logger-level
   redaction (pino `redact`, winston formatters); for blanket app-wide policy,
   prefer the logger.
@@ -183,7 +181,9 @@ It is for reconstruction **within one trust/bounded-context boundary**:
 
 It is lenient (malformed input → a safe `UNKNOWN_ERROR` envelope, never throws)
 and prototype-pollution-safe (whitelisted fields only). It restores the cause
-chain, the original `stack`/`timestamp`, and user/localized messages.
+chain and the original `stack`/`timestamp`. It reconstructs a
+`StructuredError` only (`code`, `category`, `retryable`, `details`); there are no
+user/localized messages to restore (those are not part of the error model).
 
 It always returns a base `StructuredError`; **subclass identity is not
 restored**. A `ValidationError` round-trips to a `StructuredError` (losing
@@ -195,6 +195,6 @@ on `code`, not on `_tag`/`instanceof`.
 forge `code`/`retryable`. Don't use reconstructed fields for authorization, and
 don't `matchError` on another service's codes as if they were yours.
 Reconstruct, then translate through an Anti-Corruption Layer into your own
-model. The inter-service contract should be a safe projection (Problem Details /
-a versioned DTO), not the log shape.
+model. The inter-service contract should be a safe projection (a versioned DTO),
+not the log shape.
 :::

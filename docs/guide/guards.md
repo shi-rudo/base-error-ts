@@ -84,7 +84,7 @@ try {
     retryable: true,
   });
   logger.error(err.toLogObject());
-  return err.toProblemDetails({ status: 503 });
+  return presenter.present(err, { locales: ["en"] }); // safe public view
 }
 ```
 
