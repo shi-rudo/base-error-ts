@@ -114,4 +114,22 @@ describe("PublicErrorRegistry", () => {
     expect(() => r.resolve(err)).not.toThrow();
     expect(r.resolve(err)).toEqual({ found: false, matcherThrew: false });
   });
+
+  describe("assertCoverage", () => {
+    it("passes when every known code is registered", () => {
+      const r = new PublicErrorRegistry()
+        .registerByCode("a", def("a"))
+        .registerByCode("b", def("b"));
+      expect(() => r.assertCoverage(["a", "b"])).not.toThrow();
+    });
+
+    it("throws listing the codes with no definition", () => {
+      const r = new PublicErrorRegistry().registerByCode("a", def("a"));
+      expect(() => r.assertCoverage(["a", "b", "c"])).toThrow(/b, c/);
+    });
+
+    it("does nothing for an empty list", () => {
+      expect(() => new PublicErrorRegistry().assertCoverage([])).not.toThrow();
+    });
+  });
 });

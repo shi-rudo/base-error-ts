@@ -153,6 +153,11 @@ Resolution order is fixed:
 routing depends on the error's type or shape rather than a single code (for
 example, every `ValidationError` regardless of code).
 
+At your composition root, `assertCoverage` guards against forgotten
+registrations: it throws with the list of codes that have no `registerByCode`
+definition. The library cannot know your set of codes, so you pass it in (for
+example, `registry.assertCoverage(Object.keys(AppErrors))`).
+
 ## `PublicErrorPresenter`
 
 The presenter ties it together. It is constructed with the registry and a
