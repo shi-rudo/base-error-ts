@@ -7,3 +7,5 @@
 
 export { LocalizedMessageSet } from "./LocalizedMessageSet.js";
 export type { LocalizedMessageSetOptions } from "./LocalizedMessageSet.js";
+export { resolveUserMessage } from "./LocaleResolver.js";
+export type { ResolvedUserMessage } from "./LocaleResolver.js";

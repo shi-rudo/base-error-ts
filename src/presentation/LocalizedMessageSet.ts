@@ -1,3 +1,5 @@
+import { canonicalizeLocale } from "./locale.js";
+
 /**
  * Options for {@link LocalizedMessageSet}.
  */
@@ -68,7 +70,7 @@ export class LocalizedMessageSet {
    * An invalid tag is a miss.
    */
   public has(locale: string): boolean {
-    const key = canonicalizeOrUndefined(locale);
+    const key = canonicalizeLocale(locale);
     return key !== undefined && this.#messages.has(key);
   }
 
@@ -77,7 +79,7 @@ export class LocalizedMessageSet {
    * fallback. An invalid tag yields `undefined`.
    */
   public get(locale: string): string | undefined {
-    const key = canonicalizeOrUndefined(locale);
+    const key = canonicalizeLocale(locale);
     return key === undefined ? undefined : this.#messages.get(key);
   }
 
@@ -88,23 +90,11 @@ export class LocalizedMessageSet {
 }
 
 /**
- * Canonicalizes a single BCP 47 tag, or `undefined` if it is structurally
- * invalid. Used on the read side, where an invalid tag is a miss.
- */
-function canonicalizeOrUndefined(tag: string): string | undefined {
-  try {
-    return Intl.getCanonicalLocales(tag)[0];
-  } catch {
-    return undefined;
-  }
-}
-
-/**
  * Canonicalizes a single BCP 47 tag, or throws if it is invalid. Used on the
  * write side, where an invalid tag is a construction error.
  */
 function canonicalizeOrThrow(tag: string, label: string): string {
-  const canonical = canonicalizeOrUndefined(tag);
+  const canonical = canonicalizeLocale(tag);
   if (canonical === undefined) {
     throw new Error(
       `LocalizedMessageSet: invalid locale tag for ${label}: "${tag}".`,
