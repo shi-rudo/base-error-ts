@@ -1,9 +1,12 @@
 {
   "name": "@shirudo/base-error",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "description": "A cross-environment base error class for TypeScript applications, designed for seamless use across Node.js, browsers, and edge runtimes.",
   "license": "MIT",
-  "exports": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./presentation": "./src/presentation/index.ts"
+  },
   "keywords": [
     "typescript",
     "error",
@@ -13,7 +16,7 @@
     "cross-platform",
     "cause",
     "stack-trace",
-    "user-friendly-messages",
+    "localization",
     "json",
     "error-handling",
     "error-management",
