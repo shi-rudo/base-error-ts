@@ -123,8 +123,7 @@ export class BaseError<T extends string> extends Error {
   /**
    * Redacts the given keys (deep, at any depth) from the **log** output
    * (`toLogObject`/`toJSON`). Sticky on the instance, so it also applies when a
-   * logger auto-serializes the error via `JSON.stringify`. Does not affect the
-   * client serializers, which are already safe by default.
+   * logger auto-serializes the error via `JSON.stringify`.
    *
    * @param keys - Property names to mask wherever they appear in the log object.
    * @param options - `mask` defaults to `"[REDACTED]"`.
@@ -368,8 +367,6 @@ export class BaseError<T extends string> extends Error {
    * marker. Only those a given error's `buildLogObject()` actually emits are
    * copied (guarded by `key in raw`), so `code`/`category`/`retryable` appear
    * for a `StructuredError` but are simply absent for a plain `BaseError`.
-   * `traceId` is intentionally not listed: it is a serialization parameter of
-   * the client path, never a log-object field.
    */
   static readonly #SAFE_TRIAGE_KEYS = [
     "name",

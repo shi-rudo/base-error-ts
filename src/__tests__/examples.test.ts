@@ -15,6 +15,7 @@ const EXAMPLE_FILES = [
   "error-codes-example.ts",
   "domain-errors-example.ts",
   "automatic-name-example.ts",
+  "cause-chain-example.ts",
 ] as const;
 
 describe("Examples", () => {

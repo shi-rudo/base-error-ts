@@ -24,7 +24,7 @@ class TestError extends BaseError<"TestError"> {
   }
 
   override toJSON() {
-    // Call parent toJSON to include user messages, then add custom logic
+    // Call parent toJSON, then override cause formatting for test consistency
     const baseJson = super.toJSON();
     return {
       ...baseJson,
