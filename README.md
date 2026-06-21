@@ -17,6 +17,7 @@ internal state by default**. Zero runtime dependencies.
 - 🔒 **Safe by default**: the core has no public serializer; client output is produced only by the presentation layer's explicit allowlist.
 - 🧱 **Structured errors**: typed `code` / `category` / `retryable` / `details`.
 - 🎯 **Exhaustive `matchError`**: compile-time-checked dispatch on `code`.
+- 🗂️ **Exhaustive class sets**: reusable `defineErrorClassSet` definitions with complete, precisely typed handler tables.
 - 🧩 **Open-world `matchThrown`**: fluent constructor and guard matching for arbitrary caught values.
 - 🧭 **General error guards**: narrow native, Node.js-style, and custom errors without casts.
 - 📒 **Error catalog**: `defineErrors` generates typed factories from one declarative spec.

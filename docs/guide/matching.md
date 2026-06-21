@@ -1,11 +1,12 @@
 # Matching errors
 
-The package has two matchers for different type models:
+The package supports three matching modes for different type models:
 
-| Matcher       | Input model                         | Completion                       |
-| ------------- | ----------------------------------- | -------------------------------- |
-| `matchError`  | closed `StructuredError` code union | compile-time exhaustive          |
-| `matchThrown` | open-world `unknown`                | explicit `.otherwise()` fallback |
+| Matcher               | Input model                         | Completion                       |
+| --------------------- | ----------------------------------- | -------------------------------- |
+| `matchError`          | closed `StructuredError` code union | compile-time exhaustive          |
+| `ErrorClassSet.match` | declared local Error-class set      | compile-time exhaustive          |
+| `matchThrown`         | open-world `unknown`                | explicit `.otherwise()` fallback |
 
 Use `matchError` when your application owns a closed error catalog. Use
 `matchThrown` at boundaries that receive native errors, third-party classes,
@@ -75,6 +76,58 @@ promise—is returned unchanged.
 `matchThrown` is deliberately non-exhaustive: arbitrary `unknown` is an open
 set. It does not provide `.exhaustive()`, `.map()`, `.select()`, or negative
 cases. Normalize before matching and use the explicit fallback.
+
+## Closed class matching with `defineErrorClassSet`
+
+Define a reusable class set when the application owns a closed group of local
+Error classes:
+
+```ts
+import { defineErrorClassSet } from "@shirudo/base-error";
+
+const InfrastructureErrors = defineErrorClassSet({
+  timeout: TimeoutError,
+  connection: ConnectionError,
+});
+
+const result = InfrastructureErrors.match(error, {
+  timeout: (timeoutError) => ({ kind: "retry", cause: timeoutError }),
+  connection: (connectionError) => ({
+    kind: "reconnect",
+    cause: connectionError,
+  }),
+});
+```
+
+The handler object must contain exactly one handler for every declared key.
+Missing and additional keys are compile errors. Each handler receives the
+instance type of its constructor, and the result is the exact union of all
+handler return types.
+
+Class-set keys must be finite, non-numeric string literals. Numeric-looking
+keys are rejected because JavaScript reorders array-index object keys. Let the
+definition call infer keys directly. For a separately declared definition, use
+`satisfies` rather than a widening type annotation:
+
+```ts
+import type { ErrorClassMap } from "@shirudo/base-error";
+
+const classes = {
+  timeout: TimeoutError,
+  connection: ConnectionError,
+} satisfies ErrorClassMap;
+
+const InfrastructureErrors = defineErrorClassSet(classes);
+```
+
+Definitions must be non-empty and constructor identities must be unique. The
+definition is snapshotted once and the returned set is frozen. Matching uses
+local `instanceof` checks in definition order, so list subclasses before base
+classes when both are present.
+
+If a runtime value matches no declared class, `match` throws. Use
+`matchThrown(value).otherwise(...)` instead when arbitrary or cross-realm
+values are expected and require a fallback.
 
 ## Closed structured matching with `matchError`
 
