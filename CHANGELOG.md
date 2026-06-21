@@ -1,5 +1,11 @@
 # Changelog
 
+## 6.3.0 - 2026-06-21
+
+### Added
+
+- Added `defineErrorClassSet` for reusable exhaustive matching over a finite set of local Error classes. Definitions preserve literal string keys, reject empty or duplicate constructor sets, snapshot their input, and require an exact handler table with precise inputs and result unions.
+
 ## 6.2.0 - 2026-06-21
 
 ### Added
