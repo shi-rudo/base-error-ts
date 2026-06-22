@@ -228,7 +228,12 @@ part of this library. `details` is populated only by an explicit
 
 A transport adapter maps a `PublicErrorView` to whatever your channel needs. The
 view's `code` is the natural key. You can map it directly, or read an HTTP status
-from your [error catalog](./catalog) via `AppErrors.meta(code).httpStatus`.
+from your [error catalog](./catalog) via
+`AppErrors.meta(code).metadata.httpStatus`.
+
+There is intentionally no catalog-owned `toResponse`, gRPC mapper or CLI exit
+helper. Transport code owns headers, status defaults, serialization and framework
+integration; catalog metadata only supplies transport-neutral input to that code.
 
 An HTTP example (mapping `view.code` to a status):
 

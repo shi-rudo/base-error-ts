@@ -106,6 +106,9 @@ Same output as today when no redactor is set (behavior-preserving refactor).
   a redaction policy is set once per error family instead of on every throw.
   Additive; **deferred** to a follow-up to keep this PR focused.
 
+Resolved by Proposal 0009: Catalog v2 supports declarative deny- and allow-list
+policies applied by every generated factory.
+
 ## Test plan
 
 - `redact(keys)` masks matching keys in `details`, deep/nested, and in

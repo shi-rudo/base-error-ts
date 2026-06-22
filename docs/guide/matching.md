@@ -77,6 +77,17 @@ promise—is returned unchanged.
 set. It does not provide `.exhaustive()`, `.map()`, `.select()`, or negative
 cases. Normalize before matching and use the explicit fallback.
 
+Negative matching is ordinary control flow rather than a separate matcher API:
+
+```ts
+if (!hasErrorCode("ENOENT")(error)) throw error;
+return defaultConfig;
+```
+
+For a catalog member, use `AppErrors.is(error, "CODE")` and negate the result.
+Keeping negation outside the matcher makes the remaining type and fallback
+behavior visible at the branch where it matters.
+
 ## Closed class matching with `defineErrorClassSet`
 
 Define a reusable class set when the application owns a closed group of local
@@ -186,9 +197,8 @@ matchError(err as AppError, {
 ```
 
 Full per-case narrowing needs a **real union** of distinct error types (each
-with a literal `code`), exactly what a future [error
-catalog](https://github.com/shi-rudo/base-error-ts/blob/main/proposals/0001-error-catalog-and-match.md)
-produces. For a single `StructuredError<"A" | "B">`, only `code` narrows.
+with a literal `code`), exactly what an [error catalog](./catalog) produces. For
+a single `StructuredError<"A" | "B">`, only `code` narrows.
 
 ### With errors from `catch`
 
@@ -199,11 +209,10 @@ first, then match:
 try {
   await doWork();
 } catch (e) {
-  if (isStructuredError(e)) {
-    return matchError(e as AppError, {
+  if (AppErrors.is(e)) {
+    return matchError(e, {
       USER_NOT_FOUND: () => 404,
       RATE_LIMITED: () => 429,
-      _: () => 500,
     });
   }
   throw e;
