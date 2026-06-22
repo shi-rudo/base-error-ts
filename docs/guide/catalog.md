@@ -1,94 +1,143 @@
 # Error catalog
 
-`defineErrors` turns a declarative spec into a typed factory per `code`, a
-single source of truth for `category`, `retryable` and HTTP status. It is the
-governance complement to [`matchError`](./matching): the catalog defines the
-closed set, `matchError` consumes it exhaustively.
+`defineErrors` creates an immutable catalog for a finite set of structured
+errors. It owns typed factories, static metadata, local provenance guards and
+optional log-redaction policy.
 
 ```ts
-import { defineErrors } from "@shirudo/base-error";
+import { defineErrors, detailsType } from "@shirudo/base-error";
 
 export const AppErrors = defineErrors({
   USER_NOT_FOUND: {
     category: "NOT_FOUND",
     retryable: false,
-    httpStatus: 404,
-    details: {} as { userId: string }, // per-code details type (value ignored)
+    details: detailsType<{ userId: string }>(),
+    metadata: { httpStatus: 404 },
   },
   RATE_LIMITED: {
     category: "RATE_LIMIT",
     retryable: true,
-    httpStatus: 429,
+    metadata: { httpStatus: 429 },
   },
 });
 ```
 
+Definitions must be non-empty finite string-keyed plain objects; null-prototype
+objects are also accepted. Error codes must be non-empty strings. Definitions
+are validated, snapshotted and frozen when the catalog is created.
+
 ## Constructing errors
 
-Each code becomes a factory with the spec baked in. `details` is **required**
-when the spec declares a shape, and the options argument is optional when it
-does not:
+Factories live under `create`, leaving every string available as an error code:
 
 ```ts
-throw AppErrors.USER_NOT_FOUND("user 123 missing in primary db", {
+throw AppErrors.create.USER_NOT_FOUND("user 123 missing", {
   details: { userId: "123" },
 });
 
-throw AppErrors.RATE_LIMITED("too many requests");
+throw AppErrors.create.RATE_LIMITED("too many requests");
 ```
 
-The result is a tagged `StructuredError` discriminated by `code`, not a class
-per code. `instanceof StructuredError` and `code` are the runtime checks; if you
-truly need per-code `instanceof` (e.g. a framework exception filter), hand-write
-a subclass as before.
+`details` is required only when its definition declares `detailsType<T>()`.
+Every generated value is a `StructuredError` discriminated by its literal
+`code`.
 
-## The boundary metadata
+## Safe catalog guards
 
-`meta(code)` returns a copy of the static spec row, so the boundary resolves
-status from the catalog instead of guessing it (`code` is typed to the catalog's
-keys; an unknown code throws a clear error rather than returning `undefined`).
-Feed it into your transport adapter:
+The catalog records local provenance for every generated instance:
 
 ```ts
-const status = AppErrors.meta(err.code).httpStatus ?? 500;
+if (AppErrors.is(error)) {
+  // CatalogError<typeof AppErrors>
+  return matchError(error, {
+    USER_NOT_FOUND: () => 404,
+    RATE_LIMITED: () => 429,
+  });
+}
+
+if (AppErrors.is(error, "USER_NOT_FOUND")) {
+  error.details?.userId;
+}
+```
+
+This is an identity and trust boundary, not structural recognition. An object
+with matching fields, an error made by another catalog, or a reconstructed
+wire value is rejected. Translate or validate external data explicitly. See
+[Type guards and trust boundaries](./guards#trust-boundary) for the distinction
+between classification and trusted local provenance.
+
+## Static metadata
+
+`metadata` is inferred per code and accepts JSON-safe data. `meta(code)` returns
+an immutable snapshot containing `category`, `retryable`, and the optional
+metadata:
+
+```ts
+const status = AppErrors.meta(err.code).metadata.httpStatus;
 const view = presenter.present(err, { locales });
 return Response.json(view, { status });
 ```
 
-The catalog supplies the transport metadata (`httpStatus`); the
-[presentation layer](./presentation) supplies the client-safe public code and
-localized message. The two stay decoupled.
+HTTP, gRPC and CLI mappings remain consumer-owned boundary concerns rather than
+fixed fields in the core error model. The
+[presentation guide](./presentation#transport-adapters) shows how to apply
+catalog metadata in a transport adapter.
 
-## Composing with `matchError`
+## Catalog-level log redaction
 
-`CatalogError` extracts the closed union the catalog can produce:
+Apply the same sticky redaction policy to every instance of a code:
 
 ```ts
-import { matchError } from "@shirudo/base-error";
-import type { CatalogError } from "@shirudo/base-error";
-
-type AppError = CatalogError<typeof AppErrors>;
-
-function httpStatusFor(err: AppError): number {
-  return matchError(err, {
-    USER_NOT_FOUND: (e) => AppErrors.meta(e.code).httpStatus ?? 404,
-    RATE_LIMITED: (e) => AppErrors.meta(e.code).httpStatus ?? 429,
-  });
-}
+const SecurityErrors = defineErrors({
+  LOGIN_FAILED: {
+    category: "AUTH",
+    retryable: false,
+    details: detailsType<{ userId: string; password: string }>(),
+    redaction: { mode: "deny", keys: ["password"] },
+  },
+  PROFILE_FAILED: {
+    category: "PROFILE",
+    retryable: false,
+    details: detailsType<{ userId: string; email: string }>(),
+    redaction: { mode: "allow", keys: ["userId"] },
+  },
+});
 ```
 
-Add a code to the catalog and every `matchError` without a `_` stops compiling
-until you handle it. The catalog defines the set; the compiler keeps your
-handling complete; the [presentation layer](./presentation) does the
-client-facing projection.
+Per-instance `redact`, `redactAllow`, and `redactWith` remain available when a
+single occurrence needs a stricter policy.
 
-## Per-call overrides
+## Catalog types and codes
 
-A factory call can attach structured details and a cause:
+`CatalogError` extracts the closed union; `CatalogErrorOf` extracts one member:
 
 ```ts
-AppErrors.USER_NOT_FOUND("user 1 missing in primary db", {
+import type { CatalogError, CatalogErrorOf } from "@shirudo/base-error";
+
+type AppError = CatalogError<typeof AppErrors>;
+type UserNotFound = CatalogErrorOf<typeof AppErrors, "USER_NOT_FOUND">;
+```
+
+`AppErrors.codes` is an immutable runtime list of the finite code set. Adding a
+code changes `CatalogError`, so every exhaustive `matchError` call must handle
+the new member before the application compiles again.
+
+## Per-call values
+
+Factories keep the familiar message plus options signature. Calls may attach a
+typed `details` value and an underlying `cause`:
+
+```ts
+AppErrors.create.USER_NOT_FOUND("user missing in primary db", {
   details: { userId: "1" },
   cause: dbError,
 });
 ```
+
+`detailsType<T>()` is compile-time-only. Validate untrusted input before passing
+it to a factory; see
+[runtime validation of catalog details](./validation#runtime-validation-of-catalog-details).
+
+Keep catalogs separate when they represent separate ownership or trust
+boundaries. When one closed union is required, compose definitions before
+calling `defineErrors`; see [Catalog composition](./catalog-composition).

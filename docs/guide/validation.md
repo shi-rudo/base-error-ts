@@ -18,6 +18,30 @@ It is a normal structured error (`code` `"VALIDATION_FAILED"`, `category`
 `"VALIDATION"`, stable `_tag`), so `instanceof StructuredError`, `code` and
 [`matchError`](./matching) all work.
 
+## Runtime validation of catalog details
+
+`detailsType<T>()` describes a catalog factory's `details` at compile time. It
+does not create a runtime schema and cannot validate JavaScript callers,
+deserialized payloads or values hidden behind unsafe casts.
+
+Validate external data first, then pass the validated value to the factory:
+
+```ts
+const result = await detailsSchema["~standard"].validate(input);
+if (result.issues) {
+  throw new ValidationError("Invalid failure details", {
+    issues: result.issues,
+  });
+}
+
+throw AppErrors.create.REQUEST_REJECTED("request rejected", {
+  details: result.value,
+});
+```
+
+This separation keeps catalog definitions independent of a schema library while
+making validation explicit at the boundary where untrusted data enters.
+
 ## Ingesting validator output (Standard Schema)
 
 `ValidationIssue` matches the [Standard Schema](https://standardschema.dev)

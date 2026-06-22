@@ -10,8 +10,19 @@ export { matchThrown } from "./errors/match-thrown.js";
 export type { ThrownMatcher } from "./errors/match-thrown.js";
 export { defineErrorClassSet } from "./errors/error-class-set.js";
 export type { ErrorClassMap, ErrorClassSet } from "./errors/error-class-set.js";
-export { defineErrors } from "./errors/catalog.js";
-export type { ErrorSpec, Catalog, CatalogError } from "./errors/catalog.js";
+export { defineErrors, detailsType } from "./errors/catalog.js";
+export type {
+  ErrorSpec,
+  ErrorCatalogDefinition,
+  CatalogJsonValue,
+  CatalogMetadata,
+  CatalogRedactionPolicy,
+  DetailsType,
+  CatalogMeta,
+  Catalog,
+  CatalogError,
+  CatalogErrorOf,
+} from "./errors/catalog.js";
 export { toStructuredError } from "./errors/coerce.js";
 export type { CoerceOptions } from "./errors/coerce.js";
 export { ValidationError } from "./errors/validation.js";

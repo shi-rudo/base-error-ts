@@ -1,5 +1,8 @@
 # Proposal 0001: Error catalog & exhaustive `matchError`
 
+> Historical v5/v6 design. The catalog surface is superseded by Proposal 0009
+> for v7; the `matchError` decision remains current.
+
 **Status:** Draft / for discussion. No implementation yet.
 **Audience:** DDD and enterprise users modeling domain errors as a closed set.
 

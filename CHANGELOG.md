@@ -1,5 +1,20 @@
 # Changelog
 
+## 7.0.0 - 2026-06-22
+
+### Breaking Changes
+
+- Catalog factories now live under `catalog.create`: migrate `AppErrors.CODE(message, options)` to `AppErrors.create.CODE(message, options)`.
+- Catalog definitions declare transport-neutral `metadata` instead of the fixed top-level `httpStatus`; read it through `AppErrors.meta(code).metadata`.
+- Catalog detail shapes use `detailsType<T>()` instead of consumer-side type assertions.
+- Catalog definitions must be non-empty finite plain objects with non-empty string codes and are snapshotted and frozen at creation.
+
+### Added
+
+- Added catalog-local provenance guards: `AppErrors.is(value)` narrows to the catalog union and `AppErrors.is(value, code)` narrows to one generated error type. Forged, reconstructed, mutated, and foreign-catalog errors fail closed.
+- Added `CatalogErrorOf<Catalog, Code>`, immutable `codes`, JSON-safe generic catalog metadata, and catalog-level deny/allow log-redaction policies.
+- Error codes no longer collide with catalog operations, so codes such as `meta`, `create`, and `is` are valid.
+
 ## 6.3.0 - 2026-06-21
 
 ### Added

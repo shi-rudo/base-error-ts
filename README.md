@@ -20,7 +20,7 @@ internal state by default**. Zero runtime dependencies.
 - 🗂️ **Exhaustive class sets**: reusable `defineErrorClassSet` definitions with complete, precisely typed handler tables.
 - 🧩 **Open-world `matchThrown`**: fluent constructor and guard matching for arbitrary caught values.
 - 🧭 **General error guards**: narrow native, Node.js-style, and custom errors without casts.
-- 📒 **Error catalog**: `defineErrors` generates typed factories from one declarative spec.
+- 📒 **Error catalog**: `defineErrors` provides namespaced factories, immutable metadata, provenance guards, and catalog-level redaction.
 - ✅ **Validation aggregate**: collect field issues (Standard Schema compatible) into one error.
 - 🔁 **Wire round-trip**: `toLogObject` / `fromJSON` for same-context reconstruction & log replay.
 - 🌍 **Public presentation**: `@shirudo/base-error/presentation` for localized, transport-neutral public views.

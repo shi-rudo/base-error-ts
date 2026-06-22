@@ -1,5 +1,85 @@
 # Migration Guide
 
+## v6 to v7
+
+v7 restructures `defineErrors` into a collision-free catalog object and adds
+catalog-local provenance guards. The migration is mechanical.
+
+### Factory namespace
+
+Factories move under `create` so catalog operations can never collide with an
+error code:
+
+```ts
+// v6
+AppErrors.USER_NOT_FOUND("missing", { details: { userId: "123" } });
+
+// v7
+AppErrors.create.USER_NOT_FOUND("missing", {
+  details: { userId: "123" },
+});
+```
+
+Codes named `meta`, `create`, or `is` are now valid because all code factories
+live inside `create`.
+
+### Details and metadata
+
+Use `detailsType<T>()` for compile-time detail shapes. Move transport-specific
+fields such as HTTP status under generic JSON-safe `metadata`:
+
+```ts
+const AppErrors = defineErrors({
+  USER_NOT_FOUND: {
+    category: "NOT_FOUND",
+    retryable: false,
+    details: detailsType<{ userId: string }>(),
+    metadata: { httpStatus: 404 },
+  },
+});
+
+const status = AppErrors.meta("USER_NOT_FOUND").metadata.httpStatus;
+```
+
+Catalog definitions and returned metadata are snapshotted and frozen. Mutating
+the source definition after `defineErrors` no longer changes future errors.
+
+### Safe narrowing after `catch`
+
+`is` accepts only instances produced by that exact catalog:
+
+```ts
+try {
+  await loadUser();
+} catch (error) {
+  if (AppErrors.is(error)) {
+    return matchError(error, {
+      USER_NOT_FOUND: () => 404,
+      RATE_LIMITED: () => 429,
+    });
+  }
+  throw error;
+}
+```
+
+Use `AppErrors.is(error, "USER_NOT_FOUND")` for per-code narrowing. An error
+with the same structural fields, an error from another catalog, or a value
+rebuilt with `StructuredError.fromJSON` is intentionally not trusted.
+
+### Catalog redaction policy
+
+Redaction can be attached once to a definition instead of repeated after every
+factory call:
+
+```ts
+PASSWORD_REJECTED: {
+  category: "AUTH",
+  retryable: false,
+  details: detailsType<{ userId: string; password: string }>(),
+  redaction: { mode: "deny", keys: ["password"] },
+}
+```
+
 ## v5 to v6
 
 v6 splits the library in two. The core (`@shirudo/base-error`) is now **purely
