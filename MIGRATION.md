@@ -1,11 +1,5 @@
 # Migration Guide
 
-## v7.0 to v7.1
-
-No migration is required. v7.1 adds the optional
-`@shirudo/base-error/problem-details` subpath for mapping safe
-`PublicErrorView` values to framework-neutral RFC 9457 response data.
-
 ## v6 to v7
 
 v7 restructures `defineErrors` into a collision-free catalog object and adds
