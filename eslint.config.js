@@ -28,8 +28,8 @@ const NODE_BUILTIN_IMPORTS = {
   message:
     "Edge-incompatible: library code must not import Node built-ins (no node:* imports).",
 };
-// Dependency direction is presentation -> core. Core (and the root barrel) must
-// never import the presentation module; only the /presentation subpath does.
+// Dependency direction is adapters -> presentation -> core. Core (and the root
+// barrel) must never import the presentation module.
 const PRESENTATION_BOUNDARY = {
   group: ["**/presentation", "**/presentation/**"],
   message:
@@ -60,17 +60,21 @@ export default [
   },
   // Presentation source: edge-clean, may import core, may not import Node built-ins.
   {
-    files: ["src/presentation/**/*.ts"],
+    files: ["src/presentation/**/*.ts", "src/problem-details/**/*.ts"],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": ["error", { patterns: [NODE_BUILTIN_IMPORTS] }],
     },
   },
-  // Core library source (everything outside presentation and tests): edge-clean
-  // and forbidden from importing the presentation module.
+  // Core library source (everything outside subpaths and tests): edge-clean and
+  // forbidden from importing the presentation module.
   {
     files: ["src/**/*.ts"],
-    ignores: ["src/presentation/**", "src/__tests__/**"],
+    ignores: [
+      "src/presentation/**",
+      "src/problem-details/**",
+      "src/__tests__/**",
+    ],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": [

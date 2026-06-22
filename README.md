@@ -24,6 +24,7 @@ internal state by default**. Zero runtime dependencies.
 - ✅ **Validation aggregate**: collect field issues (Standard Schema compatible) into one error.
 - 🔁 **Wire round-trip**: `toLogObject` / `fromJSON` for same-context reconstruction & log replay.
 - 🌍 **Public presentation**: `@shirudo/base-error/presentation` for localized, transport-neutral public views.
+- 🌐 **RFC 9457 adapter**: `@shirudo/base-error/problem-details` maps public views to consistent, JSON-safe HTTP Problem Details.
 - 🛡️ **PII redaction**: opt-in, sticky log-path redaction (`redact` / `redactAllow` / `partialMask`).
 
 ## Installation
@@ -89,6 +90,7 @@ The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-t
 **Boundaries**
 
 - [Public error presentation](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/presentation.md)
+- [RFC 9457 Problem Details](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/problem-details.md)
 - [Observability & logging (incl. PII redaction & `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
 
 **Reference**

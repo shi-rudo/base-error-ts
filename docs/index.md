@@ -24,7 +24,7 @@ features:
   - title: Structured & typed
     details: Typed error codes, categories, retryability and structured details. Discriminated _tag narrowing and instanceof that survives transpilation.
   - title: Public presentation layer
-    details: An optional subpath module turns a technical error into a safe, localized, transport-neutral PublicErrorView. Surface error data only through an explicit projection; map the view to HTTP, gRPC or RFC 9457 in your own adapter.
+    details: Optional subpath modules turn a technical error into a safe, localized PublicErrorView and map that view to framework-neutral RFC 9457 Problem Details without exposing the technical error.
   - title: Built for observability
     details: toLogObject() keeps the full truth (technical message, stack, cause chain and raw details) for logs, Sentry and APM, separate from the client path.
   - title: Zero runtime dependencies

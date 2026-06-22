@@ -258,7 +258,8 @@ function toHttpResponse(error: unknown, acceptLanguage: string): Response {
 }
 ```
 
-RFC 9457 `application/problem+json` is just another adapter over the same view:
-map `view.code` to a `type` URI and a `status`, carry `view.message` as `detail`
-and `view.details` as extension members. The library stays transport-neutral;
-the wire shape is yours to define at the boundary.
+For RFC 9457, use the optional
+[`@shirudo/base-error/problem-details`](./problem-details) adapter. It maps the
+localized `view.message` to the problem `title`, keeps the HTTP status and body
+status consistent, and carries explicitly projected `view.details` through a
+JSON-safe extension. The technical error never enters the adapter.

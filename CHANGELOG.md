@@ -1,5 +1,13 @@
 # Changelog
 
+## 7.1.0 - 2026-06-22
+
+### Added
+
+- Added the optional `@shirudo/base-error/problem-details` subpath with a framework-neutral RFC 9457 adapter for safe `PublicErrorView` values.
+- Added finite public-code mappings, an explicit fallback, consistent HTTP/body status output, localized titles, occurrence details and instances, JSON-safe extensions, immutable snapshots, mapping diagnostics, and compile-time collision protection.
+- Added literal public-code typing to `PublicErrorView<TDetails, TCode>` while preserving the existing default `string` code type.
+
 ## 7.0.0 - 2026-06-22
 
 ### Breaking Changes

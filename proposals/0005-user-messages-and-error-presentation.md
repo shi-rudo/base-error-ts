@@ -562,9 +562,10 @@ New public representation (presenter-produced PublicErrorView):
 A free-form `ctx` bag on a public contract invites leaks, so it is gone. HTTP
 status, trace id, and the envelope shape are now adapter concerns, outside this
 package, not fields baked into a normative response type. `toProblemDetails` is
-removed from the core; if a project wants RFC 9457, it is one transport adapter
-over `PublicErrorView` (its `detail` is `view.message`, never technical text).
-The standalone `errorResponse(...).localized(...)` builder is removed.
+removed from the core. Proposal 0010 later adds an optional transport adapter
+over `PublicErrorView`: `view.message` becomes the stable localized `title`,
+while occurrence-specific `detail` remains explicit and never uses technical
+text. The standalone `errorResponse(...).localized(...)` builder is removed.
 
 ## Migration (replacing #58)
 

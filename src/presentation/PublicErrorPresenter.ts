@@ -8,8 +8,8 @@ import type { PublicErrorRegistry } from "./PublicErrorRegistry.js";
  * `details` is populated only by an explicit `projectDetails`, never by
  * spreading the raw error.
  */
-export type PublicErrorView<TDetails = never> = {
-  code: string;
+export type PublicErrorView<TDetails = never, TCode extends string = string> = {
+  code: TCode;
   message: string;
   locale: string;
   details?: TDetails;
