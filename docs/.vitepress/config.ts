@@ -62,6 +62,10 @@ export default defineConfig({
               text: "Public error presentation",
               link: "/guide/presentation",
             },
+            {
+              text: "RFC 9457 Problem Details",
+              link: "/guide/problem-details",
+            },
             { text: "Observability & logging", link: "/guide/observability" },
           ],
         },
