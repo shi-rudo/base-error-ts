@@ -186,6 +186,17 @@ export class BaseError<T extends string> extends Error {
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
 
   /**
+   * Largest nesting depth the redaction walker descends into. Bounded so a
+   * pathologically deep `details` tree degrades to a marker at the deep end
+   * (shallow fields survive) instead of overflowing the stack and tripping the
+   * fail-closed path, which would drop the whole log. The cap is host-stack
+   * independent, so behavior is identical on small isolate stacks (edge
+   * runtimes). Matches the depth convention used elsewhere ({@link
+   * BaseError.#MAX_CAUSE_DEPTH}).
+   */
+  static readonly #MAX_REDACT_DEPTH = 100;
+
+  /**
    * Structural fields of an error envelope that survive an allow-list at the
    * **top level of a cause**. Everything else under a cause (foreign siblings
    * and anything nested beneath them, plus `details`) is treated as data, so a
@@ -253,12 +264,28 @@ export class BaseError<T extends string> extends Error {
     value: unknown,
     decide: (key: string, value: unknown, region: RedactRegion) => unknown,
     region: RedactRegion,
+    depth = 0,
   ): unknown {
+    // Past the cap, replace any container with a marker rather than recursing.
+    // Leaves are unaffected (they never recurse), so shallow data is intact.
+    if (
+      depth >= BaseError.#MAX_REDACT_DEPTH &&
+      (Array.isArray(value) || BaseError.#isWalkable(value))
+    ) {
+      return "[Max redaction depth exceeded]";
+    }
     if (Array.isArray(value)) {
-      return value.map((item) => BaseError.#redactWalk(item, decide, region));
+      return value.map((item) =>
+        BaseError.#redactWalk(item, decide, region, depth + 1),
+      );
     }
     if (BaseError.#isWalkable(value)) {
-      const out: Record<string, unknown> = {};
+      // Null-prototype target so an own `__proto__`/`constructor` key from
+      // untrusted details is copied as ordinary data (and masked/recursed like
+      // any other key) instead of routing through a prototype setter. Matches
+      // the null-prototype clones used by the catalog and problem-details
+      // adapters. (OWASP Prototype Pollution Prevention.)
+      const out = Object.create(null) as Record<string, unknown>;
       for (const [key, val] of Object.entries(value)) {
         // A leaf's keep/mask decision is made in the region it *lives in* (the
         // parent); the child region only governs recursion. Conflating the two
@@ -272,6 +299,7 @@ export class BaseError<T extends string> extends Error {
                   val,
                   decide,
                   BaseError.#childRegion(region, key),
+                  depth + 1,
                 )
               : val;
         } else {
@@ -329,7 +357,7 @@ export class BaseError<T extends string> extends Error {
       timestamp,
       timestampIso,
       stack,
-      cause: this.#serializeCause(cause, new Set()),
+      cause: this.#serializeCause(cause, new Set(), 0),
     };
 
     return json;
@@ -338,6 +366,14 @@ export class BaseError<T extends string> extends Error {
   /**
    * Serialises the error for logs. Includes technical message, stack and cause,
    * with the instance redactor applied (see {@link redact} / {@link redactWith}).
+   *
+   * ⚠️ This is a **log** serialization: it carries the technical message, stack,
+   * cause chain and raw `details`. **Never return it to a client.** Anything that
+   * auto-serializes the error (`JSON.stringify`, `res.json(err)`, `Response.json`,
+   * `return err`) reaches {@link toJSON}, which is an alias of this method, and
+   * leaks the same payload. For client-safe output use the `presentation`
+   * subpath (`@shirudo/base-error/presentation`, `PublicErrorPresenter`), which
+   * projects only an allow-listed public view.
    */
   public toLogObject(): Record<string, unknown> {
     const raw = this.buildLogObject();
@@ -377,7 +413,19 @@ export class BaseError<T extends string> extends Error {
     "timestampIso",
   ] as const;
 
-  /** Backwards-compatible JSON serialization for logging-oriented consumers. */
+  /**
+   * JSON serialization for logging-oriented consumers. Alias of
+   * {@link toLogObject}, so it returns the same **log** shape: technical message,
+   * stack, cause chain and raw `details`.
+   *
+   * ⚠️ Because `JSON.stringify(err)`, `res.json(err)`, `Response.json(err)` and
+   * `return err` all route through `toJSON`, sending an error down any of those
+   * paths leaks the full technical payload to the client. **Never serialize an
+   * error straight into a response.** Produce a client payload through the
+   * `presentation` subpath (`PublicErrorPresenter`) instead. This shape is also
+   * the input that {@link StructuredError.fromJSON} reconstructs, which is why it
+   * intentionally retains the stack and cause chain.
+   */
   public toJSON(): Record<string, unknown> {
     return this.toLogObject();
   }
@@ -439,13 +487,29 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
+   * Largest cause-chain depth serialized into a log object. Matches the cap used
+   * by `StructuredError.fromJSON` and the traversal helpers, so a pathologically
+   * deep (but acyclic) chain can never overflow the stack while logging.
+   */
+  static readonly #MAX_CAUSE_DEPTH = 100;
+
+  /**
    * Intelligently serializes the cause for JSON output.
    * Preserves stack traces, StructuredError fields, and nested data.
-   * Uses a seen set to detect circular cause chains.
+   * Uses a seen set to detect circular cause chains, and a depth bound so an
+   * acyclic-but-very-deep chain is capped instead of recursing unbounded.
    */
-  /*#__PURE__*/ #serializeCause(cause: unknown, seen: Set<unknown>): unknown {
+  /*#__PURE__*/ #serializeCause(
+    cause: unknown,
+    seen: Set<unknown>,
+    depth: number,
+  ): unknown {
     if (cause === undefined || cause === null) {
       return cause;
+    }
+
+    if (depth >= BaseError.#MAX_CAUSE_DEPTH) {
+      return "[Max cause depth exceeded]";
     }
 
     if (cause instanceof Error) {
@@ -470,7 +534,11 @@ export class BaseError<T extends string> extends Error {
 
       // Recursively serialize nested causes
       if ("cause" in cause && errorRecord.cause !== undefined) {
-        serialized.cause = this.#serializeCause(errorRecord.cause, seen);
+        serialized.cause = this.#serializeCause(
+          errorRecord.cause,
+          seen,
+          depth + 1,
+        );
       }
 
       return serialized;

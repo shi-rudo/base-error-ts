@@ -110,6 +110,62 @@ describe("log redaction", () => {
     expect((log.details as Record<string, unknown>).ssn).toBe("123-45-6789");
   });
 
+  it("caps redaction recursion depth instead of overflowing on deep details", () => {
+    // On a small isolate stack (Workers/edge) an unbounded walk could overflow
+    // at a legitimate depth and fail-close the whole log. An explicit cap keeps
+    // the walk shallow and deterministic: shallow fields survive, only the deep
+    // tail is replaced by a marker, and nothing fails closed.
+    let deep: Record<string, unknown> = { bottom: "x" };
+    for (let i = 0; i < 5000; i++) deep = { child: deep };
+    const err = new StructuredError({
+      code: "DEEP",
+      category: "C",
+      retryable: false,
+      message: "deep details",
+      details: { ssn: "secret", nested: deep },
+    });
+
+    const log = err.redact(["ssn"]).toLogObject();
+
+    // Did NOT fall into the fail-closed path (no stack overflow).
+    expect(log.message).toBe("deep details");
+    expect(log.code).toBe("DEEP");
+    // Shallow sensitive key is still masked.
+    expect((log.details as Record<string, unknown>).ssn).toBe("[REDACTED]");
+    // The deep subtree is truncated by a marker rather than overflowing.
+    expect(JSON.stringify(log)).toContain("[Max redaction depth exceeded]");
+  });
+
+  it("does not let an own __proto__ detail key pollute the redacted clone", () => {
+    // A detail object with an OWN "__proto__" key (as JSON.parse / fromJSON can
+    // produce). The deep-clone walker must not route that key through a
+    // prototype setter: no inherited pollution on the clone, and normal keys
+    // must still be masked.
+    const details = JSON.parse(
+      '{"__proto__":{"polluted":"YES"},"ssn":"secret"}',
+    ) as Record<string, unknown>;
+    const err = new StructuredError({
+      code: "X",
+      category: "C",
+      retryable: false,
+      message: "m",
+      details,
+    });
+
+    const log = err.redact(["ssn"]).toLogObject();
+    const clonedDetails = log.details as Record<string, unknown>;
+
+    // No inherited property leaked in via a reassigned prototype.
+    expect(clonedDetails.polluted).toBeUndefined();
+    expect(Object.getPrototypeOf(clonedDetails)).not.toBe(
+      (details as { __proto__: unknown }).__proto__,
+    );
+    // The ordinary sensitive key is still masked.
+    expect(clonedDetails.ssn).toBe("[REDACTED]");
+    // The walker never reassigns a global prototype.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
   describe("redactAllow (allow-list)", () => {
     it("keeps only allowed detail leaves and masks the rest (deep)", () => {
       const log = makeError().redactAllow(["userId", "phone"]).toLogObject();
