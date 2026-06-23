@@ -54,6 +54,7 @@ guards for narrowing unknown values while traversing.
 
 ## Serialization
 
-`toLogObject()` already serializes the **entire** cause chain (cycle-safe), so
-your logs capture the full provenance without manual walking. See
+`toLogObject()` already serializes the cause chain (cycle-safe, and depth-capped
+at 100 so a pathologically deep chain can't overflow the stack), so your logs
+capture the full provenance without manual walking. See
 [Observability & logging](./observability).

@@ -754,6 +754,38 @@ describe("BaseError", () => {
       expect(causeA.cause).toBe("[Circular cause chain]");
     });
 
+    it("caps a very deep (non-circular) cause chain instead of recursing unbounded", () => {
+      // A chain longer than the depth cap must serialize without a stack
+      // overflow and be bounded: the deepest links are replaced by a marker,
+      // mirroring how every other traversal in the library caps at 100.
+      let chain: unknown = new Error("leaf");
+      for (let i = 0; i < 500; i++) {
+        const next = new Error(`level ${i}`);
+        (next as unknown as Record<string, unknown>).cause = chain;
+        chain = next;
+      }
+      const top = new AutoNamedError("top", chain);
+
+      let json: Record<string, unknown> | undefined;
+      expect(() => {
+        json = top.toJSON();
+      }).not.toThrow();
+
+      // Descend the serialized cause chain, counting nested error objects.
+      let node: unknown = (json as Record<string, unknown>).cause;
+      let depth = 0;
+      while (node !== null && typeof node === "object" && "cause" in node) {
+        node = (node as Record<string, unknown>).cause;
+        depth++;
+      }
+
+      // The terminal is the depth-cap marker, and the chain is bounded well
+      // below its true length, so the deepest "leaf" never gets serialized.
+      expect(node).toBe("[Max cause depth exceeded]");
+      expect(depth).toBeLessThanOrEqual(101);
+      expect(JSON.stringify(json)).not.toContain("leaf");
+    });
+
     it("should serialize StructuredError fields in cause via duck-typing", () => {
       const structuredCause = new StructuredError({
         code: "DB_ERROR",

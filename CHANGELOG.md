@@ -1,5 +1,18 @@
 # Changelog
 
+## 7.1.1 - 2026-06-23
+
+### Fixed
+
+- `matchError` now looks up handlers by own property only, so an error `code` that collides with an `Object.prototype` member (`toString`, `valueOf`, `hasOwnProperty`, `constructor`, …) routes to its explicit case or the `_` catch-all instead of an inherited method. Such codes are already valid in `defineErrors`, so a catalog union could previously mis-dispatch (or throw a confusing error) on match.
+- `BaseError` cause serialization (`toLogObject`/`toJSON`) caps the cause chain at depth 100, matching `StructuredError.fromJSON` and the traversal helpers, so a pathologically deep but acyclic chain no longer risks a stack overflow while logging. Beyond the cap the chain ends in `"[Max cause depth exceeded]"`.
+- Log redaction (`redact`/`redactAllow`/`redactWith`) now clones into null-prototype objects, so an own `__proto__` (or `constructor`) key in untrusted `details` (e.g. from `JSON.parse`/`fromJSON`) is masked as ordinary data instead of routing through a prototype setter. Closes a local prototype-reassignment footgun on the redacted log clone; global prototypes were never affected. (OWASP Prototype Pollution Prevention.)
+- Log redaction caps its walk depth at 100: a pathologically deep `details` tree degrades to a `"[Max redaction depth exceeded]"` marker at the deep end (shallow fields survive) instead of overflowing the stack and tripping the fail-closed path. The bound is host-stack independent, so redaction behaves identically on small isolate stacks (edge runtimes).
+
+### Documentation
+
+- Documented on `toLogObject`/`toJSON` that the output is a log shape carrying the technical message, stack, cause chain and raw `details`, must never be returned to a client, and that the `presentation` subpath is the client-safe path. The `toJSON`/`toLogObject` equality is intentional: it is the shape `StructuredError.fromJSON` reconstructs.
+
 ## 7.1.0 - 2026-06-22
 
 ### Added

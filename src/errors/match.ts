@@ -85,7 +85,13 @@ export function matchError<
   const C extends Cases<E>,
 >(error: E, cases: Exhaustive<E, C>): Result<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
-  const handler = table[error.code] ?? table._;
+  // Own-property lookup only: a `code` that collides with an `Object.prototype`
+  // member (e.g. "toString", "valueOf", "hasOwnProperty") must route to its
+  // explicit case or the `_` catch-all, never to an inherited method.
+  const ownHandler = Object.prototype.hasOwnProperty.call(table, error.code)
+    ? table[error.code]
+    : undefined;
+  const handler = ownHandler ?? table._;
 
   if (!handler) {
     throw new Error(

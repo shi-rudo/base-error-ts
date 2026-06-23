@@ -112,6 +112,9 @@ err.redactAllow(["userId", "requestId"]); // only these detail leaves survive
 
 It masks every leaf inside any **data** region (a `details` subtree at any
 depth, and a cause's data fields), so data can't slip through wherever it sits.
+The walk is depth-capped at 100: nesting beyond that collapses to a
+`[Max redaction depth exceeded]` marker (so it stays fail-safe and never
+overflows the stack, including on small edge-runtime stacks) rather than leaking.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
 structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`);
 but **any other field on a cause is data** and is masked, so a plain object that

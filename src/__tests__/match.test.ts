@@ -95,6 +95,47 @@ describe("matchError", () => {
     ).toThrow(/unhandled error code "RATE_LIMITED"/);
   });
 
+  it("treats codes that collide with Object.prototype as ordinary codes", () => {
+    // Codes like "toString"/"valueOf"/"hasOwnProperty" are valid catalog codes,
+    // but a prototype-chain lookup would resolve them to inherited Object methods
+    // instead of falling through to `_` (or throwing). Each must route normally.
+    for (const code of [
+      "toString",
+      "valueOf",
+      "hasOwnProperty",
+      "constructor",
+    ]) {
+      const err = new StructuredError({
+        code,
+        category: "CAT",
+        retryable: false,
+        message: "x",
+      });
+
+      // Exact handler wins.
+      const exact = matchError(
+        err as StructuredError<typeof code, "CAT">,
+        {
+          [code]: (e) => `handled:${e.code}`,
+        } as Record<string, (e: StructuredError<string, string>) => string>,
+      );
+      expect(exact).toBe(`handled:${code}`);
+
+      // With only a catch-all, the `_` handler must be used (not an inherited method).
+      const fallback = matchError(err, {
+        _: (e) => `fallback:${e.code}`,
+      });
+      expect(fallback).toBe(`fallback:${code}`);
+
+      // With no matching case and no `_`, it must throw the clear error.
+      expect(() =>
+        matchError(err as unknown as StructuredError<"OTHER", "CAT">, {
+          OTHER: () => "nope",
+        }),
+      ).toThrow(/unhandled error code/);
+    }
+  });
+
   it("works on a single StructuredError with a code union (narrows code only)", () => {
     const err = new StructuredError<"A" | "B", "CAT">({
       code: "A",
