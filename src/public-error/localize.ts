@@ -1,5 +1,5 @@
-import type { LocalizedMessageSet } from "../presentation/LocalizedMessageSet.js";
-import { resolveUserMessage } from "../presentation/LocaleResolver.js";
+import type { LocalizedMessageSet } from "./LocalizedMessageSet.js";
+import { resolveUserMessage } from "./LocaleResolver.js";
 import type { LocalizedPublicError, PublicError } from "./types.js";
 
 /**

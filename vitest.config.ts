@@ -26,7 +26,6 @@ export default defineConfig({
         functions: 100,
         lines: 95,
         "src/errors/catalog.ts": { 100: true },
-        "src/problem-details/**/*.ts": { 100: true },
       },
     },
   },

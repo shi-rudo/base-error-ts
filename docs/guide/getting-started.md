@@ -3,7 +3,7 @@
 `@shirudo/base-error` is a base error class for TypeScript that works the same
 across Node.js, edge runtimes and browsers. It gives you typed structured
 errors, cause chains, and a separate, optional
-[presentation layer](./presentation) for safe, localized client-facing output.
+[public-error pipeline](./public-error) for safe, localized client-facing output.
 
 ## Installation
 
@@ -49,7 +49,7 @@ straight is the whole point of the design.
 | Path                                  | Where                                | What it contains                                                 |
 | ------------------------------------- | ------------------------------------ | ---------------------------------------------------------------- |
 | **Observability** (logs, Sentry, APM) | core `toLogObject()` / `toJSON()`    | Everything: technical message, stack, cause chain, raw `details` |
-| **Client / user-facing**              | [presentation layer](./presentation) | Only an explicit allowlist: public code, localized message       |
+| **Client / user-facing**              | [public-error pipeline](./public-error) | Only an explicit allowlist: public code, localized message       |
 
 ```ts
 const err = new UserNotFoundError("123");
@@ -63,7 +63,7 @@ return Response.json(view, { status: 404 });
 ```
 
 The core has no client serializer: anything a user sees is produced by the
-[presentation layer](./presentation), which you opt into via the
+[public-error pipeline](./public-error), which you opt into via the
 `@shirudo/base-error/presentation` subpath.
 
 Continue with [Why safe by default](./safe-by-default) to understand the

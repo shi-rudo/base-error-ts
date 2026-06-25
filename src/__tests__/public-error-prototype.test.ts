@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../errors/StructuredError.js";
-import { LocalizedMessageSet } from "../presentation/LocalizedMessageSet.js";
+import { LocalizedMessageSet } from "../public-error/LocalizedMessageSet.js";
 import { PublicErrorCatalog } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
 import { localize } from "../public-error/localize.js";

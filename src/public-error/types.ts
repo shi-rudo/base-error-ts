@@ -1,4 +1,4 @@
-import type { LocalizedMessageSet } from "../presentation/LocalizedMessageSet.js";
+import type { LocalizedMessageSet } from "./LocalizedMessageSet.js";
 
 /**
  * A single, vetted field-level fault. The common validation case made

@@ -1,9 +1,11 @@
 # Proposal 0005: user messages out of the core, technology-agnostic error presentation
 
-**Status:** Accepted. Decision locked (see _Decision_). Not yet implemented.
-This proposal **supersedes** the localized-message design shipped in PR #58
-(`ctx.message` + `ctx.messageLocalized` on the response envelope). That work is
-replaced, not extended.
+**Status:** Superseded by 0011. The `presentation` module
+(`PublicErrorPresenter`/`PublicErrorRegistry`/`PublicErrorView`) was removed in
+8.0.0; its localization primitives (`LocalizedMessageSet`/`resolveUserMessage`)
+moved to the `public-error` subpath. Kept for design history. This proposal
+**superseded** the localized-message design shipped in PR #58 (`ctx.message` +
+`ctx.messageLocalized` on the response envelope).
 
 **Audience:** DDD, application, and infrastructure users who need a clean
 separation between what failed (domain), what to do next (application), and how

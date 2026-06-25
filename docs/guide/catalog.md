@@ -80,7 +80,7 @@ return Response.json(view, { status });
 
 HTTP, gRPC and CLI mappings remain consumer-owned boundary concerns rather than
 fixed fields in the core error model. The
-[presentation guide](./presentation#transport-adapters) shows how to apply
+[public-error guide](./public-error) shows how to apply
 catalog metadata in a transport adapter.
 
 ## Catalog-level log redaction

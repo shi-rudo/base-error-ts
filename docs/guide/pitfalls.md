@@ -19,7 +19,7 @@ return error; // ← framework auto-serializes via toJSON → leak
 
 Anything that auto-serializes an object reaches `toJSON()`. Never send
 `toLogObject()` / `toJSON()` output to a client. **Produce the client payload
-through the [presenter](./presentation):**
+through the [public-error pipeline](./public-error):**
 
 ```ts
 const view = presenter.present(error, { locales }); // ✓ safe public view
