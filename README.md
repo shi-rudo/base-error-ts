@@ -66,6 +66,21 @@ For safe, localized client-facing output, use the optional presentation layer
 boundary and call `present(error, { locales })` to get a transport-neutral
 `PublicErrorView`. See the [presentation guide](docs/guide/presentation.md).
 
+## Main types
+
+| Type | Layer | What it is |
+| --- | --- | --- |
+| `BaseError` | Core | Cross-runtime base error: preserved `cause` chain, rich stack, timestamps. |
+| `StructuredError` | Core | The technical error you **throw** and log: `code`, `category`, `retryable`, `details`. |
+| `PublicError` | Boundary | The safe, **message-free** view of an error; what crosses to the client. |
+| `LocalizedPublicError` | Boundary | `PublicError` plus `message` + `locale`, only when the backend localizes. |
+| `ProblemDetails` | Boundary | The RFC 9457 `application/problem+json` HTTP body. |
+
+**Core** is what you throw and log. The three **Boundary** types are successive
+shapes of the *same* error on its way out (curate, then optionally localize, then
+RFC 9457), not alternatives. The `@shirudo/base-error/public-error` subpath drives
+that flow from one descriptor per public code.
+
 ## Documentation
 
 The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-ts/tree/main/docs/guide)
