@@ -57,14 +57,14 @@ const err = new UserNotFoundError("123");
 // Full truth → your logger / Sentry
 logger.error(err.toLogObject());
 
-// Safe projection → HTTP response (see the presentation guide)
-const view = presenter.present(err, { locales: ["en"] });
+// Safe projection → HTTP response (see the public-error guide)
+const view = project(catalog, err);
 return Response.json(view, { status: 404 });
 ```
 
 The core has no client serializer: anything a user sees is produced by the
 [public-error pipeline](./public-error), which you opt into via the
-`@shirudo/base-error/presentation` subpath.
+`@shirudo/base-error/public-error` subpath.
 
 Continue with [Why safe by default](./safe-by-default) to understand the
 guarantee, or jump to [StructuredError](./structured-error) for typed codes and

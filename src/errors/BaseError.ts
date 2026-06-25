@@ -379,9 +379,9 @@ export class BaseError<T extends string> extends Error {
    * cause chain and raw `details`. **Never return it to a client.** Anything that
    * auto-serializes the error (`JSON.stringify`, `res.json(err)`, `Response.json`,
    * `return err`) reaches {@link toJSON}, which is an alias of this method, and
-   * leaks the same payload. For client-safe output use the `presentation`
-   * subpath (`@shirudo/base-error/presentation`, `PublicErrorPresenter`), which
-   * projects only an allow-listed public view.
+   * leaks the same payload. For client-safe output use the `public-error`
+   * subpath (`@shirudo/base-error/public-error`, `project`), which projects only
+   * an allow-listed, message-free public view.
    */
   public toLogObject(): Record<string, unknown> {
     const raw = this.buildLogObject();
@@ -430,7 +430,7 @@ export class BaseError<T extends string> extends Error {
    * `return err` all route through `toJSON`, sending an error down any of those
    * paths leaks the full technical payload to the client. **Never serialize an
    * error straight into a response.** Produce a client payload through the
-   * `presentation` subpath (`PublicErrorPresenter`) instead. This shape is also
+   * `public-error` subpath (`project` / `toProblem`) instead. This shape is also
    * the input that {@link StructuredError.fromJSON} reconstructs, which is why it
    * intentionally retains the stack and cause chain.
    */

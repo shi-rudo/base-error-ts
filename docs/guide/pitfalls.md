@@ -22,12 +22,12 @@ Anything that auto-serializes an object reaches `toJSON()`. Never send
 through the [public-error pipeline](./public-error):**
 
 ```ts
-const view = presenter.present(error, { locales }); // ✓ safe public view
+const view = project(catalog, error); // ✓ safe, message-free public view
 res.status(status).json(view);
 ```
 
-Rule of thumb: `toLogObject()` / `toJSON()` go to your logger; the presenter's
-`PublicErrorView` goes to the response.
+Rule of thumb: `toLogObject()` / `toJSON()` go to your logger; the pipeline's
+`PublicError` goes to the response.
 
 ## 2. `StructuredError.name` is the `code`, not `"StructuredError"`
 
@@ -41,19 +41,18 @@ e.name; // "USER_NOT_FOUND", not "StructuredError"
 So `err.name === "StructuredError"` is always false. Use `instanceof`,
 `isStructuredError(err)`, or switch on `err.code`.
 
-## 3. `present` is total: an unmapped error becomes the generic fallback
+## 3. `project` is total: an unmapped error becomes the generic fallback
 
-`PublicErrorPresenter.present` never throws and never leaks. If an error matches
-no registry entry, it degrades to the generic localized fallback, **silently**
-from the caller's point of view:
+`project` never throws and never leaks. If an error matches no catalog entry, it
+degrades to the generic fallback, **silently** from the caller's point of view:
 
 ```ts
-presenter.present(somethingUnregistered, { locales });
-// { code: "INTERNAL_ERROR", message: "Something went wrong...", locale: "en" }
+project(catalog, somethingUnregistered);
+// { code: "internal_error", category: "internal", retryable: false }
 ```
 
 That is the safety guarantee, but it can hide a missing registration. Use the
-`onPresent` hook to surface `kind: "fallback"` outcomes to your telemetry so an
+`onProject` hook to surface `kind: "fallback"` outcomes to your telemetry so an
 unmapped error class shows up as a metric rather than a generic 500.
 
 ## 4. Class-name minification and the `_tag` discriminant

@@ -74,7 +74,7 @@ metadata:
 
 ```ts
 const status = AppErrors.meta(err.code).metadata.httpStatus;
-const view = presenter.present(err, { locales });
+const view = project(catalog, err);
 return Response.json(view, { status });
 ```
 

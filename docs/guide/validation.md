@@ -77,14 +77,15 @@ public view via the [public-error pipeline](./public-error), where
 `projectDetails` is the explicit allowlist that lets vetted error data through:
 
 ```ts
-import { LocalizedMessageSet } from "@shirudo/base-error/presentation";
-import type { PublicErrorDefinition } from "@shirudo/base-error/presentation";
+import { LocalizedMessageSet } from "@shirudo/base-error/public-error";
+import type { PublicErrorDescriptor } from "@shirudo/base-error/public-error";
 
-const validationDefinition: PublicErrorDefinition<
+const validationDescriptor: PublicErrorDescriptor<
   ValidationError,
   { issues: ReturnType<ValidationError["publicIssues"]> }
 > = {
   publicCode: "VALIDATION_FAILED",
+  status: 422,
   userMessages: new LocalizedMessageSet({
     baseLocale: "en",
     messages: { en: "Please correct the highlighted fields." },

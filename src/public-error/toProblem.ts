@@ -16,7 +16,7 @@ export { PROBLEM_DETAILS_JSON };
 export type OmittedMember = "details" | "fields" | "extensions";
 
 /** Body members the adapter owns; an extension may not collide with them. */
-const RESERVED_BODY_FIELDS = new Set([
+const RESERVED_BODY_FIELDS = [
   "type",
   "title",
   "status",
@@ -28,6 +28,20 @@ const RESERVED_BODY_FIELDS = new Set([
   "retryAfter",
   "fields",
   "details",
+] as const;
+type ReservedBodyField = (typeof RESERVED_BODY_FIELDS)[number];
+
+/**
+ * Keys an extension may never carry: every reserved body member, plus the
+ * pollution-vector names that would otherwise serialize onto the body and revive
+ * as `__proto__`/`constructor`/`prototype` own keys on a non-hardened downstream
+ * `JSON.parse`. The body is null-prototype, so this is defense in depth.
+ */
+const FORBIDDEN_EXTENSION_KEYS: ReadonlySet<string> = new Set<string>([
+  ...RESERVED_BODY_FIELDS,
+  "__proto__",
+  "constructor",
+  "prototype",
 ]);
 
 /** Every extension value must be JSON-safe; a non-JSON-safe field is `never`. */
@@ -70,17 +84,7 @@ export type ToProblemContext<
   readonly extensions?: TExtensions &
     JsonSafeExtensionShape<TExtensions> &
     StringKeyedExtensionShape<TExtensions> & {
-      readonly type?: never;
-      readonly title?: never;
-      readonly status?: never;
-      readonly detail?: never;
-      readonly instance?: never;
-      readonly code?: never;
-      readonly category?: never;
-      readonly retryable?: never;
-      readonly retryAfter?: never;
-      readonly fields?: never;
-      readonly details?: never;
+      readonly [K in ReservedBodyField]?: never;
     };
 };
 
@@ -193,8 +197,13 @@ export function toProblem<
       ...(transport.type !== undefined && { type: transport.type }),
       ...(title !== undefined && { title }),
       status: transport.status,
-      ...(context?.detail !== undefined && { detail: context.detail }),
-      ...(context?.instance !== undefined && { instance: context.instance }),
+      // The TS type already constrains these to strings; the runtime guard keeps
+      // an untyped caller (an `as` cast, a value from JSON.parse) from writing a
+      // non-string, non-RFC-9457 value straight onto the wire body.
+      ...(typeof context?.detail === "string" && { detail: context.detail }),
+      ...(typeof context?.instance === "string" && {
+        instance: context.instance,
+      }),
       code: view.code,
       ...(typeof view.category === "string" && { category: view.category }),
       ...(typeof view.retryable === "boolean" && { retryable: view.retryable }),
@@ -232,10 +241,14 @@ function jsonSafeOrOmit(
 }
 
 /**
- * Validates and clones the explicit `extensions`: a plain object with string
- * keys, none reserved, all JSON-safe. The whole set is dropped (recorded in
- * `outcome.omitted`) if any key collides or any value is not JSON-safe, so a
- * bad set never partially leaks onto the body.
+ * Validates and clones the explicit `extensions`: a plain object whose own keys
+ * are all strings, none forbidden ({@link FORBIDDEN_EXTENSION_KEYS}), and whose
+ * values are all JSON-safe. The whole set is dropped (recorded in
+ * `outcome.omitted`) if any key collides or any value is not JSON-safe, so a bad
+ * set never partially leaks onto the body. Keys are screened on the raw input
+ * before the clone, so a `__proto__` own key (e.g. from `JSON.parse`) is rejected
+ * rather than serialized; `cloneJsonSafe` only carries those screened string keys
+ * through, so no second key check is needed.
  */
 function safeExtensions(
   raw: unknown,
@@ -248,20 +261,12 @@ function safeExtensions(
       raw === null ||
       Array.isArray(raw) ||
       Reflect.ownKeys(raw).some(
-        (key) => typeof key !== "string" || RESERVED_BODY_FIELDS.has(key),
+        (key) => typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key),
       )
     ) {
       throw new Error("invalid extensions");
     }
-    const cloned = cloneJsonSafe(raw) as Record<string, JsonSafeValue>;
-    if (
-      Reflect.ownKeys(cloned).some(
-        (key) => typeof key !== "string" || RESERVED_BODY_FIELDS.has(key),
-      )
-    ) {
-      throw new Error("invalid extensions");
-    }
-    return cloned;
+    return cloneJsonSafe(raw) as Record<string, JsonSafeValue>;
   } catch {
     omitted.push("extensions");
     return undefined;

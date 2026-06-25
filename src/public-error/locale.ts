@@ -1,5 +1,6 @@
-// Internal BCP 47 locale utilities shared by the presentation module. Not part
-// of the public surface.
+// Internal BCP 47 locale utilities used by the public-error localization
+// primitives (LocalizedMessageSet, resolveUserMessage). Not part of the public
+// surface.
 
 /**
  * Canonicalizes a single BCP 47 tag with `Intl.getCanonicalLocales`, or returns

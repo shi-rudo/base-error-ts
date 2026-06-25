@@ -352,9 +352,9 @@ adapter's clone-and-freeze and status/type validation. It **refines** 0010 by
 removing the requirement that a problem body carry a localized `title`, and by
 unifying the adapter's separate definition map into the one descriptor.
 
-The standalone `ProblemDetailsAdapter` (0010) remains for consumers who already
-hold a `PublicErrorView` and want only the RFC mapping; `toProblem` is the
-catalog-integrated path.
+The standalone `ProblemDetailsAdapter` (0010) was removed in 8.0.0; its RFC
+mapping and typed `extensions` are subsumed by `toProblem`, which works from a
+catalog or an explicit `Transport` for a view you already hold.
 
 ## Alternatives considered
 
