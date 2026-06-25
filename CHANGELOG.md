@@ -1,5 +1,15 @@
 # Changelog
 
+## 7.2.0 - 2026-06-25
+
+### Added
+
+- New `@shirudo/base-error/public-error` subpath: a public-error pipeline of three independent stages over one descriptor per public code, `project` (curation, total over `unknown`, message-free), `localize` (optional localization, keyed on the public code), and `toProblem` (RFC 9457 transport with a JSON-safe, frozen wire body). Serves three consumption modes from one registration: client-localizing (SPA/Edge), backend-localizing (SSR/email), and a consumable third-party API. Includes a typed public-code union for exhaustive client branching (`PublicCodeOf`), an `onProject` observability hook, catalog-free entry points (`projectWithDescriptor`, explicit transports), registration-time validation, and conflict checks for the wire identity (status/type/title/category/userMessages). See proposal 0011 and the runnable `examples/public-error-e2e.ts`.
+
+### Changed
+
+- Extracted shared internal helpers reused by the problem-details adapter, the presentation registry, and the new public-error module: a JSON-safe clone-and-freeze, the RFC 9457 status/type field validation (and the `application/problem+json` media type), and the code-then-predicate error resolution. Removes duplication; runtime behavior is unchanged.
+
 ## 7.1.1 - 2026-06-23
 
 ### Fixed

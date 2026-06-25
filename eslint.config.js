@@ -58,9 +58,14 @@ export default [
       "@typescript-eslint/quotes": "off",
     },
   },
-  // Presentation source: edge-clean, may import core, may not import Node built-ins.
+  // Upper layers (presentation, transport adapters): edge-clean, may import the
+  // presentation module and core, may not import Node built-ins.
   {
-    files: ["src/presentation/**/*.ts", "src/problem-details/**/*.ts"],
+    files: [
+      "src/presentation/**/*.ts",
+      "src/problem-details/**/*.ts",
+      "src/public-error/**/*.ts",
+    ],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": ["error", { patterns: [NODE_BUILTIN_IMPORTS] }],
@@ -73,6 +78,7 @@ export default [
     ignores: [
       "src/presentation/**",
       "src/problem-details/**",
+      "src/public-error/**",
       "src/__tests__/**",
     ],
     rules: {

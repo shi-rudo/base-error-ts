@@ -5,6 +5,7 @@ export default defineConfig({
     index: "src/index.ts",
     "presentation/index": "src/presentation/index.ts",
     "problem-details/index": "src/problem-details/index.ts",
+    "public-error/index": "src/public-error/index.ts",
   },
   format: ["esm", "cjs"],
   dts: {

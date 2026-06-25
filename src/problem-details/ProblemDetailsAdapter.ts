@@ -1,7 +1,13 @@
 import type { PublicErrorView } from "../presentation/PublicErrorPresenter.js";
+import type { JsonSafeValue } from "../utils/json-safe.js";
+import { cloneJsonSafe, isPlainObject } from "../utils/json-safe.js";
+import {
+  isHttpStatusCode,
+  isNonEmptyString,
+  PROBLEM_DETAILS_JSON,
+} from "../utils/problem-validation.js";
 
-/** Media type for RFC 9457 JSON problem details. */
-export const PROBLEM_DETAILS_JSON = "application/problem+json" as const;
+export { PROBLEM_DETAILS_JSON };
 
 const RESERVED_PROBLEM_FIELDS = new Set([
   "type",
@@ -13,13 +19,7 @@ const RESERVED_PROBLEM_FIELDS = new Set([
 ]);
 
 /** JSON-safe value accepted by problem-details extensions. */
-export type ProblemDetailsJsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly ProblemDetailsJsonValue[]
-  | { readonly [key: string]: ProblemDetailsJsonValue };
+export type ProblemDetailsJsonValue = JsonSafeValue;
 
 /** Additional top-level members attached to a problem-details body. */
 export type ProblemDetailsExtensions = Readonly<
@@ -198,14 +198,6 @@ type ProblemTypeFor<
   TCode extends string,
 > = ProblemDefinitionFor<TDefinitions, TFallback, TCode>["type"];
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-  const prototype = Object.getPrototypeOf(value) as unknown;
-  return prototype === Object.prototype || prototype === null;
-}
-
 function hasOwn(value: object, key: PropertyKey): boolean {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -228,72 +220,11 @@ function assertDefinition(value: unknown, label: string): void {
     throw new Error(`defineProblemDetailsAdapter: invalid ${label}`);
   }
   assertExactFields(value, new Set(["type", "status"]), label);
-  if (
-    !hasOwn(value, "type") ||
-    typeof value.type !== "string" ||
-    value.type.length === 0
-  ) {
+  if (!hasOwn(value, "type") || !isNonEmptyString(value.type)) {
     throw new Error(`defineProblemDetailsAdapter: invalid ${label} type`);
   }
-  if (
-    !hasOwn(value, "status") ||
-    typeof value.status !== "number" ||
-    !Number.isInteger(value.status) ||
-    value.status < 100 ||
-    value.status > 599
-  ) {
+  if (!hasOwn(value, "status") || !isHttpStatusCode(value.status)) {
     throw new Error(`defineProblemDetailsAdapter: invalid ${label} status`);
-  }
-}
-
-function cloneJsonValue(
-  value: unknown,
-  seen: Set<object>,
-): ProblemDetailsJsonValue {
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (typeof value === "number") {
-    if (Number.isFinite(value)) return value;
-    throw new Error("problem details value must be JSON-safe");
-  }
-  if (typeof value !== "object" || seen.has(value)) {
-    throw new Error("problem details value must be JSON-safe");
-  }
-
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index++) {
-        if (!Object.prototype.hasOwnProperty.call(value, index)) {
-          throw new Error("problem details value must be JSON-safe");
-        }
-      }
-      return Object.freeze(
-        value.map((item) => cloneJsonValue(item, seen)),
-      ) as readonly ProblemDetailsJsonValue[];
-    }
-
-    if (
-      !isPlainObject(value) ||
-      Object.getOwnPropertySymbols(value).length > 0
-    ) {
-      throw new Error("problem details value must be JSON-safe");
-    }
-    const clone = Object.create(null) as Record<
-      string,
-      ProblemDetailsJsonValue
-    >;
-    for (const [key, item] of Object.entries(value)) {
-      clone[key] = cloneJsonValue(item, seen);
-    }
-    return Object.freeze(clone);
-  } finally {
-    seen.delete(value);
   }
 }
 
@@ -447,7 +378,7 @@ export function defineProblemDetailsAdapter(
       let details: ProblemDetailsJsonValue | undefined;
       if (rawDetails !== undefined) {
         try {
-          details = cloneJsonValue(rawDetails, new Set());
+          details = cloneJsonSafe(rawDetails);
         } catch {
           omitted.push("details");
         }
@@ -464,9 +395,8 @@ export function defineProblemDetailsAdapter(
           ) {
             throw new Error("invalid problem details extensions");
           }
-          const extensionSnapshot = cloneJsonValue(
+          const extensionSnapshot = cloneJsonSafe(
             rawExtensions,
-            new Set(),
           ) as ProblemDetailsExtensions;
           if (
             Reflect.ownKeys(extensionSnapshot).some(
