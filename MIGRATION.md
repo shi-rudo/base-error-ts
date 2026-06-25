@@ -58,6 +58,11 @@ See the public error pipeline guide for the full model.
 
 ## v6 to v7
 
+> **Note:** the `presentation` and `problem-details` subpaths this section
+> introduces were removed in v8. If you are landing on v8, treat the
+> `PublicErrorPresenter` / `PublicErrorDefinition` parts below as historical and
+> use the public-error pipeline (see _v7 to v8_ above) instead.
+
 v7 restructures `defineErrors` into a collision-free catalog object and adds
 catalog-local provenance guards. The migration is mechanical.
 
@@ -232,7 +237,8 @@ const view = presenter.present(err, { locales: ["en"] });
 return Response.json(view, { status: 404 });
 ```
 
-See the [presentation guide](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/presentation.md)
+In v8 this maps to the public-error pipeline; see the
+[public error pipeline guide](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/public-error.md)
 for the full surface.
 
 ## v4 to v5 (historical)

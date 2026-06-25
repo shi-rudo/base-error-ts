@@ -50,8 +50,8 @@ try {
   // 1. Full truth → observability
   logger.error(error.toLogObject());
 
-  // 2. Safe projection → client (presentation layer)
-  const view = presenter.present(error, { locales: ["en"] });
+  // 2. Safe projection → client (public-error pipeline)
+  const view = project(catalog, error);
   return Response.json(view, { status: 409 });
 }
 ```

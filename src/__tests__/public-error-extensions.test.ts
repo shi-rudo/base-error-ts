@@ -60,4 +60,60 @@ describe("toProblem: typed extensions", () => {
     );
     expect(result.body.retryToken).toBe("abc");
   });
+
+  it("rejects an own __proto__ extension key without polluting", () => {
+    const view = project(catalog(), { code: "x" });
+    const raw = JSON.parse(
+      '{"__proto__":{"polluted":"yes"},"keep":"y"}',
+    ) as Record<string, unknown>;
+    const result = toProblem(catalog(), view, {
+      extensions: raw,
+    } as unknown as ToProblemContext);
+
+    // The whole set is dropped: no __proto__ own key, no sibling either.
+    expect(Object.prototype.hasOwnProperty.call(result.body, "__proto__")).toBe(
+      false,
+    );
+    expect("keep" in result.body).toBe(false);
+    expect(result.outcome.omitted).toContain("extensions");
+    // Nothing reached a global prototype.
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("rejects constructor and prototype extension keys", () => {
+    const view = project(catalog(), { code: "x" });
+    for (const key of ["constructor", "prototype"]) {
+      const result = toProblem(catalog(), view, {
+        extensions: { [key]: "x" },
+      } as unknown as ToProblemContext);
+      expect(Object.prototype.hasOwnProperty.call(result.body, key)).toBe(
+        false,
+      );
+      expect(result.outcome.omitted).toContain("extensions");
+    }
+  });
+});
+
+describe("toProblem: context detail / instance validation", () => {
+  it("drops a non-string detail or instance instead of writing it raw", () => {
+    const view = project(catalog(), { code: "x" });
+    const result = toProblem(catalog(), view, {
+      detail: { evil: true },
+      instance: 42,
+    } as unknown as ToProblemContext);
+
+    expect("detail" in result.body).toBe(false);
+    expect("instance" in result.body).toBe(false);
+  });
+
+  it("keeps a valid string detail and instance", () => {
+    const view = project(catalog(), { code: "x" });
+    const result = toProblem(catalog(), view, {
+      detail: "the lock cleared",
+      instance: "urn:trace:1",
+    });
+
+    expect(result.body.detail).toBe("the lock cleared");
+    expect(result.body.instance).toBe("urn:trace:1");
+  });
 });

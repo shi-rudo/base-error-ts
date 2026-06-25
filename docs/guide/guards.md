@@ -172,7 +172,7 @@ try {
     retryable: true,
   });
   logger.error(err.toLogObject());
-  return presenter.present(err, { locales: ["en"] }); // safe public view
+  return project(catalog, err); // safe, message-free public view
 }
 ```
 

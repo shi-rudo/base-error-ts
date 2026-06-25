@@ -23,7 +23,7 @@ serializer** on a `BaseError` or `StructuredError`. That is the guarantee:
 
 Because the core exposes nothing client-facing, there is no override flag to
 audit and no accidental-leak call site to find. To send anything to a client you
-must reach for the presenter, and the presenter only emits what you registered.
+must reach for the pipeline, and it only emits what you registered.
 
 ```ts
 const err = new StructuredError({
@@ -36,13 +36,13 @@ const err = new StructuredError({
 // Internal, full-fidelity. Goes to your logger, never to a client.
 logger.error(err.toLogObject());
 
-// Client-facing. Only what the registry maps and the definition projects.
-const view = presenter.present(err, { locales: ["en"] });
-// { code: "INTERNAL_ERROR", message: "Something went wrong...", locale: "en" }
+// Client-facing. Only what the catalog maps and the descriptor projects.
+const view = project(catalog, err);
+// { code: "internal_error", category: "internal", retryable: false }
 ```
 
-An unmapped error degrades to the presenter's generic localized fallback. The
-technical message is never reached on the public path.
+An unmapped error degrades to the pipeline's generic fallback. The technical
+message is never reached on the public path.
 
 ## Exposing things is always explicit
 
