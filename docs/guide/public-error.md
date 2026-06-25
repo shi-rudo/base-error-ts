@@ -130,16 +130,21 @@ the UI localizes itself.
 ## Stage 2: `localize` (optional)
 
 ```ts
-const localized = localize(view, errors.messagesFor(view.code)!, {
-  locales: ["de", "en"],
-});
+// messagesFor returns undefined for a code with no userMessages, so guard it:
+// an absent set means you keep the message-free view.
+const messages = errors.messagesFor(view.code);
+const localized = messages
+  ? localize(view, messages, { locales: ["de", "en"] })
+  : view;
 // { ...view, message: "Bitte versuche es gleich erneut.", locale: "de" }
 ```
 
 `localize` is catalog-free: it takes only a view and a `LocalizedMessageSet`,
 keyed on the public code. A backend passes `errors.messagesFor(view.code)`; a
 client passes its own catalog for the same code. A client-localizing app never
-calls this stage and renders from `view.code` against its own messages.
+calls this stage and renders from `view.code` against its own messages. Calling
+`localize` with a missing set throws, so guard `messagesFor` (or pass a fallback
+set) rather than asserting it non-null.
 
 ## Stage 3: `toProblem` (RFC 9457)
 

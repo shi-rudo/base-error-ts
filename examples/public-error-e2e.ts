@@ -130,9 +130,11 @@ type AppPublicError = PublicError<unknown, AppCode>;
 //     return c.json(body, status as ContentfulStatusCode, headers);
 //   });
 //
-//   // Backend-localizing API (SSR/email): add one localize() before toProblem:
+//   // Backend-localizing API (SSR/email): add one localize() before toProblem.
+//   // Guard messagesFor (undefined for codes without userMessages):
 //   const view = project(catalog, err);
-//   const loc = localize(view, catalog.messagesFor(view.code)!, { locales });
+//   const set = catalog.messagesFor(view.code);
+//   const loc = set ? localize(view, set, { locales }) : view;
 //   const { status, headers, body } = toProblem(catalog, loc);
 // ───────────────────────────────────────────────────────────────────────────
 type HttpResponse = {

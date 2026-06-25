@@ -2,8 +2,8 @@
  * Shared JSON-safety helper. A value that crosses a wire (an HTTP body, an RPC
  * boundary, `postMessage`) must survive `JSON.stringify` losslessly and must not
  * carry a hostile prototype. This module is the single clone-and-freeze
- * implementation reused by the problem-details adapter and the public-error
- * transport stage, so the two cannot drift.
+ * implementation for the public-error transport stage (`toProblem`), so the
+ * wire-safety guarantee lives at exactly one place.
  */
 
 /** The subset of values that round-trips through JSON without loss. */

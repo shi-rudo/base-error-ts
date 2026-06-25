@@ -284,8 +284,8 @@ export class BaseError<T extends string> extends Error {
       // Null-prototype target so an own `__proto__`/`constructor` key from
       // untrusted details is copied as ordinary data (and masked/recursed like
       // any other key) instead of routing through a prototype setter. Matches
-      // the null-prototype clones used by the catalog and problem-details
-      // adapters. (OWASP Prototype Pollution Prevention.)
+      // the null-prototype clones used by the public-error catalog and transport
+      // stage. (OWASP Prototype Pollution Prevention.)
       const out = Object.create(null) as Record<string, unknown>;
       for (const [key, val] of Object.entries(value)) {
         // A leaf's keep/mask decision is made in the region it *lives in* (the
