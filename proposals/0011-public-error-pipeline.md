@@ -368,7 +368,7 @@ catalog-integrated path.
   transport and i18n; `detail`/`instance` are per-occurrence and belong in the
   `toProblem` context. Only the static members (`type`, `status`, static `title`)
   are descriptor metadata. RFC compatibility lives at the **output**
-  (`ProblemBody`), not the input.
+  (`ProblemDetails`), not the input.
 - **A static `retryAfter` on the descriptor.** Rejected. The retry delay varies by
   occurrence (rate-limit window, backoff); it is a projector or a `toProblem`
   context value, not static type metadata.
