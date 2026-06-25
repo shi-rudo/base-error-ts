@@ -245,6 +245,13 @@ word on both sides, front and back); for a third-party consumer it is a publishe
 `.d.ts` shipped with the API contract. Without the union the client still
 branches at runtime, just not exhaustively at compile time.
 
+That published `.d.ts` is a compile-time **type re-export**, produced and shipped
+by the API author, not by this library: `export type AppPublicCode =
+PublicCodeOf<typeof catalog>`. No runtime enumeration of the catalog's codes is
+needed for it, and none is provided. The library knows the API author's
+vocabulary only at the type level; turning it into a runtime artifact (an OpenAPI
+or JSON-Schema error catalog) is the author's job with their own tooling.
+
 ## Observability
 
 `project` calls an optional `onProject(error, view, outcome)` once, the single
@@ -387,6 +394,12 @@ catalog-integrated path.
   HTTP-date form is not modeled.
 - **Per-tenant descriptor overrides** (white-label wordings) remain a decorated
   catalog, not a widened stage signature, consistent with 0005.
+- **Runtime enumeration of public codes** (a `catalog.publicCodes()` or a
+  descriptor iterator for generating an OpenAPI / JSON-Schema error catalog). The
+  union is type-level only (`PublicCodeOf`), and `assertCoverage` covers the
+  completeness check; a runtime listing is YAGNI until a concrete generator needs
+  it, and would be purely additive (a curated read-only view, never the projector
+  functions or message sets).
 
 ## Implementation status
 
