@@ -1,5 +1,61 @@
 # Migration Guide
 
+## v7 to v8
+
+v8 removes the `@shirudo/base-error/presentation` and
+`@shirudo/base-error/problem-details` subpaths. Both are superseded by the
+unified public-error pipeline at `@shirudo/base-error/public-error`. The core
+(`BaseError`, `StructuredError`, `defineErrors`, `matchError`, guards, redaction)
+is unchanged.
+
+### Imports
+
+`LocalizedMessageSet` and `resolveUserMessage` now live on the `public-error`
+subpath:
+
+```ts
+// v7
+import { LocalizedMessageSet } from "@shirudo/base-error/presentation";
+// v8
+import { LocalizedMessageSet } from "@shirudo/base-error/public-error";
+```
+
+### Presentation to pipeline
+
+A `PublicErrorPresenter` plus its `PublicErrorRegistry` become a
+`PublicErrorCatalog` and the `project` (plus optional `localize`) stages:
+
+```ts
+// v7
+const presenter = new PublicErrorPresenter({ registry, fallback });
+const view = presenter.present(error, { locales });
+
+// v8
+const errors = definePublicErrors({ fallback: { publicCode, status, userMessages } })
+  .registerByCode("USER_NOT_FOUND", { publicCode, status, userMessages });
+const view = project(errors, error); // message-free; localize(view, ...) is now optional
+```
+
+`PublicErrorDefinition` becomes `PublicErrorDescriptor` (one descriptor now also
+carries the transport `status`/`type`/`title`, so registration is a single site).
+
+### Problem details to `toProblem`
+
+`defineProblemDetailsAdapter(...).map(view, ...)` becomes `toProblem(catalog,
+view, ...)`. Typed `extensions` carry over into the `toProblem` context; the RFC
+9457 body type is `ProblemDetails`, returned inside a `ProblemDetailsResult`.
+
+```ts
+// v7
+const adapter = defineProblemDetailsAdapter({ definitions, fallback });
+const { status, headers, body } = adapter.map(view, { extensions: { retry_after: 30 } });
+
+// v8
+const { status, headers, body } = toProblem(errors, view, { extensions: { retry_after: 30 } });
+```
+
+See the public error pipeline guide for the full model.
+
 ## v6 to v7
 
 v7 restructures `defineErrors` into a collision-free catalog object and adds

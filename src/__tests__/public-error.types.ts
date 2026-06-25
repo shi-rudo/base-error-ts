@@ -5,7 +5,7 @@ import {
   toProblem,
   type PublicCodeOf,
 } from "../public-error/index.js";
-import { LocalizedMessageSet } from "../presentation/index.js";
+import { LocalizedMessageSet } from "../public-error/index.js";
 
 // One registration site per public code; the union is inferred and grows with
 // each `registerByCode`, so the UI can switch exhaustively at compile time.
@@ -85,3 +85,18 @@ void _locCode;
 const problem = toProblem(catalog, view);
 const _bodyCode: AppCode = problem.body.code;
 void _bodyCode;
+
+// Typed extensions flow to the body type.
+const withExt = toProblem(catalog, view, {
+  extensions: { traceId: "t", attempt: 1 },
+});
+const _traceId: string | undefined = withExt.body.traceId;
+const _attempt: number | undefined = withExt.body.attempt;
+void _traceId;
+void _attempt;
+
+// @ts-expect-error a reserved field name is not a valid extension key
+toProblem(catalog, view, { extensions: { status: 200 } });
+
+// @ts-expect-error a non-JSON-safe extension value is rejected
+toProblem(catalog, view, { extensions: { when: new Date() } });

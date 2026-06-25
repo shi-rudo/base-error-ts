@@ -4,7 +4,7 @@
 [`StructuredError`](./structured-error) when you want typed codes and categories
 out of the box. It is purely technical: it models the failure for your logs and
 control flow. Client-facing text is produced separately, by the
-[presentation layer](./presentation).
+[public-error pipeline](./public-error).
 
 ```ts
 import { BaseError } from "@shirudo/base-error";
@@ -68,7 +68,7 @@ PII redaction scrubs the **log** path (see
 
 `toLogObject()` / `toJSON()` are **internal, full-fidelity log output**. They are
 not safe to send to clients: they carry the technical message, stack and cause
-chain. For client-facing text, use the [presentation layer](./presentation),
+chain. For client-facing text, use the [public-error pipeline](./public-error),
 which projects an explicit allowlist (a public code, a resolved localized
 message, and any deliberately projected details).
 

@@ -28,12 +28,12 @@ const NODE_BUILTIN_IMPORTS = {
   message:
     "Edge-incompatible: library code must not import Node built-ins (no node:* imports).",
 };
-// Dependency direction is adapters -> presentation -> core. Core (and the root
-// barrel) must never import the presentation module.
-const PRESENTATION_BOUNDARY = {
-  group: ["**/presentation", "**/presentation/**"],
+// Dependency direction is public-error -> core. Core (and the root barrel) must
+// never import the public-error module.
+const PUBLIC_ERROR_BOUNDARY = {
+  group: ["**/public-error", "**/public-error/**"],
   message:
-    "Module boundary: core must not import the presentation module (dependency direction is presentation -> core).",
+    "Module boundary: core must not import the public-error module (dependency direction is public-error -> core).",
 };
 
 export default [
@@ -58,34 +58,25 @@ export default [
       "@typescript-eslint/quotes": "off",
     },
   },
-  // Upper layers (presentation, transport adapters): edge-clean, may import the
-  // presentation module and core, may not import Node built-ins.
+  // Upper layer (the public-error pipeline): edge-clean, may import core, may
+  // not import Node built-ins.
   {
-    files: [
-      "src/presentation/**/*.ts",
-      "src/problem-details/**/*.ts",
-      "src/public-error/**/*.ts",
-    ],
+    files: ["src/public-error/**/*.ts"],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": ["error", { patterns: [NODE_BUILTIN_IMPORTS] }],
     },
   },
-  // Core library source (everything outside subpaths and tests): edge-clean and
-  // forbidden from importing the presentation module.
+  // Core library source (everything outside the public-error subpath and tests):
+  // edge-clean and forbidden from importing the public-error module.
   {
     files: ["src/**/*.ts"],
-    ignores: [
-      "src/presentation/**",
-      "src/problem-details/**",
-      "src/public-error/**",
-      "src/__tests__/**",
-    ],
+    ignores: ["src/public-error/**", "src/__tests__/**"],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": [
         "error",
-        { patterns: [NODE_BUILTIN_IMPORTS, PRESENTATION_BOUNDARY] },
+        { patterns: [NODE_BUILTIN_IMPORTS, PUBLIC_ERROR_BOUNDARY] },
       ],
     },
   },

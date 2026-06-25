@@ -71,7 +71,7 @@ class DatabaseError extends StructuredError<DbCode, DbCategory, DbDetails> {
 The `code` (`DB_UNIQUE_VIOLATION`) is what your logs, control flow and tests
 switch on. It is stable and machine-readable. When the boundary needs to show a
 client-facing code or message, map the technical `code` to a public code and
-localized text in the [presentation layer](./presentation). The error itself
+localized text in the [public-error pipeline](./public-error). The error itself
 stays purely technical.
 
 ## Serialization
@@ -79,7 +79,7 @@ stays purely technical.
 Beyond [`BaseError`](./base-error#serialization), `StructuredError`'s
 `toLogObject()` / `toJSON()` also carry `code`, `category`, `retryable` and raw
 `details`. These are internal, full-fidelity log output, not client-safe. For
-public output, see the [presentation layer](./presentation).
+public output, see the [public-error pipeline](./public-error).
 
 `StructuredError.fromJSON(payload)` is the inverse: it reconstructs a typed
 `StructuredError` (`code`, `category`, `retryable`, `details`, the original

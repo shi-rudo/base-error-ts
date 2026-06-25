@@ -1,4 +1,4 @@
-import type { LocalizedMessageSet } from "../presentation/LocalizedMessageSet.js";
+import type { LocalizedMessageSet } from "./LocalizedMessageSet.js";
 import { resolveByCodeThenPredicate } from "../utils/error-resolution.js";
 import type { PredicateEntry } from "../utils/error-resolution.js";
 import {

@@ -1,14 +1,20 @@
 // ────────────────────────────────────────────────────────────────
-// Public error (prototype): three independent stages over one source.
+// Public error: three independent stages over one descriptor per public code.
 //
 //   project   (curation = security) → message-free PublicError
 //   localize  (optional, orthogonal) → human text, keyed on publicCode
-//   toProblem (transport)            → RFC 9457; title only when localized
+//   toProblem (transport)            → RFC 9457 ProblemDetails
 //
 // Localization is removable: client-localizing apps stop after `project`
 // and render from `view.code`. Exported at the `@shirudo/base-error/public-error`
 // subpath. See proposals/0011.
 // ────────────────────────────────────────────────────────────────
+
+// Localization primitives (used to declare and resolve user messages).
+export { LocalizedMessageSet } from "./LocalizedMessageSet.js";
+export type { LocalizedMessageSetOptions } from "./LocalizedMessageSet.js";
+export { resolveUserMessage } from "./LocaleResolver.js";
+export type { ResolvedUserMessage } from "./LocaleResolver.js";
 
 export {
   PublicErrorCatalog,

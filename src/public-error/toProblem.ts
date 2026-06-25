@@ -1,4 +1,5 @@
 import { cloneJsonSafe } from "../utils/json-safe.js";
+import type { JsonSafeValue } from "../utils/json-safe.js";
 import {
   isHttpStatusCode,
   isNonEmptyString,
@@ -12,10 +13,49 @@ import type { FieldFault, LocalizedPublicError, PublicError } from "./types.js";
 export { PROBLEM_DETAILS_JSON };
 
 /** A dynamic body member dropped because it was not JSON-safe. */
-export type OmittedMember = "details" | "fields";
+export type OmittedMember = "details" | "fields" | "extensions";
 
-/** Per-occurrence members added while mapping one view to a problem. */
-export type ToProblemContext = {
+/** Body members the adapter owns; an extension may not collide with them. */
+const RESERVED_BODY_FIELDS = new Set([
+  "type",
+  "title",
+  "status",
+  "detail",
+  "instance",
+  "code",
+  "category",
+  "retryable",
+  "retryAfter",
+  "fields",
+  "details",
+]);
+
+/** Every extension value must be JSON-safe; a non-JSON-safe field is `never`. */
+type JsonSafeExtensionShape<TExtensions extends object> = {
+  readonly [K in keyof TExtensions]: Pick<TExtensions, K> extends Required<
+    Pick<TExtensions, K>
+  >
+    ? TExtensions[K] extends JsonSafeValue
+      ? TExtensions[K]
+      : never
+    : Exclude<TExtensions[K], undefined> extends JsonSafeValue
+      ? TExtensions[K]
+      : never;
+};
+
+/** Extensions must be string-keyed (symbol/number keys are rejected). */
+type StringKeyedExtensionShape<TExtensions extends object> =
+  Exclude<keyof TExtensions, string> extends never ? unknown : never;
+
+/**
+ * Per-occurrence members added while mapping one view to a problem. `extensions`
+ * are additional top-level body members; they are compile-time constrained to be
+ * JSON-safe, string-keyed, and free of reserved field names, and re-validated at
+ * runtime (a non-JSON-safe or colliding set drops to `outcome.omitted`).
+ */
+export type ToProblemContext<
+  TExtensions extends object = Record<never, never>,
+> = {
   /** RFC 9457 occurrence URI. */
   readonly instance?: string;
   /** RFC 9457 occurrence-specific explanation (distinct from the per-type title). */
@@ -26,6 +66,22 @@ export type ToProblemContext = {
    * non-integer/negative value is ignored.
    */
   readonly retryAfter?: number;
+  /** Additional JSON-safe top-level body members, keyed by a non-reserved name. */
+  readonly extensions?: TExtensions &
+    JsonSafeExtensionShape<TExtensions> &
+    StringKeyedExtensionShape<TExtensions> & {
+      readonly type?: never;
+      readonly title?: never;
+      readonly status?: never;
+      readonly detail?: never;
+      readonly instance?: never;
+      readonly code?: never;
+      readonly category?: never;
+      readonly retryable?: never;
+      readonly retryAfter?: never;
+      readonly fields?: never;
+      readonly details?: never;
+    };
 };
 
 /**
@@ -39,6 +95,7 @@ export type ToProblemContext = {
 export type ProblemDetails<
   TDetails = unknown,
   TCode extends string = string,
+  TExtensions extends object = Record<never, never>,
 > = {
   readonly type?: string;
   readonly title?: string;
@@ -51,7 +108,7 @@ export type ProblemDetails<
   readonly retryAfter?: number;
   readonly fields?: readonly FieldFault[];
   readonly details?: TDetails;
-};
+} & Readonly<Partial<TExtensions>>;
 
 /** Mapping diagnostics retained outside the serialized body. */
 export type ProblemDetailsOutcome = {
@@ -63,6 +120,7 @@ export type ProblemDetailsOutcome = {
 export type ProblemDetailsResult<
   TDetails = unknown,
   TCode extends string = string,
+  TExtensions extends object = Record<never, never>,
 > = {
   readonly status: number;
   readonly headers: Readonly<{
@@ -70,7 +128,7 @@ export type ProblemDetailsResult<
     "content-language"?: string;
     "retry-after"?: string;
   }>;
-  readonly body: ProblemDetails<TDetails, TCode>;
+  readonly body: ProblemDetails<TDetails, TCode, TExtensions>;
   readonly outcome: ProblemDetailsOutcome;
 };
 
@@ -87,11 +145,15 @@ export type ProblemDetailsResult<
  * non-serializable value drops that member and records it in `outcome.omitted`
  * rather than throwing or leaking a value the next serializer would choke on).
  */
-export function toProblem<TDetails, TCode extends string = string>(
+export function toProblem<
+  TDetails,
+  TCode extends string = string,
+  const TExtensions extends object = Record<never, never>,
+>(
   source: PublicErrorCatalog | Transport,
   view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
-  context?: ToProblemContext,
-): ProblemDetailsResult<TDetails, TCode> {
+  context?: ToProblemContext<TExtensions>,
+): ProblemDetailsResult<TDetails, TCode, TExtensions> {
   if (!isNonEmptyString(view.code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
@@ -122,9 +184,12 @@ export function toProblem<TDetails, TCode extends string = string>(
       ? view.fields
       : undefined;
   const fields = jsonSafeOrOmit(rawFields, "fields", omitted);
+  const extensions = safeExtensions(context?.extensions, omitted);
 
   const body = Object.freeze(
     Object.assign(Object.create(null) as Record<string, unknown>, {
+      // Extensions first: the reserved members below always win a collision.
+      ...extensions,
       ...(transport.type !== undefined && { type: transport.type }),
       ...(title !== undefined && { title }),
       status: transport.status,
@@ -137,7 +202,7 @@ export function toProblem<TDetails, TCode extends string = string>(
       ...(fields !== undefined && { fields }),
       ...(details !== undefined && { details }),
     }),
-  ) as ProblemDetails<TDetails, TCode>;
+  ) as ProblemDetails<TDetails, TCode, TExtensions>;
 
   const headers = Object.freeze({
     "content-type": PROBLEM_DETAILS_JSON,
@@ -162,6 +227,43 @@ function jsonSafeOrOmit(
     return cloneJsonSafe(value);
   } catch {
     omitted.push(member);
+    return undefined;
+  }
+}
+
+/**
+ * Validates and clones the explicit `extensions`: a plain object with string
+ * keys, none reserved, all JSON-safe. The whole set is dropped (recorded in
+ * `outcome.omitted`) if any key collides or any value is not JSON-safe, so a
+ * bad set never partially leaks onto the body.
+ */
+function safeExtensions(
+  raw: unknown,
+  omitted: OmittedMember[],
+): Record<string, JsonSafeValue> | undefined {
+  if (raw === undefined) return undefined;
+  try {
+    if (
+      typeof raw !== "object" ||
+      raw === null ||
+      Array.isArray(raw) ||
+      Reflect.ownKeys(raw).some(
+        (key) => typeof key !== "string" || RESERVED_BODY_FIELDS.has(key),
+      )
+    ) {
+      throw new Error("invalid extensions");
+    }
+    const cloned = cloneJsonSafe(raw) as Record<string, JsonSafeValue>;
+    if (
+      Reflect.ownKeys(cloned).some(
+        (key) => typeof key !== "string" || RESERVED_BODY_FIELDS.has(key),
+      )
+    ) {
+      throw new Error("invalid extensions");
+    }
+    return cloned;
+  } catch {
+    omitted.push("extensions");
     return undefined;
   }
 }

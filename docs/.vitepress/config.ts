@@ -59,12 +59,8 @@ export default defineConfig({
           text: "Boundaries",
           items: [
             {
-              text: "Public error presentation",
-              link: "/guide/presentation",
-            },
-            {
-              text: "RFC 9457 Problem Details",
-              link: "/guide/problem-details",
+              text: "Public error pipeline",
+              link: "/guide/public-error",
             },
             { text: "Observability & logging", link: "/guide/observability" },
           ],

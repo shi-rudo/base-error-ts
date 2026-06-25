@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   LocalizedMessageSet,
   resolveUserMessage,
-} from "../presentation/index.js";
+} from "../public-error/index.js";
 
 const set = (messages: Record<string, string>, baseLocale = "en") =>
   new LocalizedMessageSet({ baseLocale, messages });

@@ -73,7 +73,7 @@ v.publicIssues();
 ```
 
 This whitelist is the safe payload to surface at the boundary. Project it onto a
-public view via the [presentation layer](./presentation), where
+public view via the [public-error pipeline](./public-error), where
 `projectDetails` is the explicit allowlist that lets vetted error data through:
 
 ```ts

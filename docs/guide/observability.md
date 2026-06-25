@@ -3,7 +3,7 @@
 The strictness of the client-facing path exists _because_ there is a separate,
 full-fidelity path for your backend. Logs, Sentry and APM should see everything;
 clients should not. The core carries only this log path; the client path is the
-[presentation layer](./presentation), kept apart so you never have to choose.
+[public-error pipeline](./public-error), kept apart so you never have to choose.
 
 ## `toLogObject()`
 
@@ -58,7 +58,7 @@ try {
 
 The log carries the constraint name and cause chain; the HTTP response carries
 only the public code and a safe localized message produced by the
-[presenter](./presentation). Same error, two audiences, no leak.
+[public-error pipeline](./public-error). Same error, two audiences, no leak.
 
 ## Redacting PII from logs
 
@@ -144,7 +144,7 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 
 ### Notes
 
-- **Log path only**: the client path (the [presenter](./presentation)) emits
+- **Log path only**: the client path (the [public-error pipeline](./public-error)) emits
   only an explicit allowlist, so it is already safe by default.
 - **Defense-in-depth at the source**, not a replacement for logger-level
   redaction (pino `redact`, winston formatters); for blanket app-wide policy,

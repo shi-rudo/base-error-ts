@@ -18,7 +18,7 @@ serializer** on a `BaseError` or `StructuredError`. That is the guarantee:
 - The technical `message`, `details`, `cause` and `stack` live only in
   `toLogObject()` / `toJSON()`, which are **internal** full-fidelity log output.
 - Client-facing output is produced **exclusively** by the
-  [presentation layer](./presentation), through an explicit allowlist: a public
+  [public-error pipeline](./public-error), through an explicit allowlist: a public
   code, a resolved localized message, and any fields you deliberately project.
 
 Because the core exposes nothing client-facing, there is no override flag to
@@ -47,7 +47,7 @@ technical message is never reached on the public path.
 ## Exposing things is always explicit
 
 When you _do_ want to surface information, you say so by name in a
-[`PublicErrorDefinition`](./presentation#publicerrordefinition):
+[`PublicErrorDescriptor`](./public-error):
 
 - `publicCode`: the deliberate, client-safe code (distinct from the technical
   `code`).

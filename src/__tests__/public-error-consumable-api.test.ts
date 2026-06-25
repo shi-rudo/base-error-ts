@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { LocalizedMessageSet } from "../presentation/index.js";
+import { LocalizedMessageSet } from "../public-error/index.js";
 import {
   definePublicErrors,
   localize,

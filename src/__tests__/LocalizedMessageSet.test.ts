@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { LocalizedMessageSet } from "../presentation/index.js";
+import { LocalizedMessageSet } from "../public-error/index.js";
 
 describe("LocalizedMessageSet", () => {
   const make = () =>

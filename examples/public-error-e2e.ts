@@ -14,7 +14,7 @@
  */
 
 import { StructuredError } from "../src/index.js";
-import { LocalizedMessageSet } from "../src/presentation/index.js";
+import { LocalizedMessageSet } from "../src/public-error/index.js";
 import {
   definePublicErrors,
   localize,
