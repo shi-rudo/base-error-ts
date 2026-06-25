@@ -36,7 +36,10 @@ export type ToProblemContext = {
  * deeply frozen, so it is safe to serialize and cannot carry prototype
  * pollution.
  */
-export type ProblemBody<TDetails = unknown, TCode extends string = string> = {
+export type ProblemDetails<
+  TDetails = unknown,
+  TCode extends string = string,
+> = {
   readonly type?: string;
   readonly title?: string;
   readonly status: number;
@@ -51,21 +54,24 @@ export type ProblemBody<TDetails = unknown, TCode extends string = string> = {
 };
 
 /** Mapping diagnostics retained outside the serialized body. */
-export type ProblemOutcome = {
+export type ProblemDetailsOutcome = {
   /** Dynamic members dropped because they were not JSON-safe. */
   readonly omitted: readonly OmittedMember[];
 };
 
 /** Framework-neutral status, headers, body, and diagnostics. */
-export type ProblemResult<TDetails = unknown, TCode extends string = string> = {
+export type ProblemDetailsResult<
+  TDetails = unknown,
+  TCode extends string = string,
+> = {
   readonly status: number;
   readonly headers: Readonly<{
     "content-type": typeof PROBLEM_DETAILS_JSON;
     "content-language"?: string;
     "retry-after"?: string;
   }>;
-  readonly body: ProblemBody<TDetails, TCode>;
-  readonly outcome: ProblemOutcome;
+  readonly body: ProblemDetails<TDetails, TCode>;
+  readonly outcome: ProblemDetailsOutcome;
 };
 
 /**
@@ -85,7 +91,7 @@ export function toProblem<TDetails, TCode extends string = string>(
   source: PublicErrorCatalog | Transport,
   view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
   context?: ToProblemContext,
-): ProblemResult<TDetails, TCode> {
+): ProblemDetailsResult<TDetails, TCode> {
   if (!isNonEmptyString(view.code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
@@ -131,7 +137,7 @@ export function toProblem<TDetails, TCode extends string = string>(
       ...(fields !== undefined && { fields }),
       ...(details !== undefined && { details }),
     }),
-  ) as ProblemBody<TDetails, TCode>;
+  ) as ProblemDetails<TDetails, TCode>;
 
   const headers = Object.freeze({
     "content-type": PROBLEM_DETAILS_JSON,
@@ -139,7 +145,7 @@ export function toProblem<TDetails, TCode extends string = string>(
     ...(retryAfter !== undefined && { "retry-after": String(retryAfter) }),
   });
 
-  const outcome: ProblemOutcome = Object.freeze({
+  const outcome: ProblemDetailsOutcome = Object.freeze({
     omitted: Object.freeze(omitted),
   });
 

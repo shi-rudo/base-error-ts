@@ -24,9 +24,9 @@ export { localize } from "./localize.js";
 export { toProblem, PROBLEM_DETAILS_JSON } from "./toProblem.js";
 export type {
   OmittedMember,
-  ProblemBody,
-  ProblemOutcome,
-  ProblemResult,
+  ProblemDetails,
+  ProblemDetailsOutcome,
+  ProblemDetailsResult,
   ToProblemContext,
 } from "./toProblem.js";
 export type {
