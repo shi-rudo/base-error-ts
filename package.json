@@ -1,6 +1,6 @@
 {
   "name": "@shirudo/base-error",
-  "version": "7.1.1",
+  "version": "7.2.0",
   "description": "A cross-environment base error class for TypeScript applications, designed for seamless use across Node.js, browsers, and edge runtimes.",
   "homepage": "https://github.com/shi-rudo/base-error-ts#readme",
   "repository": {
@@ -69,6 +69,11 @@
       "types": "./dist/problem-details/index.d.ts",
       "import": "./dist/problem-details/index.js",
       "require": "./dist/problem-details/index.cjs"
+    },
+    "./public-error": {
+      "types": "./dist/public-error/index.d.ts",
+      "import": "./dist/public-error/index.js",
+      "require": "./dist/public-error/index.cjs"
     }
   },
   "scripts": {

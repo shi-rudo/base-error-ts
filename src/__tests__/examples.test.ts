@@ -17,6 +17,7 @@ const EXAMPLE_FILES = [
   "automatic-name-example.ts",
   "cause-chain-example.ts",
   "problem-details-example.ts",
+  "public-error-e2e.ts",
 ] as const;
 
 describe("Examples", () => {

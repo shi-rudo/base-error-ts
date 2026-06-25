@@ -1,3 +1,5 @@
+import { resolveByCodeThenPredicate } from "../utils/error-resolution.js";
+import type { PredicateEntry } from "../utils/error-resolution.js";
 import type { PublicErrorDefinition } from "./PublicErrorDefinition.js";
 
 /** A definition with its types erased, as stored and returned by the registry. */
@@ -31,10 +33,7 @@ export type RegistryResolution =
  */
 export class PublicErrorRegistry {
   readonly #byCode = new Map<string, AnyDefinition>();
-  readonly #predicates: Array<{
-    match: (error: unknown) => boolean;
-    definition: AnyDefinition;
-  }> = [];
+  readonly #predicates: Array<PredicateEntry<AnyDefinition>> = [];
 
   /**
    * Registers a definition keyed by an exact internal error `code`. Throws if
@@ -63,7 +62,7 @@ export class PublicErrorRegistry {
   }): this {
     this.#predicates.push({
       match: entry.match as (error: unknown) => boolean,
-      definition: entry.definition as AnyDefinition,
+      value: entry.definition as AnyDefinition,
     });
     return this;
   }
@@ -85,47 +84,18 @@ export class PublicErrorRegistry {
 
   /** Resolves the definition for `error`, or a miss. */
   public resolve(error: unknown): RegistryResolution {
-    const code = readCode(error);
-    if (code !== undefined) {
-      const definition = this.#byCode.get(code);
-      if (definition !== undefined) {
-        return { found: true, via: "code", definition, matcherThrew: false };
-      }
-    }
-
-    let matcherThrew = false;
-    for (const { match, definition } of this.#predicates) {
-      let matched = false;
-      try {
-        matched = match(error);
-      } catch {
-        matcherThrew = true;
-        continue;
-      }
-      if (matched) {
-        return { found: true, via: "predicate", definition, matcherThrew };
-      }
-    }
-
-    return { found: false, matcherThrew };
+    const resolution = resolveByCodeThenPredicate(
+      error,
+      this.#byCode,
+      this.#predicates,
+    );
+    return resolution.found
+      ? {
+          found: true,
+          via: resolution.via,
+          definition: resolution.value,
+          matcherThrew: resolution.matcherThrew,
+        }
+      : { found: false, matcherThrew: resolution.matcherThrew };
   }
-}
-
-/**
- * The string `code` of an error-like object, or `undefined`. Deliberately
- * looser than `isStructuredError` (src/errors/guards.ts): it requires only a
- * string `code`, not `category`/`retryable`, so any error carrying a public
- * code can be routed. The property read is guarded: a throwing `code` getter
- * must not break the presenter's totality, so it is treated as no code.
- */
-function readCode(error: unknown): string | undefined {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    try {
-      const code = (error as { code: unknown }).code;
-      if (typeof code === "string") return code;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
 }

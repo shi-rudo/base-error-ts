@@ -186,13 +186,14 @@ export class BaseError<T extends string> extends Error {
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
 
   /**
-   * Largest nesting depth the redaction walker descends into. Bounded so a
-   * pathologically deep `details` tree degrades to a marker at the deep end
+   * Largest **data** nesting depth the redaction walker descends into. Bounded
+   * so a pathologically deep `details` tree degrades to a marker at the deep end
    * (shallow fields survive) instead of overflowing the stack and tripping the
    * fail-closed path, which would drop the whole log. The cap is host-stack
    * independent, so behavior is identical on small isolate stacks (edge
-   * runtimes). Matches the depth convention used elsewhere ({@link
-   * BaseError.#MAX_CAUSE_DEPTH}).
+   * runtimes). The cause chain is its own separately bounded spine ({@link
+   * BaseError.#MAX_CAUSE_DEPTH}) and is **exempt** from this budget, so a deep
+   * chain cannot marker-truncate a shallow `details` on a deep cause.
    */
   static readonly #MAX_REDACT_DEPTH = 100;
 
@@ -293,15 +294,22 @@ export class BaseError<T extends string> extends Error {
         // top-level `cause: undefined`).
         const decision = decide(key, val, region);
         if (decision === BaseError.#RECURSE) {
-          out[key] =
-            Array.isArray(val) || BaseError.#isWalkable(val)
-              ? BaseError.#redactWalk(
-                  val,
-                  decide,
-                  BaseError.#childRegion(region, key),
-                  depth + 1,
-                )
-              : val;
+          if (Array.isArray(val) || BaseError.#isWalkable(val)) {
+            const childRegion = BaseError.#childRegion(region, key);
+            // The cause chain is its own bounded spine (see #serializeCause), so
+            // descending it must not consume the data-depth budget; otherwise a
+            // deep chain would marker-truncate a shallow `details` on a deep
+            // cause. The cap stays for genuinely deep data trees.
+            const childDepth = childRegion === "cause" ? depth : depth + 1;
+            out[key] = BaseError.#redactWalk(
+              val,
+              decide,
+              childRegion,
+              childDepth,
+            );
+          } else {
+            out[key] = val;
+          }
         } else {
           out[key] = decision;
         }
