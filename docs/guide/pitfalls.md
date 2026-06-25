@@ -22,12 +22,13 @@ Anything that auto-serializes an object reaches `toJSON()`. Never send
 through the [public-error pipeline](./public-error):**
 
 ```ts
-const view = project(catalog, error); // ✓ safe, message-free public view
-res.status(status).json(view);
+const { status, body } = toProblem(catalog, project(catalog, error));
+res.status(status).json(body); // ✓ safe RFC 9457 problem body
 ```
 
 Rule of thumb: `toLogObject()` / `toJSON()` go to your logger; the pipeline's
-`PublicError` goes to the response.
+`PublicError` (or the `ProblemDetails` body from `toProblem`) goes to the
+response.
 
 ## 2. `StructuredError.name` is the `code`, not `"StructuredError"`
 

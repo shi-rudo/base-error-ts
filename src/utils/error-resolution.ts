@@ -1,8 +1,8 @@
 /**
- * Shared error-to-definition resolution: exact `code` match, then predicate
- * matchers in registration order. Reused by the presentation registry and the
- * public-error catalog so the matching semantics (and the throwing-getter and
- * throwing-matcher handling) cannot drift between them.
+ * Shared error-to-descriptor resolution: exact `code` match, then predicate
+ * matchers in registration order. Used by the public-error catalog, keeping the
+ * matching semantics (and the throwing-getter and throwing-matcher handling) in
+ * a single definition.
  */
 
 /** A predicate matcher paired with the value it resolves to. */
