@@ -148,7 +148,15 @@ function safeFields(
       onThrow();
       return undefined;
     }
-    return fields;
+    // Curated copy: exactly { field, code } per fault, frozen. Strips foreign
+    // extras a projector passed through by reference (a fault is a closed
+    // shape, unlike details) and decouples the view from the projector's
+    // objects, so later mutation of internal state cannot reach it.
+    return Object.freeze(
+      fields.map((fault) =>
+        Object.freeze({ field: fault.field, code: fault.code }),
+      ),
+    );
   } catch {
     onThrow();
     return undefined;

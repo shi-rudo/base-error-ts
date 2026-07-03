@@ -57,7 +57,14 @@ export type PublicErrorDescriptor<
   readonly retryable?: boolean;
   /** Optional client-safe localized messages. Omit for client-side i18n. */
   readonly userMessages?: LocalizedMessageSet;
-  /** Explicit projection of a vetted, typed subset onto `details`. Never spreads the error. */
+  /**
+   * Explicit projection of a vetted, typed subset onto `details`. Never
+   * spreads the error. Return **fresh** data (a new object built from vetted
+   * values), not a reference into the error: `details` is deliberately not
+   * cloned at this stage (the in-process view may hold rich values; `toProblem`
+   * is the wire boundary), so a returned internal reference couples the view to
+   * internal error state and later mutation reaches it.
+   */
   readonly projectDetails?: (error: TError) => TDetails;
   /** Optional per-occurrence retryability, falling back to {@link retryable} if it throws. */
   readonly projectRetryable?: (error: TError) => boolean;
@@ -68,7 +75,12 @@ export type PublicErrorDescriptor<
    * or a throw is ignored.
    */
   readonly projectRetryAfter?: (error: TError) => number | undefined;
-  /** Optional projection of vetted field faults. Validation's common path. */
+  /**
+   * Optional projection of vetted field faults. Validation's common path.
+   * The result is normalized into a frozen copy of exactly `{ field, code }`
+   * per fault: foreign extra properties are stripped and the view is decoupled
+   * from the returned objects.
+   */
   readonly projectFields?: (error: TError) => readonly FieldFault[];
 };
 

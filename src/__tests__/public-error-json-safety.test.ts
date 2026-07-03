@@ -111,10 +111,13 @@ describe("toProblem: JSON-safe fields", () => {
   });
 
   it("omits fields when an entry is not JSON-safe", () => {
-    const view = project(catalog(), {
-      code: "ext.detail",
-      fields: [{ field: "email", code: "required", at: new Date() }] as never,
-    });
+    // project() normalizes faults to { field, code }, so a non-JSON-safe entry
+    // can only reach toProblem via a hand-built view; the wire boundary still
+    // has to catch it.
+    const view = {
+      code: "unprocessable",
+      fields: [{ field: "email", code: "required", at: new Date() }],
+    } as unknown as ReturnType<typeof project>;
 
     const result = toProblem(catalog(), view);
     expect("fields" in result.body).toBe(false);

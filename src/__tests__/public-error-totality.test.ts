@@ -151,3 +151,56 @@ describe("definePublicErrors: typed factory builds a working catalog", () => {
     expect(project(catalog, new Error("x")).code).toBe("internal_error");
   });
 });
+
+describe("projected fields are curated copies", () => {
+  const faultsCatalog = (): PublicErrorCatalog =>
+    fallbackOnly().registerByCode("form.invalid", {
+      publicCode: "invalid_input",
+      status: 422,
+      projectFields: (error: unknown): readonly FieldFault[] =>
+        (error as { faults: readonly FieldFault[] }).faults,
+    });
+
+  it("strips foreign extra properties from field faults (whitelist, not passthrough)", () => {
+    const fault = {
+      field: "email",
+      code: "required",
+      internalTrace: "smtp-550 relay denied for a@b.com",
+    } as FieldFault;
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: [fault],
+    });
+
+    expect(view.fields).toEqual([{ field: "email", code: "required" }]);
+    expect(JSON.stringify(view.fields)).not.toContain("internalTrace");
+  });
+
+  it("decouples fields from the projector's returned objects and freezes them", () => {
+    const fault = { field: "email", code: "required" };
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: [fault],
+    });
+
+    fault.code = "mutated-after-projection";
+    expect(view.fields?.[0]?.code).toBe("required");
+    expect(Object.isFrozen(view.fields)).toBe(true);
+    expect(Object.isFrozen(view.fields?.[0])).toBe(true);
+  });
+
+  it("keeps details by reference: the in-process view may hold rich values (documented contract)", () => {
+    // details are deliberately NOT cloned at this stage: the view is an
+    // in-process value and may carry e.g. a Date; toProblem is the wire
+    // boundary. The projector contract is to return fresh, vetted data.
+    const source = { when: new Date(0), orderId: "o-1" };
+    const catalog = fallbackOnly().registerByCode("ext.detail", {
+      publicCode: "unprocessable",
+      status: 422,
+      projectDetails: (): unknown => source,
+    });
+
+    const view = project(catalog, { code: "ext.detail" });
+    expect(view.details).toBe(source);
+  });
+});
