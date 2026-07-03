@@ -95,6 +95,41 @@ describe("ValidationError", () => {
       expect(JSON.stringify(pub)).not.toContain("hunter2");
     });
 
+    it("normalizes object path segments to { key } (segment extras never cross)", () => {
+      const v = new ValidationError("x");
+      // A Standard Schema segment object onto which a validator attached
+      // internals; only `key` may survive the whitelist.
+      v.addIssue({
+        message: "Required",
+        path: [
+          { key: "email", secretInternal: "smtp-550 for a@b.com" } as never,
+          "domain",
+        ],
+      });
+
+      const pub = v.publicIssues();
+      expect(pub[0]?.path?.[0]).toEqual({ key: "email" });
+      expect(pub[0]?.path?.[1]).toBe("domain");
+      expect(pub[0]?.pointer).toBe("email.domain");
+      expect(JSON.stringify(pub)).not.toContain("secretInternal");
+    });
+
+    it("decouples the public path from the stored issue's path array", () => {
+      const segment = { key: "email" };
+      const path = [segment];
+      const v = new ValidationError("x").addIssue({
+        message: "Required",
+        path,
+      });
+
+      const pub = v.publicIssues();
+      path.push({ key: "added-later" });
+      (segment as Record<string, unknown>).leaked = "yes";
+
+      expect(pub[0]?.path).toHaveLength(1);
+      expect(pub[0]?.path?.[0]).toEqual({ key: "email" });
+    });
+
     it("includes a code only when the source issue carries one", () => {
       const v = new ValidationError("x")
         .addIssue({

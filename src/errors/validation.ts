@@ -38,7 +38,13 @@ export type ValidationErrorOptions<
 
 /** Options for {@link ValidationError.publicIssues}. */
 export type PublicIssuesOptions = {
-  /** Fully customize the wire shape (e.g. RFC-7807 `{ name, reason }`). */
+  /**
+   * Fully customize the wire shape (e.g. RFC-7807 `{ name, reason }`).
+   * Replaces the default whitelist entirely: a custom mapper receives the raw
+   * issue (validator extras included) and must apply its own whitelist,
+   * including copying `path` and narrowing object segments to `{ key }` if it
+   * forwards them.
+   */
   mapIssue?: (issue: ValidationIssue) => PublicIssue;
 };
 
@@ -115,7 +121,14 @@ export class ValidationError<
   static #defaultProjection(issue: ValidationIssue): PublicIssue {
     const out: PublicIssue = { message: issue.message };
     if (issue.path !== undefined) {
-      out.path = issue.path;
+      // Fresh copy with object segments narrowed to { key }: a validator may
+      // attach internals to segment objects, and the whitelist must not carry
+      // them (or a shared array reference) to the wire.
+      out.path = issue.path.map((segment) =>
+        typeof segment === "object" && segment !== null
+          ? { key: segment.key }
+          : segment,
+      );
       out.pointer = ValidationError.#toPointer(issue.path);
     }
     const code = (issue as { code?: unknown }).code;

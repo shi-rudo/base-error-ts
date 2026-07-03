@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `ValidationError.publicIssues()` now emits `path` as a fresh copy with object segments narrowed to `{ key }`. Previously the stored path array and its segment objects crossed the whitelist by reference, so extra properties a validator attached to a segment (and later mutations of the stored issue) reached the wire shape. A custom `mapIssue` replaces the whitelist entirely and must narrow forwarded paths itself; its JSDoc now says so.
+
 - `project()` now emits `fields` as a frozen, curated copy of exactly `{ field, code }` per fault. Previously the projector's array and fault objects rode into the view by reference, so foreign extra properties on a fault (validator internals) survived curation and later mutation of internal state reached the view. `details` intentionally stays by reference (the in-process view may hold rich values; `toProblem` remains the wire boundary); the `projectDetails` contract now documents that projectors must return fresh, vetted data.
 
 - `toString()` now honors a deny-listed `"message"`: after `err.redact(["message", ...])`, the one-line render (and each redacted `BaseError` in the printed cause chain) shows the mask instead of the raw technical message, fail-closed if a function mask throws. Documented the remaining scope explicitly on `redact`/`redactAllow`/`redactWith`, in the observability guide, and as a new pitfall: `err.stack` (whose header carries the raw message) and Node's `console.log(err)` inspection stay unredacted, so route errors through a structured serializer that hits `toJSON` when redaction matters.
