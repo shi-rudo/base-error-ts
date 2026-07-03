@@ -871,6 +871,73 @@ describe("BaseError", () => {
       expect(JSON.stringify(json)).not.toContain("leaf");
     });
 
+    describe("plain-object cause payloads (JSON semantics, characterization)", () => {
+      const causeOf = (cause: unknown): unknown =>
+        new AutoNamedError("wrap", cause).toJSON().cause;
+
+      it("deep-clones a plain object, decoupled from the source", () => {
+        const source = { a: 1, nested: { b: "x" } };
+        const cause = causeOf(source) as { nested: { b: string } };
+        expect(cause).toEqual({ a: 1, nested: { b: "x" } });
+        source.nested.b = "mutated";
+        expect(cause.nested.b).toBe("x");
+      });
+
+      it("honors toJSON on the payload (a Date becomes its ISO string)", () => {
+        const cause = causeOf({
+          when: new Date("2020-01-01T00:00:00.000Z"),
+          custom: { toJSON: () => "custom-json" },
+        });
+        expect(cause).toEqual({
+          when: "2020-01-01T00:00:00.000Z",
+          custom: "custom-json",
+        });
+      });
+
+      it("maps non-finite numbers to null and drops undefined/function/symbol values", () => {
+        const cause = causeOf({
+          nan: Number.NaN,
+          inf: Number.POSITIVE_INFINITY,
+          missing: undefined,
+          fn: () => "x",
+          sym: Symbol("s"),
+          kept: 1,
+          arr: [undefined, () => "x", Number.NaN, 2],
+        });
+        expect(cause).toEqual({
+          nan: null,
+          inf: null,
+          kept: 1,
+          arr: [null, null, null, 2],
+        });
+      });
+
+      it("serializes exotic containers to their enumerable shape (Map/Set become {})", () => {
+        const cause = causeOf({
+          map: new Map([["k", "v"]]),
+          set: new Set([1]),
+        });
+        expect(cause).toEqual({ map: {}, set: {} });
+      });
+
+      it("falls back to the circular marker for a payload JSON cannot represent (BigInt)", () => {
+        const cause = causeOf({ big: 10n, id: "x" });
+        expect(typeof cause).toBe("string");
+        expect(cause).toContain("Circular");
+      });
+
+      it("degrades a shared-reference (DAG) payload to the fallback instead of expanding it", () => {
+        // Exponential expansion guard: 2 refs per level x 18 levels ≈ 500k
+        // logical nodes from ~18 allocations. Serialization must cut this off.
+        let node: Record<string, unknown> = { leaf: "x" };
+        for (let i = 0; i < 18; i++) node = { a: node, b: node };
+
+        const cause = causeOf(node);
+        expect(typeof cause).toBe("string");
+        expect(cause).toContain("Circular");
+      });
+    });
+
     it("should serialize StructuredError fields in cause via duck-typing", () => {
       const structuredCause = new StructuredError({
         code: "DB_ERROR",
