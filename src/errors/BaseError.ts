@@ -238,6 +238,15 @@ export class BaseError<T extends string> extends Error {
   static readonly #MAX_REDACT_DEPTH = 100;
 
   /**
+   * Total-node budget for one redaction walk. The depth cap bounds depth, not
+   * width: shared (DAG) references are cloned once per reference, so a small
+   * `details` value can legally expand exponentially. Past the budget any
+   * further container degrades to a marker (like the depth cap), keeping the
+   * logging path fail-safe instead of walking a blowup to completion.
+   */
+  static readonly #MAX_REDACT_NODES = 100_000;
+
+  /**
    * Structural fields of an error envelope that survive an allow-list at the
    * **top level of a cause**. Everything else under a cause (foreign siblings
    * and anything nested beneath them, plus `details`) is treated as data, so a
@@ -322,18 +331,23 @@ export class BaseError<T extends string> extends Error {
     decide: (key: string, value: unknown, region: RedactRegion) => unknown,
     region: RedactRegion,
     depth = 0,
+    state: { nodes: number } = { nodes: 0 },
   ): unknown {
-    // Past the cap, replace any container with a marker rather than recursing.
+    // Past a cap, replace any container with a marker rather than recursing.
     // Leaves are unaffected (they never recurse), so shallow data is intact.
-    if (
-      depth >= BaseError.#MAX_REDACT_DEPTH &&
-      (Array.isArray(value) || BaseError.#isWalkable(value))
-    ) {
-      return "[Max redaction depth exceeded]";
+    // The node budget bounds total work (shared references expand per
+    // reference); the depth cap bounds the stack.
+    if (Array.isArray(value) || BaseError.#isWalkable(value)) {
+      if (depth >= BaseError.#MAX_REDACT_DEPTH) {
+        return "[Max redaction depth exceeded]";
+      }
+      if (++state.nodes > BaseError.#MAX_REDACT_NODES) {
+        return "[Max redaction size exceeded]";
+      }
     }
     if (Array.isArray(value)) {
       return value.map((item) =>
-        BaseError.#redactWalk(item, decide, region, depth + 1),
+        BaseError.#redactWalk(item, decide, region, depth + 1, state),
       );
     }
     if (BaseError.#isWalkable(value)) {
@@ -362,6 +376,7 @@ export class BaseError<T extends string> extends Error {
               decide,
               childRegion,
               childDepth,
+              state,
             );
           } else {
             out[key] = val;

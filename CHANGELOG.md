@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- The three deep-clone walkers now carry a 100,000-node budget as a CPU-exhaustion guard: cycles were already rejected, but shared (DAG) references clone once per reference, so a small hostile value could legally expand exponentially. Past the budget, `cloneJsonSafe` (the `toProblem` wire boundary) fails like any other non-JSON-safe value (the member drops to `outcome.omitted`), `defineErrors` rejects the metadata at definition time, and log redaction degrades the subtree to a `"[Max redaction size exceeded]"` marker instead of walking the blowup to completion.
+
 - `defineErrorClassSet` now rejects empty/whitespace-only keys (matching `defineErrors`) and throws at definition time when a base class is listed before one of its subclasses, where first-match-wins dispatch would silently make the subclass handler unreachable; the error message names both keys and the fix (list subclasses first). Previously-accepted definitions with that ordering bug now fail fast.
 
 - `StructuredError.fromJSON` copies `details` shallowly instead of keeping the payload's object by reference, so mutating the input payload after reconstruction no longer changes the error's details (top level; nested values stay shared, as documented).

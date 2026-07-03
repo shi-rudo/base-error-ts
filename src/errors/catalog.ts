@@ -187,7 +187,22 @@ type RuntimeSpec = {
   readonly redaction?: CatalogRedactionPolicy;
 };
 
-function cloneJsonValue(value: unknown, seen: Set<object>): CatalogJsonValue {
+/**
+ * Total-node budget for one metadata snapshot. Shared (DAG) references are
+ * cloned once per reference, so a small definition could legally expand
+ * exponentially; past the budget it is rejected like any other non-JSON-safe
+ * metadata. Definition-time and developer-facing, so failing fast is correct.
+ */
+const MAX_METADATA_NODES = 100_000;
+
+function cloneJsonValue(
+  value: unknown,
+  seen: Set<object>,
+  state: { nodes: number },
+): CatalogJsonValue {
+  if (++state.nodes > MAX_METADATA_NODES) {
+    throw new Error("defineErrors: metadata must be JSON-safe");
+  }
   if (
     value === null ||
     typeof value === "string" ||
@@ -215,7 +230,7 @@ function cloneJsonValue(value: unknown, seen: Set<object>): CatalogJsonValue {
         }
       }
       return Object.freeze(
-        value.map((item) => cloneJsonValue(item, seen)),
+        value.map((item) => cloneJsonValue(item, seen, state)),
       ) as readonly CatalogJsonValue[];
     }
 
@@ -229,7 +244,7 @@ function cloneJsonValue(value: unknown, seen: Set<object>): CatalogJsonValue {
 
     const clone = Object.create(null) as Record<string, CatalogJsonValue>;
     for (const [key, item] of Object.entries(value)) {
-      clone[key] = cloneJsonValue(item, seen);
+      clone[key] = cloneJsonValue(item, seen, state);
     }
     return Object.freeze(clone);
   } finally {
@@ -374,7 +389,9 @@ export function defineErrors(
     const metadata =
       spec.metadata === undefined
         ? undefined
-        : (cloneJsonValue(spec.metadata, new Set()) as CatalogMetadata);
+        : (cloneJsonValue(spec.metadata, new Set(), {
+            nodes: 0,
+          }) as CatalogMetadata);
     const redaction = snapshotRedaction(spec.redaction);
 
     snapshot[code] = Object.freeze({

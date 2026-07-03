@@ -27,18 +27,35 @@ export function isPlainObject(
 }
 
 /**
+ * Total-node budget for one {@link cloneJsonSafe} call. Cycles are rejected,
+ * but shared (DAG) references are cloned once per reference, so a small input
+ * can legally expand exponentially (`{a, b}` doubling per level). The budget
+ * turns that CPU-exhaustion shape into the ordinary "not JSON-safe" failure
+ * the callers already handle, and sits far above any sane wire payload.
+ */
+const MAX_CLONE_NODES = 100_000;
+
+/**
  * Deep-clones `value` into a frozen, JSON-safe structure, or throws if any part
  * is not JSON-safe: a non-finite number (`NaN`/`Infinity`), a function, a
  * symbol, a `Date`/`Map`/`Set` or other exotic object, a symbol-keyed object, a
- * sparse array, or a circular reference. The returned clone is deeply frozen and
- * decoupled from the source, so it is safe to place on a wire object that may be
- * shared or mutated afterward.
+ * sparse array, a circular reference, or a value expanding past
+ * {@link MAX_CLONE_NODES} total nodes (a shared-reference blowup). The returned
+ * clone is deeply frozen and decoupled from the source, so it is safe to place
+ * on a wire object that may be shared or mutated afterward.
  */
 export function cloneJsonSafe(value: unknown): JsonSafeValue {
-  return cloneInto(value, new Set());
+  return cloneInto(value, new Set(), { nodes: 0 });
 }
 
-function cloneInto(value: unknown, seen: Set<object>): JsonSafeValue {
+function cloneInto(
+  value: unknown,
+  seen: Set<object>,
+  state: { nodes: number },
+): JsonSafeValue {
+  if (++state.nodes > MAX_CLONE_NODES) {
+    throw new Error("value is not JSON-safe");
+  }
   if (
     value === null ||
     typeof value === "string" ||
@@ -63,7 +80,7 @@ function cloneInto(value: unknown, seen: Set<object>): JsonSafeValue {
         }
       }
       return Object.freeze(
-        value.map((item) => cloneInto(item, seen)),
+        value.map((item) => cloneInto(item, seen, state)),
       ) as readonly JsonSafeValue[];
     }
 
@@ -75,7 +92,7 @@ function cloneInto(value: unknown, seen: Set<object>): JsonSafeValue {
     }
     const clone = Object.create(null) as Record<string, JsonSafeValue>;
     for (const [key, item] of Object.entries(value)) {
-      clone[key] = cloneInto(item, seen);
+      clone[key] = cloneInto(item, seen, state);
     }
     return Object.freeze(clone);
   } finally {
