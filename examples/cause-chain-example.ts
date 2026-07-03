@@ -8,10 +8,7 @@ import {
 } from "../src/index.js";
 
 type AppErrorCode =
-  | "VALIDATION_ERROR"
-  | "DATABASE_ERROR"
-  | "NETWORK_ERROR"
-  | "UNKNOWN_ERROR";
+  "VALIDATION_ERROR" | "DATABASE_ERROR" | "NETWORK_ERROR" | "UNKNOWN_ERROR";
 type AppErrorCategory = "CLIENT" | "DATABASE" | "NETWORK" | "INTERNAL";
 
 interface AppErrorDetails {

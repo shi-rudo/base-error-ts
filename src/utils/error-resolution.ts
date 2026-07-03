@@ -58,15 +58,12 @@ export function resolveByCodeThenPredicate<T>(
 
   let matcherThrew = false;
   for (const { match, value } of predicates) {
-    let matched = false;
     try {
-      matched = match(error);
+      if (match(error)) {
+        return { found: true, via: "predicate", value, matcherThrew };
+      }
     } catch {
       matcherThrew = true;
-      continue;
-    }
-    if (matched) {
-      return { found: true, via: "predicate", value, matcherThrew };
     }
   }
 

@@ -56,6 +56,16 @@ export default [
       "@typescript-eslint/explicit-function-return-type": "off",
       "@typescript-eslint/explicit-module-boundary-types": "off",
       "@typescript-eslint/quotes": "off",
+      // Underscore prefix marks deliberately unused values (e.g. the parameter
+      // of a type-guard signature used only in its type predicate).
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+        },
+      ],
     },
   },
   // Upper layer (the public-error pipeline): edge-clean, may import core, may

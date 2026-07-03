@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
+    // tsup's DTS build synthesizes a baseUrl into its merged config, which
+    // TypeScript 6 reports as deprecated (TS5101). Our own config declares no
+    // baseUrl; drop this once tsup stops injecting one.
+    "ignoreDeprecations": "6.0",
     "target": "ES2020",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
@@ -16,12 +20,6 @@
     "outDir": "dist",
     "declaration": true,
     "sourceMap": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": [
-        "src/*"
-      ]
-    },
     "types": [
       "node",
       "vitest/globals"

@@ -83,8 +83,7 @@ describe("StructuredError.fromJSON", () => {
 
       const restored = StructuredError.fromJSON(outer.toJSON());
       const cause = (restored as unknown as { cause: unknown }).cause as
-        | StructuredError<string, string>
-        | undefined;
+        StructuredError<string, string> | undefined;
       expect(cause).toBeInstanceOf(StructuredError);
       expect(cause?.code).toBe("DB_TIMEOUT");
     });
