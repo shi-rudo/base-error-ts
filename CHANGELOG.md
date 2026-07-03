@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `StructuredError.fromJSON` copies `details` shallowly instead of keeping the payload's object by reference, so mutating the input payload after reconstruction no longer changes the error's details (top level; nested values stay shared, as documented).
+
 - `timestampIso` is now derived from `timestamp` instead of a second clock read, so the two fields can no longer disagree when construction straddles a millisecond boundary.
 
 - `ValidationError.publicIssues()` now emits `path` as a fresh copy with object segments narrowed to `{ key }`. Previously the stored path array and its segment objects crossed the whitelist by reference, so extra properties a validator attached to a segment (and later mutations of the stored issue) reached the wire shape. A custom `mapIssue` replaces the whitelist entirely and must narrow forwarded paths itself; its JSDoc now says so.

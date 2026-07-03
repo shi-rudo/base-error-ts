@@ -22,6 +22,22 @@ describe("StructuredError.fromJSON", () => {
       expect(restored.details).toEqual({ userId: "123" });
     });
 
+    it("decouples details from the input payload (top level)", () => {
+      const payload = {
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        details: { userId: "123" },
+      };
+
+      const restored = StructuredError.fromJSON(payload);
+      payload.details.userId = "mutated-after-reconstruction";
+      (payload.details as Record<string, unknown>).added = "later";
+
+      expect(restored.details).toEqual({ userId: "123" });
+    });
+
     it("preserves the original stack and timestamp", () => {
       const original = new StructuredError({
         code: "X",

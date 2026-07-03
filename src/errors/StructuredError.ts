@@ -125,9 +125,11 @@ export class StructuredError<
    * Lenient and safe: missing fields fall back to safe defaults
    * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable); malformed input yields that
    * envelope instead of throwing; only whitelisted fields are read (no
-   * prototype pollution). The original `stack`/`timestamp` and the cause chain
-   * are restored. Reconstructed fields are **not** an authority on trust:
-   * whoever produced the payload can forge them.
+   * prototype pollution). `details` is copied shallowly (the top level is
+   * decoupled from the payload; nested values stay shared). The original
+   * `stack`/`timestamp` and the cause chain are restored. Reconstructed
+   * fields are **not** an authority on trust: whoever produced the payload
+   * can forge them.
    *
    * Always returns a base `StructuredError`: subclass identity and behavior are
    * **not** restored (a `ValidationError` round-trips to a `StructuredError`,
@@ -163,9 +165,13 @@ export class StructuredError<
       typeof obj.message === "string"
         ? obj.message
         : UNKNOWN_ERROR_DEFAULTS.message;
+    // Shallow copy: decouples the error's top-level details from the input
+    // payload, so mutating the payload afterwards cannot change the error.
+    // Values nested deeper stay shared; a freshly JSON.parsed payload is not
+    // normally reused, so that is an accepted depth of guarantee.
     const details =
       typeof obj.details === "object" && obj.details !== null
-        ? (obj.details as Record<string, unknown>)
+        ? { ...(obj.details as Record<string, unknown>) }
         : undefined;
     const cause = StructuredError.#reconstructCause(obj.cause, depth);
 
