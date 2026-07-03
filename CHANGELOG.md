@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- The cause-chain traversal helpers (`getRootCause`, `findInCauseChain`, `filterCauseChain`, `someCauseChain`, `everyCauseChain`, and the retryability helpers built on them) no longer throw `"Circular cause chain detected"`. They run inside catch paths, where a circular chain (a bug in someone's error wiring) must not turn a retry decision into a new crash; `BaseError`'s own serialization already degrades gracefully on cycles. A cycle now simply terminates the traversal once the repeated node is reached: every node is visited exactly once (previously the repeated node was yielded a second time before the throw), `getRootCause` returns the deepest error before the repeat, and the predicate helpers evaluate over each distinct node. Callers that caught the circular-chain error can drop that handling. `maxDepth` is documented as the number of cause hops followed (up to `maxDepth + 1` nodes), matching existing behavior.
+
 - `redactAllow` now treats subclass-added top-level fields as data. Previously, a field a subclass added via `buildLogObject` (the documented extension pattern) inherited the root region's keep-everything, so every leaf beneath it survived the allow-list unmasked. Now only the library's own structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`) is kept at the top level; any other top-level key and its whole subtree get the same leaf-level allow-list protection as `details`, so a newly added field leaks nothing by default. Note that logs may now mask subclass fields that previously passed through: allow-list their leaf keys explicitly to keep them. The deny-list (`redact`) is unaffected.
 
 ### Added

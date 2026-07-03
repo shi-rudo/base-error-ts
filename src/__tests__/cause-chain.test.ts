@@ -46,13 +46,21 @@ describe("getRootCause", () => {
     expect(getRootCause(middleError)).toBe(rootCause);
   });
 
-  it("throws on circular reference", () => {
+  it("terminates on a circular chain and returns the deepest node before the repeat", () => {
     const errorA = new Error("a") as ErrorWithCause;
     const errorB = new Error("b") as ErrorWithCause;
     errorB.cause = errorA;
     errorA.cause = errorB;
 
-    expect(() => getRootCause(errorB)).toThrow("Circular cause chain detected");
+    // b -> a -> (b again): every node visited once, a is the deepest new one.
+    expect(getRootCause(errorB)).toBe(errorA);
+  });
+
+  it("returns the error itself for a self-referential cause", () => {
+    const error = new Error("self") as ErrorWithCause;
+    error.cause = error;
+
+    expect(getRootCause(error)).toBe(error);
   });
 
   it("respects maxDepth", () => {
@@ -216,6 +224,22 @@ describe("filterCauseChain", () => {
     const result = filterCauseChain(errors[0], () => true, 3);
     expect(result).toHaveLength(4);
   });
+
+  it("collects each node of a circular chain exactly once", () => {
+    const errorA = new Error("a") as ErrorWithCause;
+    const errorB = new Error("b") as ErrorWithCause;
+    errorB.cause = errorA;
+    errorA.cause = errorB;
+
+    expect(filterCauseChain(errorB, () => true)).toEqual([errorB, errorA]);
+  });
+
+  it("collects a self-referential error exactly once", () => {
+    const error = new Error("self") as ErrorWithCause;
+    error.cause = error;
+
+    expect(filterCauseChain(error, () => true)).toEqual([error]);
+  });
 });
 
 describe("someCauseChain", () => {
@@ -260,5 +284,15 @@ describe("everyCauseChain", () => {
     error2.cause = error1;
 
     expect(everyCauseChain(error2, (e) => e instanceof String)).toBe(false);
+  });
+
+  it("evaluates a circular chain without throwing", () => {
+    const errorA = new Error("a") as ErrorWithCause;
+    const errorB = new Error("b") as ErrorWithCause;
+    errorB.cause = errorA;
+    errorA.cause = errorB;
+
+    expect(everyCauseChain(errorB, (e) => e instanceof Error)).toBe(true);
+    expect(someCauseChain(errorB, (e) => e instanceof String)).toBe(false);
   });
 });

@@ -118,6 +118,29 @@ describe("isChainRetryable", () => {
 
     expect(isChainRetryable(nativeError)).toBe(true);
   });
+
+  it("finds a retryable StructuredError inside a circular chain without throwing", () => {
+    const retryableStructured = new StructuredError({
+      code: "RETRYABLE",
+      category: "CAT",
+      retryable: true,
+      message: "retryable",
+    }) as ErrorWithCause;
+    const outer = new Error("outer") as ErrorWithCause;
+    outer.cause = retryableStructured;
+    retryableStructured.cause = outer; // cycle back to the top
+
+    expect(isChainRetryable(outer)).toBe(true);
+  });
+
+  it("returns false for a circular chain without a retryable error", () => {
+    const errorA = new Error("a") as ErrorWithCause;
+    const errorB = new Error("b") as ErrorWithCause;
+    errorB.cause = errorA;
+    errorA.cause = errorB;
+
+    expect(isChainRetryable(errorB)).toBe(false);
+  });
 });
 
 describe("someChainRetryable", () => {

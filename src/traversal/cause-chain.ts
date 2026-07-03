@@ -2,13 +2,18 @@ import { isErrorWithCause } from "./guards.js";
 
 /**
  * Internal generator that traverses the cause chain.
- * Handles circular detection and maxDepth limiting.
+ *
+ * Total by design: these helpers run inside catch paths, where a circular
+ * chain (a bug in someone's error wiring) must not turn a retry decision into
+ * a new crash. On a cycle the traversal simply ends once the repeated node is
+ * reached: at that point every node has been yielded exactly once, so nothing
+ * is lost. `maxDepth` is the number of cause **hops** followed, so up to
+ * `maxDepth + 1` nodes are yielded.
  *
  * @param error - The error to start traversing from
- * @param maxDepth - Maximum chain depth to traverse
- * @yields Each error in the cause chain, from outermost to innermost
- *
- * @throws Error - When a circular cause chain is detected
+ * @param maxDepth - Maximum number of cause hops to follow
+ * @yields Each error in the cause chain, from outermost to innermost, each
+ *   node exactly once
  */
 function* traverseCauseChain(
   error: unknown,
@@ -18,13 +23,11 @@ function* traverseCauseChain(
   const seen = new Set<unknown>();
 
   for (let depth = 0; depth <= maxDepth; depth++) {
+    if (seen.has(current)) return;
+    seen.add(current);
     yield current;
 
-    if (!isErrorWithCause(current)) break;
-    if (seen.has(current)) {
-      throw new Error("Circular cause chain detected");
-    }
-    seen.add(current);
+    if (!isErrorWithCause(current)) return;
     current = current.cause;
   }
 }
@@ -33,10 +36,9 @@ function* traverseCauseChain(
  * Traverses the cause chain to find the root cause (the last error in the chain).
  *
  * @param error - The error to traverse
- * @param maxDepth - Maximum chain depth to traverse (default: 100)
- * @returns The root cause, or the last valid error if maxDepth is exceeded
- *
- * @throws Error - When a circular cause chain is detected
+ * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @returns The root cause, or the last valid error if maxDepth is exceeded.
+ *   On a circular chain, the deepest error before the repeat (never throws).
  *
  * @example
  * ```typescript
@@ -59,7 +61,7 @@ export function getRootCause(error: unknown, maxDepth: number = 100): unknown {
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for matching errors
- * @param maxDepth - Maximum chain depth to traverse (default: 100)
+ * @param maxDepth - Maximum number of cause hops to follow (default: 100)
  * @returns The first matching error, or undefined if no match found
  *
  * @example
@@ -96,7 +98,7 @@ export function findInCauseChain(
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for errors to collect
- * @param maxDepth - Maximum chain depth to traverse (default: 100)
+ * @param maxDepth - Maximum number of cause hops to follow (default: 100)
  * @returns Array of matching errors, ordered from outermost to innermost
  *
  * @example
@@ -135,10 +137,9 @@ export function filterCauseChain(
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for matching errors
- * @param maxDepth - Maximum chain depth to traverse (default: 100)
- * @returns True if at least one error matches the predicate
- *
- * @throws Error - When a circular cause chain is detected
+ * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @returns True if at least one error matches the predicate. A circular
+ *   chain is evaluated over each distinct node (never throws).
  *
  * @example
  * ```typescript
@@ -161,10 +162,9 @@ export function someCauseChain(
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for matching errors
- * @param maxDepth - Maximum chain depth to traverse (default: 100)
- * @returns True if all errors match the predicate, or if the chain is empty
- *
- * @throws Error - When a circular cause chain is detected
+ * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @returns True if all errors match the predicate, or if the chain is empty.
+ *   A circular chain is evaluated over each distinct node (never throws).
  *
  * @example
  * ```typescript
