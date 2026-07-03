@@ -74,3 +74,22 @@ class PaymentDeclinedError extends BaseError<"PaymentDeclinedError"> {
   readonly _tag = "PaymentDeclinedError" as const; // stable + strictly typed
 }
 ```
+
+## 5. Redaction covers the log object, not `err.stack` or string interpolation
+
+`redact` / `redactAllow` / `redactWith` rewrite `toLogObject()` / `toJSON()`.
+A deny-listed `"message"` is also masked in `toString()`, but two common sinks
+stay raw:
+
+```ts
+err.redact(["message", "apiKey"]);
+
+JSON.stringify(err); // ✓ redacted
+`${err}`; // ✓ message masked (toString)
+err.stack; // ✗ stack header still carries the raw message
+console.log(err); // ✗ Node inspection prints the stack → raw message
+```
+
+When redaction matters, route errors through a structured serializer that hits
+`toJSON` (`logger.error({ err })`) instead of interpolating them into log
+strings. See [Observability](./observability#redacting-pii-from-logs).

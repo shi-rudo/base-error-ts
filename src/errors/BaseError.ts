@@ -86,6 +86,16 @@ export class BaseError<T extends string> extends Error {
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
 
   /**
+   * Mask for the technical `message` in {@link toString}, set only by a
+   * deny-list {@link redact} whose keys include `"message"`. `toString` (unlike
+   * `toLogObject`) cannot run an arbitrary redactor, but a denied `message` is
+   * an explicit statement that the text is sensitive, so the one string
+   * rendering the library controls honors it. Follows the redactor's
+   * last-wins semantics: `redactAllow`/`redactWith` clear it.
+   */
+  #messageMask?: RedactMask;
+
+  /**
    * Creates a new BaseError instance with automatic name inference.
    *
    * @param message – Human-readable explanation (name will be inferred from constructor)
@@ -126,12 +136,20 @@ export class BaseError<T extends string> extends Error {
    * (`toLogObject`/`toJSON`). Sticky on the instance, so it also applies when a
    * logger auto-serializes the error via `JSON.stringify`.
    *
+   * ⚠️ Scope: redaction rewrites the **log object**, not every string render.
+   * When `keys` includes `"message"`, {@link toString} masks the technical
+   * message too; everything else (`err.stack`, whose header carries the raw
+   * message, and Node's `console.log(err)` inspection, which prints the stack)
+   * stays unredacted. When redaction matters, log errors only through a
+   * structured serializer that hits `toJSON`, never via string interpolation.
+   *
    * @param keys - Property names to mask wherever they appear in the log object.
    * @param options - `mask` defaults to `"[REDACTED]"`.
    */
   public redact(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
     const denied = new Set(keys);
+    this.#messageMask = denied.has("message") ? mask : undefined;
     this.#redactor = (log) =>
       BaseError.#redactWalk(
         log,
@@ -162,12 +180,18 @@ export class BaseError<T extends string> extends Error {
    * envelope-named keys buried in foreign subtrees) through. Sticky; last
    * redactor wins.
    *
+   * ⚠️ Scope: rewrites the **log object** only. The technical `message` is part
+   * of the kept structural envelope, so `toString`, `err.stack`, and Node's
+   * `console.log(err)` inspection carry it unchanged; see {@link redact} for
+   * masking the message itself.
+   *
    * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`.
    */
   public redactAllow(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
+    this.#messageMask = undefined;
     this.#redactor = (log) =>
       BaseError.#redactWalk(
         log,
@@ -368,10 +392,16 @@ export class BaseError<T extends string> extends Error {
   /**
    * Sets a custom redactor applied to the full log object. Use for allow-lists
    * or scrubbing the technical `message`. Sticky; the last redactor wins.
+   *
+   * ⚠️ Scope: applies to the **log object** only. A custom redactor cannot be
+   * mapped onto the one-line {@link toString} render, so `toString`,
+   * `err.stack`, and `console.log(err)` inspection keep the raw technical
+   * message even when the redactor scrubs it from the log.
    */
   public redactWith(
     redactor: (log: Record<string, unknown>) => Record<string, unknown>,
   ): this {
+    this.#messageMask = undefined;
     this.#redactor = redactor;
     return this;
   }
@@ -464,7 +494,11 @@ export class BaseError<T extends string> extends Error {
     return this.toLogObject();
   }
 
-  /** Readable one-liner plus full nested cause chain. */
+  /**
+   * Readable one-liner plus full nested cause chain. Honors a deny-listed
+   * `"message"` (see {@link redact}) per BaseError in the chain; other
+   * redaction shapes rewrite only the log object.
+   */
   public override toString(): string {
     const parts: string[] = [];
     let current: unknown = this as unknown;
@@ -478,7 +512,7 @@ export class BaseError<T extends string> extends Error {
       seen.add(current);
 
       if (current instanceof BaseError) {
-        parts.push(`[${current.name}] ${current.message}`);
+        parts.push(`[${current.name}] ${current.#renderMessage()}`);
       } else if (current instanceof Error) {
         parts.push(`${current.name}: ${current.message}`);
       } else {
@@ -497,6 +531,24 @@ export class BaseError<T extends string> extends Error {
   // ----------------------------------------------------------------
   // Internal helpers
   // ----------------------------------------------------------------
+
+  /**
+   * The message as {@link toString} renders it: masked when a deny-list
+   * covers `"message"`, verbatim otherwise. Fail-closed: a throwing function
+   * mask yields the default marker, never the raw message.
+   */
+  /*#__PURE__*/ #renderMessage(): string {
+    if (this.#messageMask === undefined) {
+      return this.message;
+    }
+    try {
+      return String(
+        BaseError.#applyMask(this.#messageMask, this.message, "message"),
+      );
+    } catch {
+      return "[REDACTED]";
+    }
+  }
 
   /**
    * Sets the cause property as non-enumerable (like native Error.cause).

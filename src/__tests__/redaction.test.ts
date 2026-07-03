@@ -549,6 +549,57 @@ describe("log redaction", () => {
     });
   });
 
+  describe("toString and the redaction scope", () => {
+    it("redact(['message']) masks the technical message in toString()", () => {
+      const err = makeError().redact(["message", "ssn"]);
+      const text = String(err);
+      expect(text).not.toContain("update failed");
+      expect(text).toContain("[REDACTED]");
+    });
+
+    it("redact(['message']) masks a redacted BaseError cause's message in the chain output", () => {
+      const inner = new StructuredError({
+        code: "DB",
+        category: "I",
+        retryable: true,
+        message: "password=hunter2 rejected",
+      }).redact(["message"]);
+      const outer = new StructuredError({
+        code: "OUTER",
+        category: "X",
+        retryable: false,
+        message: "wrap",
+        cause: inner,
+      });
+
+      const text = String(outer);
+      expect(text).toContain("wrap"); // outer not redacted
+      expect(text).not.toContain("password=hunter2");
+      expect(text).toContain("[REDACTED]");
+    });
+
+    it("applies a function mask to the message in toString()", () => {
+      const err = makeError().redact(["message"], { mask: () => "scrubbed" });
+      expect(String(err)).toContain("scrubbed");
+      expect(String(err)).not.toContain("update failed");
+    });
+
+    it("redact() without 'message' leaves toString() unchanged", () => {
+      const err = makeError().redact(["ssn"]);
+      expect(String(err)).toContain("update failed");
+    });
+
+    it("a later redactor without 'message' replaces an earlier message mask (last wins)", () => {
+      const err = makeError().redact(["message"]).redact(["ssn"]);
+      expect(String(err)).toContain("update failed");
+    });
+
+    it("redactAllow keeps the message in toString() (message is envelope)", () => {
+      const err = makeError().redactAllow(["userId"]);
+      expect(String(err)).toContain("update failed");
+    });
+  });
+
   describe("fail-closed on a throwing redactor", () => {
     it("does not crash the log path and does not leak the payload", () => {
       const err = makeError().redactWith(() => {
