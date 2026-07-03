@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `defineErrorClassSet` now rejects empty/whitespace-only keys (matching `defineErrors`) and throws at definition time when a base class is listed before one of its subclasses, where first-match-wins dispatch would silently make the subclass handler unreachable; the error message names both keys and the fix (list subclasses first). Previously-accepted definitions with that ordering bug now fail fast.
+
 - `StructuredError.fromJSON` copies `details` shallowly instead of keeping the payload's object by reference, so mutating the input payload after reconstruction no longer changes the error's details (top level; nested values stay shared, as documented).
 
 - `timestampIso` is now derived from `timestamp` instead of a second clock read, so the two fields can no longer disagree when construction straddles a millisecond boundary.

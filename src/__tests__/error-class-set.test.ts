@@ -64,6 +64,45 @@ describe("defineErrorClassSet", () => {
     }).toThrow(/keys must not be numeric/);
   });
 
+  it("rejects empty and whitespace-only keys", () => {
+    expect(() =>
+      defineErrorClassSet({ "": FileError, database: DatabaseError }),
+    ).toThrow(/keys must not be empty/);
+    expect(() =>
+      // @ts-expect-error runtime defense for JavaScript and unsafe casts
+      defineErrorClassSet({ "  ": FileError, database: DatabaseError }),
+    ).toThrow(/keys must not be empty/);
+  });
+
+  it("rejects a base class listed before its subclass (unreachable handler)", () => {
+    expect(() =>
+      defineErrorClassSet({
+        network: NetworkError,
+        timeout: TimeoutError, // instanceof NetworkError → never reached
+      }),
+    ).toThrow(/"timeout" extends "network"/);
+  });
+
+  it("accepts a subclass listed before its base class and dispatches precisely", () => {
+    const errors = defineErrorClassSet({
+      timeout: TimeoutError,
+      network: NetworkError,
+    });
+
+    expect(
+      errors.match(new TimeoutError(), {
+        timeout: () => "timeout",
+        network: () => "network",
+      }),
+    ).toBe("timeout");
+    expect(
+      errors.match(new NetworkError(), {
+        timeout: () => "timeout",
+        network: () => "network",
+      }),
+    ).toBe("network");
+  });
+
   it("rejects duplicate constructor identities", () => {
     expect(() =>
       defineErrorClassSet({

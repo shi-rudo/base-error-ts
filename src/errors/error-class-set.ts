@@ -48,7 +48,12 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
   if (keys.length === 0) {
     throw new Error("defineErrorClassSet: class definition must not be empty");
   }
-  if (keys.some((key) => key.trim() !== "" && Number.isFinite(Number(key)))) {
+  if (keys.some((key) => key.trim() === "")) {
+    throw new Error(
+      "defineErrorClassSet: keys must not be empty or whitespace-only",
+    );
+  }
+  if (keys.some((key) => Number.isFinite(Number(key)))) {
     throw new Error("defineErrorClassSet: keys must not be numeric");
   }
 
@@ -56,6 +61,23 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
   const constructors = keys.map((key) => snapshot[key]);
   if (new Set(constructors).size !== constructors.length) {
     throw new Error("defineErrorClassSet: constructors must be unique");
+  }
+
+  // match() is first-match-wins in key order, so a base class listed before
+  // one of its subclasses would silently make the subclass handler
+  // unreachable; surface that as a definition error with the fix in the text.
+  for (let earlier = 0; earlier < constructors.length; earlier++) {
+    for (let later = earlier + 1; later < constructors.length; later++) {
+      const earlierClass = constructors[earlier] as ErrorClass;
+      const laterClass = constructors[later] as ErrorClass;
+      if (laterClass.prototype instanceof earlierClass) {
+        throw new Error(
+          `defineErrorClassSet: "${keys[later] as string}" extends "${keys[earlier] as string}" ` +
+            "and is listed after it; list subclasses before their base class, " +
+            "or the subclass handler is unreachable",
+        );
+      }
+    }
   }
 
   return Object.freeze({
