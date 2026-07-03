@@ -1,6 +1,10 @@
 # Changelog
 
-## 8.0.0 - 2026-06-25
+## Unreleased
+
+### Fixed
+
+- `redactAllow` now treats subclass-added top-level fields as data. Previously, a field a subclass added via `buildLogObject` (the documented extension pattern) inherited the root region's keep-everything, so every leaf beneath it survived the allow-list unmasked. Now only the library's own structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`) is kept at the top level; any other top-level key and its whole subtree get the same leaf-level allow-list protection as `details`, so a newly added field leaks nothing by default. Note that logs may now mask subclass fields that previously passed through: allow-list their leaf keys explicitly to keep them. The deny-list (`redact`) is unaffected.
 
 ### Added
 

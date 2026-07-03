@@ -20,10 +20,11 @@ export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
 /**
  * Where a node sits in the log tree, for `redactAllow`'s structure-vs-data
- * decision: `"root"` (top-level envelope, kept), `"cause"` (a cause's top level,
- * structural envelope keys kept, the rest data), `"data"` (a `details`
- * subtree or a cause's foreign subtree, where every leaf is data). The deny-list
- * (`redact`) ignores it.
+ * decision: `"root"` (the top level, where only the library's own envelope
+ * keys are kept), `"cause"` (a cause's top level, structural envelope keys
+ * kept, the rest data), `"data"` (a `details` subtree, a cause's foreign
+ * subtree, or a subclass-added top-level subtree, where every leaf is data).
+ * The deny-list (`redact`) ignores it.
  */
 type RedactRegion = "root" | "cause" | "data";
 
@@ -145,16 +146,21 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Allow-list redaction (higher assurance than {@link redact}): within any
-   * **data** region (a `details` subtree at any depth and the data-bearing
-   * fields of a `cause`): masks every leaf whose key is **not** listed, so a
-   * newly-added field leaks nothing by default. Container objects are recursed
-   * so nested allowed leaves survive. The structural envelope (`message`/`code`/
-   * …) at the top level, and a cause's top-level structural envelope keys
-   * (`name`/`message`/`stack`/`code`/`category`/`retryable`), are kept. A
-   * cause's foreign fields (anything outside that fixed set, and everything
-   * nested beneath them) are treated as data, so a plain object that merely
-   * *looks* like a structured error cannot smuggle siblings (or envelope-named
-   * keys buried in foreign subtrees) through. Sticky; last redactor wins.
+   * **data** region (a `details` subtree at any depth, the data-bearing
+   * fields of a `cause`, and any subclass-added top-level field): masks every
+   * leaf whose key is **not** listed, so a newly-added field leaks nothing by
+   * default. Container objects are recursed so nested allowed leaves survive.
+   * Only the library's own structural envelope is kept: the fixed top-level
+   * fields ({@link BaseError.#ROOT_ENVELOPE_KEYS}: `name`/`message`/`stack`/
+   * `code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`)
+   * and a cause's top-level structural envelope keys (`name`/`message`/`stack`/
+   * `code`/`category`/`retryable`). Any other top-level field (e.g. one a
+   * subclass adds via `buildLogObject`) is data: its leaves are masked unless
+   * allow-listed. A cause's foreign fields (anything outside that fixed set,
+   * and everything nested beneath them) are treated as data, so a plain object
+   * that merely *looks* like a structured error cannot smuggle siblings (or
+   * envelope-named keys buried in foreign subtrees) through. Sticky; last
+   * redactor wins.
    *
    * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`.
@@ -172,7 +178,7 @@ export class BaseError<T extends string> extends Error {
           }
           // Leaf. Keep iff the region permits this key.
           const kept =
-            region === "root" ||
+            (region === "root" && BaseError.#ROOT_ENVELOPE_KEYS.has(key)) ||
             allow.has(key) ||
             (region === "cause" && BaseError.#ENVELOPE_KEYS.has(key));
           return kept ? value : BaseError.#applyMask(mask, value, key);
@@ -212,6 +218,22 @@ export class BaseError<T extends string> extends Error {
     "code",
     "category",
     "retryable",
+  ]);
+
+  /**
+   * The library's own **top-level** structural fields, the only root keys an
+   * allow-list keeps (and, for containers, the only root keys that stay in the
+   * root/cause regions). Everything else at the top level (a field a subclass
+   * adds via `buildLogObject`) is data, so a subclass-added field leaks nothing
+   * through `redactAllow` by default. Private for the same reason as
+   * {@link BaseError.#ENVELOPE_KEYS}.
+   */
+  static readonly #ROOT_ENVELOPE_KEYS: ReadonlySet<string> = new Set([
+    ...BaseError.#ENVELOPE_KEYS,
+    "timestamp",
+    "timestampIso",
+    "cause",
+    "details",
   ]);
 
   /*#__PURE__*/ static #applyMask(
@@ -325,6 +347,10 @@ export class BaseError<T extends string> extends Error {
    * keys stay `cause`; every other (foreign) child, and therefore everything
    * nested beneath it, drops to data, so envelope-named keys buried in a
    * cause's foreign subtrees cannot be mistaken for the cause's own envelope.
+   * At the root, the same rule applies against {@link
+   * BaseError.#ROOT_ENVELOPE_KEYS}: a foreign top-level key (one a subclass
+   * added via `buildLogObject`) drops to data, so its whole subtree gets
+   * allow-list protection instead of the root region's keep-everything.
    */
   /*#__PURE__*/ static #childRegion(
     region: RedactRegion,
@@ -336,7 +362,7 @@ export class BaseError<T extends string> extends Error {
     if (region === "cause") {
       return BaseError.#ENVELOPE_KEYS.has(key) ? "cause" : "data";
     }
-    return region;
+    return BaseError.#ROOT_ENVELOPE_KEYS.has(key) ? "root" : "data";
   }
 
   /**

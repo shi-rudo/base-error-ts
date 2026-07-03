@@ -461,6 +461,94 @@ describe("log redaction", () => {
     });
   });
 
+  describe("redactAllow with subclass-added top-level fields (root-region hardening)", () => {
+    class ContextError extends BaseError<"ContextError"> {
+      constructor(
+        message: string,
+        private readonly context: Record<string, unknown>,
+      ) {
+        super(message);
+      }
+
+      protected override buildLogObject(): Record<string, unknown> {
+        return { ...super.buildLogObject(), context: this.context };
+      }
+    }
+
+    it("masks unlisted leaves inside a subclass-added top-level container (deep)", () => {
+      const err = new ContextError("failed", {
+        user: "alice",
+        password: "hunter2",
+        nested: { ssn: "123-45-6789" },
+      }).redactAllow(["user"]);
+
+      const context = err.toLogObject().context as Record<string, unknown>;
+      expect(context.user).toBe("alice"); // allowed leaf kept
+      expect(context.password).toBe("[REDACTED]"); // not allowed → masked
+      expect((context.nested as Record<string, unknown>).ssn).toBe(
+        "[REDACTED]",
+      ); // nested leaf masked too
+    });
+
+    it("masks a subclass-added top-level scalar that is not allow-listed", () => {
+      class ScalarError extends BaseError<"ScalarError"> {
+        protected override buildLogObject(): Record<string, unknown> {
+          return { ...super.buildLogObject(), apiKey: "sk_live_123" };
+        }
+      }
+      const log = new ScalarError("m").redactAllow([]).toLogObject();
+      expect(log.apiKey).toBe("[REDACTED]");
+    });
+
+    it("keeps a subclass-added top-level scalar when allow-listed", () => {
+      class ScalarError extends BaseError<"ScalarError"> {
+        protected override buildLogObject(): Record<string, unknown> {
+          return { ...super.buildLogObject(), tenant: "acme" };
+        }
+      }
+      const log = new ScalarError("m").redactAllow(["tenant"]).toLogObject();
+      expect(log.tenant).toBe("acme");
+    });
+
+    it("masks leaves inside a subclass-added top-level array", () => {
+      class ListError extends BaseError<"ListError"> {
+        protected override buildLogObject(): Record<string, unknown> {
+          return {
+            ...super.buildLogObject(),
+            attempts: [{ token: "SECRET", id: "a1" }],
+          };
+        }
+      }
+      const log = new ListError("m").redactAllow(["id"]).toLogObject();
+      const attempts = log.attempts as Array<Record<string, unknown>>;
+      expect(attempts[0]?.token).toBe("[REDACTED]");
+      expect(attempts[0]?.id).toBe("a1");
+    });
+
+    it("still keeps the library's own top-level envelope untouched", () => {
+      const err = new ContextError("failed", { password: "x" });
+      err.redactAllow([]);
+      const log = err.toLogObject();
+      expect(log.name).toBe("ContextError");
+      expect(log.message).toBe("failed");
+      expect(log.timestamp).toBeTypeOf("number");
+      expect(log.timestampIso).toBeTypeOf("string");
+      expect(log.stack).toBeTypeOf("string");
+      expect(log.cause).toBeUndefined();
+    });
+
+    it("deny-list redact() reaches subclass-added top-level fields (regression)", () => {
+      const err = new ContextError("failed", {
+        user: "alice",
+        password: "hunter2",
+      }).redact(["password"]);
+
+      const context = err.toLogObject().context as Record<string, unknown>;
+      expect(context.password).toBe("[REDACTED]");
+      expect(context.user).toBe("alice");
+    });
+  });
+
   describe("fail-closed on a throwing redactor", () => {
     it("does not crash the log path and does not leak the payload", () => {
       const err = makeError().redactWith(() => {
