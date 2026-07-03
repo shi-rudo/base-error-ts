@@ -99,6 +99,18 @@ describe("BaseError", () => {
     expect(error.timestampIso).toBe(mockDate.toISOString());
   });
 
+  it("derives timestampIso from timestamp (one clock read, never divergent)", () => {
+    // Mock ONLY Date.now (not the Date constructor): if timestampIso came
+    // from a second clock read, it would show the real time and disagree.
+    vi.useRealTimers();
+    vi.spyOn(Date, "now").mockReturnValue(1_000);
+
+    const error = new TestError("Test");
+
+    expect(error.timestamp).toBe(1_000);
+    expect(error.timestampIso).toBe("1970-01-01T00:00:01.000Z");
+  });
+
   it("should include a stack trace", () => {
     const error = new TestError("Test");
 

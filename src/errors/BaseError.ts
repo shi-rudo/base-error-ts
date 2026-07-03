@@ -77,8 +77,12 @@ export class BaseError<T extends string> extends Error {
   /** Epoch-ms timestamp (numeric) */
   public readonly timestamp: number = Date.now();
 
-  /** ISO-8601 timestamp (string) for log aggregators that prefer text */
-  public readonly timestampIso: string = new Date().toISOString();
+  /**
+   * ISO-8601 timestamp (string) for log aggregators that prefer text. Derived
+   * from {@link timestamp} (one clock read), so the two can never disagree
+   * across a millisecond boundary.
+   */
+  public readonly timestampIso: string = new Date(this.timestamp).toISOString();
 
   /** Rich, filtered stack where the host supports it. */
   public override readonly stack?: string;
