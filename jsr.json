@@ -7,6 +7,17 @@
     ".": "./src/index.ts",
     "./public-error": "./src/public-error/index.ts"
   },
+  "publish": {
+    "include": [
+      "src/**/*.ts",
+      "README.md",
+      "LICENSE",
+      "CHANGELOG.md"
+    ],
+    "exclude": [
+      "src/__tests__/**"
+    ]
+  },
   "keywords": [
     "typescript",
     "error",

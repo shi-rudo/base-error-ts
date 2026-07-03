@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- The JSR manifest now declares a publish filter (`src` without tests, plus README/LICENSE/CHANGELOG), so a `jsr publish` no longer ships `proposals/`, `docs/`, `coverage/`, `examples/`, or `dist/` to the registry.
+
 - The deep-clone paths now carry a 100,000-node budget as a CPU-exhaustion guard: cycles were already rejected, but shared (DAG) references clone once per reference, so a small hostile value could legally expand exponentially. Past the budget, `cloneJsonSafe` (the `toProblem` wire boundary) fails like any other non-JSON-safe value (the member drops to `outcome.omitted`), `defineErrors` rejects the metadata at definition time, log redaction degrades the subtree to a `"[Max redaction size exceeded]"` marker, and a plain-object `cause` degrades to the descriptive fallback marker during log serialization (enforced by a counting replacer on the native `JSON.stringify` round-trip, which measures faster than any JS-walker replacement).
 
 - `defineErrorClassSet` now rejects empty/whitespace-only keys (matching `defineErrors`) and throws at definition time when a base class is listed before one of its subclasses, where first-match-wins dispatch would silently make the subclass handler unreachable; the error message names both keys and the fix (list subclasses first). Previously-accepted definitions with that ordering bug now fail fast.
