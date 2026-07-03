@@ -125,10 +125,16 @@ export class BaseError<T extends string> extends Error {
     }
 
     // Preserve prototype chain for `instanceof` checks after transpilation.
-    Object.setPrototypeOf(this, new.target.prototype);
+    // Guarded: under native class semantics the prototype is already correct,
+    // and an unconditional setPrototypeOf would deopt every construction (V8
+    // hidden-class transition) for nothing.
+    if (Object.getPrototypeOf(this) !== new.target.prototype) {
+      Object.setPrototypeOf(this, new.target.prototype);
+    }
 
-    // Cross-runtime best-effort stack collection
-    this.stack = this.#captureStack();
+    // Cross-runtime best-effort stack collection, deferred: capturing is
+    // cheap, symbolizing/filtering is not, so both happen on first read.
+    this.#installLazyStack();
   }
 
   /**
@@ -659,37 +665,60 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Captures and filters the stack trace without affecting global state.
-   * Filters out internal BaseError frames for cleaner stack traces.
+   * Captures the stack now but defers symbolization and filtering to the
+   * first read. V8 formats stacks lazily (via `Error.prepareStackTrace`) only
+   * when `stack` is accessed; reading it in the constructor would force that
+   * work for every error, including ones that are caught and never logged. So
+   * the raw capture lands on a side holder, and `this.stack` becomes a
+   * memoizing accessor: the first get symbolizes, filters, and replaces
+   * itself with a plain writable data property; a set before the first get
+   * (a rehydrated or user-assigned stack) wins unfiltered.
    */
-  /*#__PURE__*/ #captureStack(): string | undefined {
+  /*#__PURE__*/ #installLazyStack(): void {
     // Cast Error to our local interface for type-safe access.
     const V8Error = Error as V8ErrorConstructor;
 
-    // First, try to capture stack directly on this instance when possible
+    let readRawStack: () => string | undefined;
     if (typeof V8Error.captureStackTrace === "function") {
-      // V8/Node.js: Capture stack directly on this instance, excluding constructor
+      // V8: capture onto a plain holder, not `this`, so the engine-lazy stack
+      // stays unformatted until our getter reads it. The holder's own header
+      // is discarded by #filterInternalFrames, which writes `name: message`.
+      const holder: { stack?: string } = {};
       V8Error.captureStackTrace(
-        this,
+        holder,
         this.constructor as (...args: unknown[]) => unknown,
       );
-      return this.#filterInternalFrames(this.stack);
+      readRawStack = () => holder.stack;
+    } else {
+      // Non-V8 engines build the stack string eagerly at throw; only the
+      // filtering is deferrable here.
+      let tempStack: string | undefined;
+      try {
+        throw new Error();
+      } catch (e) {
+        tempStack = (e as Error).stack;
+      }
+      readRawStack = () => tempStack;
     }
 
-    // For non-V8 engines, create a temporary error to get the stack
-    let tempStack: string | undefined;
-    try {
-      throw new Error();
-    } catch (e) {
-      tempStack = (e as Error).stack;
-    }
-
-    if (!tempStack) {
-      return undefined;
-    }
-
-    // Filter out internal frames and update the header
-    return this.#filterInternalFrames(tempStack);
+    const install = (value: string | undefined): void => {
+      Object.defineProperty(this, "stack", {
+        value,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+    };
+    Object.defineProperty(this, "stack", {
+      configurable: true,
+      enumerable: false,
+      get: (): string | undefined => {
+        const filtered = this.#filterInternalFrames(readRawStack());
+        install(filtered);
+        return filtered;
+      },
+      set: install,
+    });
   }
 
   /**
@@ -720,14 +749,15 @@ export class BaseError<T extends string> extends Error {
 
       // Skip internal BaseError frames
       if (
-        line.includes("#captureStack") ||
+        line.includes("#installLazyStack") ||
         line.includes("#filterInternalFrames") ||
         line.includes("BaseError.constructor") ||
         line.includes("new BaseError") ||
-        line.includes("captureStack_fn") || // Compiled private method name
+        line.includes("installLazyStack_fn") || // Compiled private method name
         line.includes("filterInternalFrames_fn") || // Compiled private method name
         // Skip the temporary error creation frame
-        (line.includes("Object.<anonymous>") && line.includes("captureStack"))
+        (line.includes("Object.<anonymous>") &&
+          line.includes("installLazyStack"))
       ) {
         continue;
       }

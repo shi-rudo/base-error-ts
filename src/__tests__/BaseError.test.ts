@@ -321,6 +321,79 @@ describe("BaseError", () => {
         expect(error.stack).not.toContain("#filterInternalFrames");
       }
     });
+
+    describe("lazy materialization", () => {
+      it("does not symbolize the stack during construction (V8 formats on first read)", () => {
+        // V8 formats stacks lazily via Error.prepareStackTrace. Counting its
+        // invocations proves construction does not pay for symbolization.
+        const original = Error.prepareStackTrace;
+        let calls = 0;
+        Error.prepareStackTrace = (err, frames) => {
+          calls++;
+          return original
+            ? original(err, frames)
+            : `${String(err)}\n    at <formatted>`;
+        };
+        try {
+          const before = calls;
+          const error = new TestError("lazy-construct");
+          const afterConstruct = calls;
+          void error.stack;
+          const afterRead = calls;
+
+          expect(afterConstruct - before).toBe(0);
+          expect(afterRead - afterConstruct).toBeGreaterThan(0);
+        } finally {
+          Error.prepareStackTrace = original;
+        }
+      });
+
+      it("defers stack formatting to the first read (accessor before, memoized data after)", () => {
+        const error = new TestError("lazy");
+
+        // Construction must not force stack symbolization: until the first
+        // read, `stack` is a lazy own accessor.
+        const before = Object.getOwnPropertyDescriptor(error, "stack");
+        expect(before?.get).toBeTypeOf("function");
+
+        void error.stack; // first read materializes and memoizes
+
+        const after = Object.getOwnPropertyDescriptor(error, "stack");
+        expect(after?.get).toBeUndefined();
+        expect(after?.value).toBeTypeOf("string");
+      });
+
+      it("returns a stable, filtered stack across repeated reads", () => {
+        const error = new TestError("stable");
+        const first = error.stack;
+        expect(first).toContain("TestError: stable");
+        expect(error.stack).toBe(first);
+      });
+
+      it("stays non-enumerable before and after materialization", () => {
+        const error = new TestError("enum");
+        expect(
+          Object.getOwnPropertyDescriptor(error, "stack")?.enumerable,
+        ).toBe(false);
+        void error.stack;
+        expect(
+          Object.getOwnPropertyDescriptor(error, "stack")?.enumerable,
+        ).toBe(false);
+      });
+
+      it("supports assigning a custom stack before the first read", () => {
+        const error = new TestError("assign");
+        (error as { stack?: string }).stack = "CUSTOM";
+        expect(error.stack).toBe("CUSTOM");
+      });
+
+      it("supports assigning a custom stack after materialization", () => {
+        const error = new TestError("assign-late");
+        void error.stack;
+        (error as { stack?: string }).stack = "CUSTOM-LATE";
+        expect(error.stack).toBe("CUSTOM-LATE");
+      });
+    });
   });
 
   describe("Enhanced Cause Handling", () => {
