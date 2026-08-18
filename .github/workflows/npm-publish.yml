@@ -1,0 +1,67 @@
+name: Publish
+
+# Publishes to npm with Trusted Publishing (OIDC): npm trusts this workflow in
+# this repository, so there is no token to store, rotate, or let expire. The
+# trust is configured once on npmjs.com under the package's Trusted Publisher
+# settings and must name this file (npm-publish.yml).
+#
+# Release flow:
+#   1. commit the version bump (package.json, jsr.json, CHANGELOG.md) to main
+#   2. git tag v8.2.0 && git push --tags
+#
+# Tags only, never a branch push: otherwise every documentation commit on main
+# would attempt a publish of a version that is already on the registry.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  # Required for OIDC. Without it npm cannot verify the workflow's identity.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+          registry-url: https://registry.npmjs.org
+
+      # Trusted Publishing needs npm 11.5.1 or later, which is newer than the
+      # npm bundled with Node 22.
+      - name: Use a publish-capable npm
+        run: npm install -g npm@latest
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      # A tag that disagrees with the manifest publishes a version nobody
+      # tagged. Fail here rather than on the registry.
+      - name: Check the tag against the manifests
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          JSR="$(node -p "require('./jsr.json').version")"
+          echo "tag=$TAG package.json=$PKG jsr.json=$JSR"
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$JSR" ]; then
+            echo "::error::tag $TAG does not match package.json ($PKG) / jsr.json ($JSR)"
+            exit 1
+          fi
+
+      # `prepublishOnly` runs `pnpm build`, which is typecheck + tests + lint +
+      # tsup. A tag push does not trigger the Tests workflow, so this is the
+      # gate that stands between a bad commit and the registry.
+      - name: Publish
+        run: npm publish
