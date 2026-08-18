@@ -206,6 +206,69 @@ describe("log redaction", () => {
       expect(causeDetails.keep).toBe("ok");
       expect(causeDetails.ssn).toBe("•");
     });
+
+    describe("scalars inside an array", () => {
+      const withList = () =>
+        new StructuredError({
+          code: "X",
+          category: "Y",
+          retryable: false,
+          message: "m",
+          details: {
+            tokens: ["s3cret", "other"],
+            ids: ["u-1"],
+            nested: { deep: ["s3cret"] },
+          },
+        });
+
+      it("masks array elements, which carry no key of their own", () => {
+        const details = withList().redactAllow([]).toLogObject()
+          .details as Record<string, unknown>;
+
+        expect(details.tokens).toEqual(["[REDACTED]", "[REDACTED]"]);
+      });
+
+      it("keeps them when the key of the array is allowed", () => {
+        const details = withList().redactAllow(["ids"]).toLogObject()
+          .details as Record<string, unknown>;
+
+        expect(details.ids).toEqual(["u-1"]);
+        expect(details.tokens).toEqual(["[REDACTED]", "[REDACTED]"]);
+      });
+
+      it("reaches an array nested below another key", () => {
+        const details = withList().redactAllow([]).toLogObject()
+          .details as Record<string, unknown>;
+
+        expect((details.nested as Record<string, unknown>).deep).toEqual([
+          "[REDACTED]",
+        ]);
+      });
+
+      it("applies the custom mask", () => {
+        const details = withList().redactAllow([], { mask: "•" }).toLogObject()
+          .details as Record<string, unknown>;
+
+        expect(details.tokens).toEqual(["•", "•"]);
+      });
+
+      it("still masks the keys of objects inside an array", () => {
+        const error = new StructuredError({
+          code: "X",
+          category: "Y",
+          retryable: false,
+          message: "m",
+          details: { items: [{ id: "1", token: "s3cret" }] },
+        }).redactAllow(["id"]);
+
+        const details = error.toLogObject().details as Record<string, unknown>;
+
+        expect((details.items as Record<string, unknown>[])[0]).toEqual({
+          id: "1",
+          token: "[REDACTED]",
+        });
+      });
+    });
   });
 
   describe("function mask", () => {

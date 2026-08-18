@@ -46,9 +46,9 @@ throw new UserNotFoundError("123");
 There are **two output paths**, and they live in two places. Keeping them
 straight is the whole point of the design.
 
-| Path                                  | Where                                | What it contains                                                 |
-| ------------------------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| **Observability** (logs, Sentry, APM) | core `toLogObject()` / `toJSON()`    | Everything: technical message, stack, cause chain, raw `details` |
+| Path                                  | Where                                   | What it contains                                                 |
+| ------------------------------------- | --------------------------------------- | ---------------------------------------------------------------- |
+| **Observability** (logs, Sentry, APM) | core `toLogObject()` / `toJSON()`       | Everything: technical message, stack, cause chain, raw `details` |
 | **Client / user-facing**              | [public-error pipeline](./public-error) | Only an explicit allowlist: public code, localized message       |
 
 ```ts

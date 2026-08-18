@@ -1,6 +1,109 @@
 import { isErrorWithCause } from "./guards.js";
 
 /**
+ * How far and how wide a traversal goes. Every helper also accepts a plain
+ * number in this position, which sets {@link CauseTraversalOptions.maxDepth}
+ * and keeps the linear behavior.
+ */
+export type CauseTraversalOptions = {
+  /** Maximum number of hops to follow (default: 100). */
+  maxDepth?: number;
+  /**
+   * Also walk the members of an aggregate: `AggregateError.errors`, and any
+   * error-like value that carries the same shape. Off by default, because it
+   * turns the chain into a tree and changes what a traversal means.
+   */
+  aggregates?: boolean;
+  /**
+   * Maximum number of nodes visited when `aggregates` is on (default: 1000).
+   * Depth bounds a chain, but it does not bound the width of a tree.
+   */
+  maxNodes?: number;
+};
+
+type ResolvedOptions = {
+  maxDepth: number;
+  aggregates: boolean;
+  maxNodes: number;
+};
+
+const DEFAULT_MAX_DEPTH = 100;
+const DEFAULT_MAX_NODES = 1000;
+
+function resolveOptions(
+  options: number | CauseTraversalOptions | undefined,
+): ResolvedOptions {
+  if (typeof options === "number") {
+    return {
+      maxDepth: options,
+      aggregates: false,
+      maxNodes: DEFAULT_MAX_NODES,
+    };
+  }
+  return {
+    maxDepth: options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+    aggregates: options?.aggregates === true,
+    maxNodes: options?.maxNodes ?? DEFAULT_MAX_NODES,
+  };
+}
+
+/**
+ * The members of an aggregate, read by shape so that a cross-realm
+ * `AggregateError` and a custom fan-out error both work.
+ */
+function readMembers(value: unknown): readonly unknown[] {
+  if (typeof value !== "object" || value === null) return [];
+  try {
+    const members = (value as { errors?: unknown }).errors;
+    return Array.isArray(members) ? members : [];
+  } catch {
+    // A throwing getter must not break a traversal that runs in a catch path.
+    return [];
+  }
+}
+
+/**
+ * Depth-first walk over the cause tree: each node, then its `cause`, then the
+ * members of its aggregate. Total by design, like the linear walk: a node
+ * already visited ends that branch, so a cycle or a shared branch terminates
+ * instead of recursing. `budget` bounds the total node count, because
+ * `maxDepth` bounds depth and not width.
+ */
+function* traverseCauseTree(
+  error: unknown,
+  depth: number,
+  options: ResolvedOptions,
+  seen: Set<unknown>,
+  budget: { nodes: number },
+): Generator<unknown> {
+  if (depth > options.maxDepth || budget.nodes <= 0) return;
+  if (seen.has(error)) return;
+  seen.add(error);
+  budget.nodes--;
+  yield error;
+
+  if (isErrorWithCause(error)) {
+    yield* traverseCauseTree(error.cause, depth + 1, options, seen, budget);
+  }
+  for (const member of readMembers(error)) {
+    yield* traverseCauseTree(member, depth + 1, options, seen, budget);
+  }
+}
+
+/** Picks the linear walk or the tree walk, by option. */
+function traverse(
+  error: unknown,
+  options: number | CauseTraversalOptions | undefined,
+): Generator<unknown> {
+  const resolved = resolveOptions(options);
+  return resolved.aggregates
+    ? traverseCauseTree(error, 0, resolved, new Set<unknown>(), {
+        nodes: resolved.maxNodes,
+      })
+    : traverseCauseChain(error, resolved.maxDepth);
+}
+
+/**
  * Internal generator that traverses the cause chain.
  *
  * Total by design: these helpers run inside catch paths, where a circular
@@ -40,6 +143,11 @@ function* traverseCauseChain(
  * @returns The root cause, or the last valid error if maxDepth is exceeded.
  *   On a circular chain, the deepest error before the repeat (never throws).
  *
+ * This helper is linear by design and takes no `aggregates` option: a tree has
+ * no single deepest node, so "the root cause" of an aggregate is not defined.
+ * Use {@link filterCauseChain} with `{ aggregates: true }` to collect the
+ * branches instead.
+ *
  * @example
  * ```typescript
  * const root = getRootCause(nestedError);
@@ -61,7 +169,7 @@ export function getRootCause(error: unknown, maxDepth: number = 100): unknown {
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for matching errors
- * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}
  * @returns The first matching error, or undefined if no match found
  *
  * @example
@@ -75,19 +183,19 @@ export function getRootCause(error: unknown, maxDepth: number = 100): unknown {
 export function findInCauseChain<T>(
   error: unknown,
   predicate: (e: unknown) => e is T,
-  maxDepth?: number,
+  options?: number | CauseTraversalOptions,
 ): T | undefined;
 export function findInCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
-  maxDepth?: number,
+  options?: number | CauseTraversalOptions,
 ): unknown;
 export function findInCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
-  maxDepth: number = 100,
+  options?: number | CauseTraversalOptions,
 ): unknown {
-  for (const current of traverseCauseChain(error, maxDepth)) {
+  for (const current of traverse(error, options)) {
     if (predicate(current)) return current;
   }
   return undefined;
@@ -98,7 +206,7 @@ export function findInCauseChain(
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for errors to collect
- * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}
  * @returns Array of matching errors, ordered from outermost to innermost
  *
  * @example
@@ -113,20 +221,20 @@ export function findInCauseChain(
 export function filterCauseChain<T>(
   error: unknown,
   predicate: (e: unknown) => e is T,
-  maxDepth?: number,
+  options?: number | CauseTraversalOptions,
 ): T[];
 export function filterCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
-  maxDepth?: number,
+  options?: number | CauseTraversalOptions,
 ): unknown[];
 export function filterCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
-  maxDepth: number = 100,
+  options?: number | CauseTraversalOptions,
 ): unknown[] {
   const results: unknown[] = [];
-  for (const current of traverseCauseChain(error, maxDepth)) {
+  for (const current of traverse(error, options)) {
     if (predicate(current)) results.push(current);
   }
   return results;
@@ -137,7 +245,7 @@ export function filterCauseChain(
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for matching errors
- * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}
  * @returns True if at least one error matches the predicate. A circular
  *   chain is evaluated over each distinct node (never throws).
  *
@@ -152,9 +260,9 @@ export function filterCauseChain(
 export function someCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
-  maxDepth: number = 100,
+  options?: number | CauseTraversalOptions,
 ): boolean {
-  return findInCauseChain(error, predicate, maxDepth) !== undefined;
+  return findInCauseChain(error, predicate, options) !== undefined;
 }
 
 /**
@@ -162,7 +270,7 @@ export function someCauseChain(
  *
  * @param error - The error to start traversing from
  * @param predicate - Function that returns true for matching errors
- * @param maxDepth - Maximum number of cause hops to follow (default: 100)
+ * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}
  * @returns True if all errors match the predicate, or if the chain is empty.
  *   A circular chain is evaluated over each distinct node (never throws).
  *
@@ -177,9 +285,9 @@ export function someCauseChain(
 export function everyCauseChain(
   error: unknown,
   predicate: (e: unknown) => boolean,
-  maxDepth: number = 100,
+  options?: number | CauseTraversalOptions,
 ): boolean {
-  for (const current of traverseCauseChain(error, maxDepth)) {
+  for (const current of traverse(error, options)) {
     if (!predicate(current)) return false;
   }
   return true;

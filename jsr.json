@@ -1,6 +1,6 @@
 {
   "name": "@shirudo/base-error",
-  "version": "8.1.0",
+  "version": "8.2.0",
   "description": "A cross-environment base error class for TypeScript applications, designed for seamless use across Node.js, browsers, and edge runtimes.",
   "license": "MIT",
   "exports": {
@@ -8,15 +8,8 @@
     "./public-error": "./src/public-error/index.ts"
   },
   "publish": {
-    "include": [
-      "src/**/*.ts",
-      "README.md",
-      "LICENSE",
-      "CHANGELOG.md"
-    ],
-    "exclude": [
-      "src/__tests__/**"
-    ]
+    "include": ["src/**/*.ts", "README.md", "LICENSE", "CHANGELOG.md"],
+    "exclude": ["src/__tests__/**"]
   },
   "keywords": [
     "typescript",

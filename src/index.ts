@@ -23,6 +23,8 @@ export type {
   CatalogError,
   CatalogErrorOf,
 } from "./errors/catalog.js";
+export { StructuredAggregateError } from "./errors/aggregate.js";
+export type { StructuredAggregateErrorOptions } from "./errors/aggregate.js";
 export { toStructuredError } from "./errors/coerce.js";
 export type { CoerceOptions } from "./errors/coerce.js";
 export { ValidationError } from "./errors/validation.js";

@@ -5,6 +5,12 @@
     // baseUrl; drop this once tsup stops injecting one.
     "ignoreDeprecations": "6.0",
     "target": "ES2020",
+    // Emit ES2020 syntax, but assume an ES2021 *runtime*: `AggregateError`
+    // (ES2021) is read and reconstructed by the cause-chain serializer, and
+    // every supported host (Node >= 20, workerd, Deno, Bun, modern browsers)
+    // ships it. Declaring `lib` explicitly also drops the implicit DOM lib,
+    // which this package never used.
+    "lib": ["ES2021"],
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
@@ -20,16 +26,8 @@
     "outDir": "dist",
     "declaration": true,
     "sourceMap": true,
-    "types": [
-      "node",
-      "vitest/globals"
-    ]
+    "types": ["node", "vitest/globals"]
   },
-  "include": [
-    "src/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist"
-  ]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }

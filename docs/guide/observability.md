@@ -32,6 +32,69 @@ chain**, timestamps, and (for [`StructuredError`](./structured-error)) `code`,
 `toJSON()` is an alias, so `JSON.stringify(error)` produces the same log-grade
 output.
 
+### Aggregate causes
+
+When a cause carries an `errors` array (a native `AggregateError` from
+`Promise.any` or from a dual-stack connect failure, or your own fan-out error
+with the same shape), its members are serialized too:
+
+```ts
+// fetch() to an unreachable dual-stack host, on Node 20+:
+//   TypeError: fetch failed
+//     cause: AggregateError (ECONNREFUSED)
+//       errors: [Error ECONNREFUSED ::1, Error ECONNREFUSED 127.0.0.1]
+
+logger.error(error.toLogObject());
+// cause: {
+//   name: "AggregateError",
+//   message: "",
+//   stack: "...",
+//   errors: [ { name: "Error", message: "connect ECONNREFUSED ::1", ... }, ... ]
+// }
+```
+
+This matters because `errors` is a **non-enumerable** own property on every
+runtime, exactly like `message` and `stack`: `JSON.stringify(aggregateError)`
+returns `{}`, so a logger that stringifies the raw error loses every branch
+failure. The members are read by shape, not by `instanceof AggregateError`, so
+cross-realm and custom aggregates serialize the same way.
+
+Each aggregate node is capped at 100 members (the remainder collapses to a
+`"[100 more aggregated errors]"` marker), shares the chain's depth cap of 100,
+and is cycle-safe: an error already serialized higher up is marked rather than
+walked again.
+
+`toString()` counts the members on the aggregate's line and renders each one
+indented below it, so the one-line render shows the shape of the failure too.
+
+The [cause-chain helpers](./cause-chains) stay linear by default. Pass
+`{ aggregates: true }` when a retry decision has to see inside an aggregate.
+
+### Your own aggregate: `StructuredAggregateError`
+
+For a fan-out of your own (a `Promise.allSettled` batch, a job runner, saga
+compensation), `StructuredAggregateError` is a `StructuredError` that carries
+its members in the same `errors` field:
+
+```ts
+throw new StructuredAggregateError({
+  code: "BATCH_FAILED",
+  category: "INTERNAL",
+  retryable: failures.every(isRetryable),
+  message: `${failures.length} of ${items.length} items failed`,
+  errors: failures,
+});
+```
+
+Everything above then applies to it unchanged: the members are serialized and
+width-capped, redaction reaches into them, `toString()` counts them, `fromJSON`
+restores them, and `{ aggregates: true }` walks them. An error-shaped member
+keeps its structural envelope under an allow-list; a member that is not an
+error (a `Promise.allSettled` reason can be any value) is data, and is masked
+like any other leaf. It does not extend
+`AggregateError` (single inheritance is spent on `BaseError`), which costs
+nothing, because the whole library reads aggregates by shape.
+
 ## The two paths, side by side
 
 ```ts
@@ -112,7 +175,9 @@ err.redactAllow(["userId", "requestId"]); // only these detail leaves survive
 
 It masks every leaf inside any **data** region (a `details` subtree at any
 depth, and a cause's data fields), so data can't slip through wherever it sits.
-The walk is depth-capped at 100: nesting beyond that collapses to a
+A leaf inside an **array** has no key of its own, so it is judged under the key
+of the array that holds it: `details.tokens: ["a", "b"]` is masked element by
+element unless `"tokens"` is allowed. The walk is depth-capped at 100: nesting beyond that collapses to a
 `[Max redaction depth exceeded]` marker (so it stays fail-safe and never
 overflows the stack, including on small edge-runtime stacks) rather than leaking.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
@@ -184,7 +249,10 @@ matchError(err, { PARSE_FAILED: () => retry(), _: (e) => report(e) });
 It is for reconstruction **within one trust/bounded-context boundary**:
 
 - **Worker / `postMessage` / iframe**: `instanceof` is lost across
-  `structuredClone`; `fromJSON` restores the typed error.
+  `structuredClone`; `fromJSON` restores the typed error. `structuredClone` also
+  **drops an `AggregateError`'s members** and degrades the class to a plain
+  `Error` (measured on Node, Bun, Deno and workerd), so for aggregates this
+  round-trip is the only lossless way across the boundary.
 - **Job queues / durable storage**: reconstruct an error parked by the same
   system.
 - **Log replay / forensics**: parse a logged error JSON back into an object.
@@ -194,6 +262,10 @@ and prototype-pollution-safe (whitelisted fields only). It restores the cause
 chain and the original `stack`/`timestamp`. It reconstructs a
 `StructuredError` only (`code`, `category`, `retryable`, `details`); there are no
 user/localized messages to restore (those are not part of the error model).
+
+An aggregate cause comes back as a real `AggregateError` with its members
+reconstructed; a structured error that carried its own `errors` keeps them as a
+non-enumerable property, the way a native aggregate holds them.
 
 It always returns a base `StructuredError`; **subclass identity is not
 restored**. A `ValidationError` round-trips to a `StructuredError` (losing

@@ -194,6 +194,19 @@ export class StructuredError<
       "string",
     );
 
+    // A structured error can carry aggregate members too (a fan-out error that
+    // sets its own `errors`). The log serializer reads them by shape, so the
+    // wire keeps them; restore them the way a native aggregate holds them,
+    // non-enumerable, which also makes the round-trip stable across repeats.
+    if (Array.isArray(obj.errors)) {
+      Object.defineProperty(error, "errors", {
+        value: StructuredError.#reconstructMembers(obj.errors, depth),
+        configurable: true,
+        writable: true,
+        enumerable: false,
+      });
+    }
+
     return error as StructuredError<string, string>;
   }
 
@@ -211,6 +224,45 @@ export class StructuredError<
         enumerable: key !== "stack",
       });
     }
+  }
+
+  /**
+   * Largest number of aggregate members reconstructed per node. Mirrors the
+   * serializer's own width cap, so this library's log shape round-trips
+   * unchanged while a foreign or hostile payload cannot amplify: every
+   * reconstructed `Error` captures a stack, which is far more expensive than
+   * the array entry that asks for it.
+   */
+  static readonly #MAX_MEMBERS = 100;
+
+  /**
+   * Rebuilds an aggregate's members. Each member goes back through
+   * {@link StructuredError.#reconstructCause}, so a nested aggregate, a
+   * structured branch and the serializer's width marker (a plain string) all
+   * come back in the shape they were logged in.
+   */
+  static #reconstructMembers(
+    members: readonly unknown[],
+    depth: number,
+  ): unknown[] {
+    const reconstructed: unknown[] = members
+      .slice(0, StructuredError.#MAX_MEMBERS)
+      .map((member) => StructuredError.#reconstructCause(member, depth + 1));
+
+    const rest = members.slice(StructuredError.#MAX_MEMBERS);
+    if (rest.length > 0) {
+      // A payload this library produced is already capped, and its tail is the
+      // serializer's own count marker. Carry that string through verbatim
+      // rather than replacing it with "[1 more …]", which would understate the
+      // original truncation on every round-trip.
+      const tail = rest[0];
+      reconstructed.push(
+        rest.length === 1 && typeof tail === "string"
+          ? tail
+          : `[${rest.length} more aggregated errors]`,
+      );
+    }
+    return reconstructed;
   }
 
   static #reconstructCause(value: unknown, depth: number): unknown {
@@ -233,6 +285,28 @@ export class StructuredError<
       return StructuredError.#fromJSON(obj, depth + 1);
     }
 
+    // Aggregate shape -> a real AggregateError, so the branch failures survive
+    // the wire. `structuredClone` drops them (verified on Node, Bun, Deno and
+    // workerd, where it also degrades the class to a plain `Error`), which makes
+    // this round-trip the only lossless way across a worker or queue boundary.
+    if (Array.isArray(obj.errors)) {
+      const aggregate = new AggregateError(
+        StructuredError.#reconstructMembers(obj.errors, depth),
+        typeof obj.message === "string" ? obj.message : "",
+      );
+      if (typeof obj.name === "string") {
+        aggregate.name = obj.name;
+      }
+      if (typeof obj.stack === "string") {
+        aggregate.stack = obj.stack;
+      }
+      const nested = StructuredError.#reconstructCause(obj.cause, depth + 1);
+      if (nested !== undefined) {
+        (aggregate as unknown as { cause: unknown }).cause = nested;
+      }
+      return aggregate;
+    }
+
     // Plain error shape -> a basic Error, chained.
     if (typeof obj.message === "string") {
       const err = new Error(obj.message);
@@ -241,6 +315,15 @@ export class StructuredError<
       }
       if (typeof obj.stack === "string") {
         err.stack = obj.stack;
+      }
+      // A Node-style errno `code` (`ECONNREFUSED`, `ENOENT`, …) is what
+      // {@link hasErrorCode} matches on, and it is what an aggregate's members
+      // usually carry. The serializer already writes it, so restore it rather
+      // than handing back an error the library's own guard can no longer
+      // recognize. It stays a lone field: without `category`/`retryable` the
+      // result does not read as a `StructuredError`.
+      if (typeof obj.code === "string" || typeof obj.code === "number") {
+        (err as unknown as Record<string, unknown>).code = obj.code;
       }
       const nested = StructuredError.#reconstructCause(obj.cause, depth + 1);
       if (nested !== undefined) {

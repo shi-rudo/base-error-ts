@@ -173,7 +173,10 @@ The first argument can also be an explicit `Transport` (`{ status, type?,
 title? }`) instead of a catalog, for a view you already hold:
 
 ```ts
-const result = toProblem({ status: 418, type: "https://errors.example/teapot" }, view);
+const result = toProblem(
+  { status: 418, type: "https://errors.example/teapot" },
+  view,
+);
 ```
 
 ## Three consumption modes from one registration
@@ -182,14 +185,25 @@ const result = toProblem({ status: 418, type: "https://errors.example/teapot" },
 body, localize from `code` in the browser.
 
 ```json
-{ "status": 503, "code": "temporarily_unavailable", "category": "temporary", "retryable": true }
+{
+  "status": 503,
+  "code": "temporarily_unavailable",
+  "category": "temporary",
+  "retryable": true
+}
 ```
 
 **Backend-localizing (SSR/email):** insert `localize`; the end-user message
 becomes the `title`, with `Content-Language`.
 
 ```json
-{ "title": "Bitte versuche es gleich erneut.", "status": 503, "code": "temporarily_unavailable", "category": "temporary", "retryable": true }
+{
+  "title": "Bitte versuche es gleich erneut.",
+  "status": 503,
+  "code": "temporarily_unavailable",
+  "category": "temporary",
+  "retryable": true
+}
 ```
 
 **Consumable third-party API:** set a static `title` and a `type` docs URL, do
@@ -240,7 +254,7 @@ place to log the technical error alongside the emitted public code:
 
 ```ts
 definePublicErrors({
-  fallback: { /* ... */ },
+  fallback: {/* ... */},
   onProject: (error, view, outcome) => {
     logger.error({
       publicCode: view.code,

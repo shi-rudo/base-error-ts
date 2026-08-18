@@ -50,8 +50,7 @@ classified explicitly:
 
 ```ts
 type DomainError =
-  | CatalogError<typeof UserErrors>
-  | CatalogError<typeof BillingErrors>;
+  CatalogError<typeof UserErrors> | CatalogError<typeof BillingErrors>;
 
 function isDomainError(value: unknown): value is DomainError {
   return UserErrors.is(value) || BillingErrors.is(value);

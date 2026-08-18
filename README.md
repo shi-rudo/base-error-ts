@@ -5,26 +5,27 @@
 [![Bundle Size](https://img.shields.io/bundlephobia/minzip/@shirudo/base-error)](https://bundlephobia.com/package/@shirudo/base-error)
 [![Tests](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml/badge.svg)](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml)
 
-A cross-environment base error class for TypeScript targeting Node.js, modern browsers,
-and edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). A purely
-technical core, plus a public-error pipeline that produces safe, localized
-client-facing output. The core has no client serializer, so it **never leaks
-internal state by default**. Zero runtime dependencies.
+A base error class for TypeScript. It runs on Node.js, on modern browsers, and
+on edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). The core is
+purely technical. A separate public-error pipeline makes the safe and localized
+output for a client. The core has no client serializer, so it **never leaks
+internal state by default**. The package has no runtime dependencies.
 
 ## Features
 
-- 🌐 **Cross-platform**: Node.js, browsers, edge; rich stack traces, preserved cause chains.
-- 🔒 **Safe by default**: the core has no public serializer; client output is produced only by the public-error pipeline's explicit allowlist.
-- 🧱 **Structured errors**: typed `code` / `category` / `retryable` / `details`.
-- 🎯 **Exhaustive `matchError`**: compile-time-checked dispatch on `code`.
-- 🗂️ **Exhaustive class sets**: reusable `defineErrorClassSet` definitions with complete, precisely typed handler tables.
-- 🧩 **Open-world `matchThrown`**: fluent constructor and guard matching for arbitrary caught values.
-- 🧭 **General error guards**: narrow native, Node.js-style, and custom errors without casts.
-- 📒 **Error catalog**: `defineErrors` provides namespaced factories, immutable metadata, provenance guards, and catalog-level redaction.
-- ✅ **Validation aggregate**: collect field issues (Standard Schema compatible) into one error.
-- 🔁 **Wire round-trip**: `toLogObject` / `fromJSON` for same-context reconstruction & log replay.
-- 🌍 **Public error pipeline**: `@shirudo/base-error/public-error` turns an error into a curated view, an optional localized variant, and an RFC 9457 `application/problem+json` body, all from one descriptor per public code.
-- 🛡️ **PII redaction**: opt-in, sticky log-path redaction (`redact` / `redactAllow` / `partialMask`).
+- 🌐 **Cross-platform**: The package runs on Node.js, on browsers, and on edge runtimes. It keeps rich stack traces and the cause chain.
+- 🔒 **Safe by default**: The core has no public serializer. Only the explicit allowlist of the public-error pipeline makes client output.
+- 🧱 **Structured errors**: Each error has a typed `code`, a `category`, a `retryable` flag, and `details`.
+- 🎯 **Exhaustive `matchError`**: The compiler checks the dispatch on `code`.
+- 🗂️ **Exhaustive class sets**: A `defineErrorClassSet` definition gives a complete and precisely typed handler table. You can use one definition many times.
+- 🧩 **Open-world `matchThrown`**: A fluent matcher accepts constructors and guards for an arbitrary caught value.
+- 🧭 **General error guards**: You can narrow native errors, Node.js-style errors, and custom errors without a cast.
+- 📒 **Error catalog**: `defineErrors` gives namespaced factories, immutable metadata, provenance guards, and redaction for the catalog.
+- 🧵 **Fan-out errors**: `StructuredAggregateError` collects many failures in one error. The cause-chain helpers walk the members with `{ aggregates: true }`.
+- ✅ **Validation aggregate**: You can collect field issues into one error. The issues are compatible with Standard Schema.
+- 🔁 **Wire round-trip**: `toLogObject` and `fromJSON` rebuild an error in the same context. They also replay a log. Both keep the members of an `AggregateError`, which `structuredClone` drops.
+- 🌍 **Public error pipeline**: `@shirudo/base-error/public-error` turns an error into a curated view, an optional localized variant, and an RFC 9457 `application/problem+json` body. One descriptor per public code controls all three.
+- 🛡️ **PII redaction**: `redact`, `redactAllow` and `partialMask` add sticky redaction to the log path. This redaction is opt-in.
 
 ## Installation
 
@@ -60,30 +61,35 @@ const status = matchError(err, {
 });
 ```
 
-For safe, client-facing output, use the public-error pipeline
-(`@shirudo/base-error/public-error`): register your public errors in a catalog,
-then `project` an error to a curated view, optionally `localize` it, and map it to
-an RFC 9457 body with `toProblem`. See the [public-error guide](docs/guide/public-error.md).
+For safe client output, use the public-error pipeline
+(`@shirudo/base-error/public-error`). First, register your public errors in a
+catalog. Then `project` an error to a curated view. You can then `localize` that
+view. Last, map it to an RFC 9457 body with `toProblem`. Read the
+[public-error guide](docs/guide/public-error.md).
 
 ## Main types
 
-| Type | Layer | What it is |
-| --- | --- | --- |
-| `BaseError` | Core | Cross-runtime base error: preserved `cause` chain, rich stack, timestamps. |
-| `StructuredError` | Core | The technical error you **throw** and log: `code`, `category`, `retryable`, `details`. |
-| `PublicError` | Boundary | The safe, **message-free** view of an error; what crosses to the client. |
-| `LocalizedPublicError` | Boundary | `PublicError` plus `message` + `locale`, only when the backend localizes. |
-| `ProblemDetails` | Boundary | The RFC 9457 `application/problem+json` HTTP body. |
+| Type                       | Layer    | What it is                                                                                          |
+| -------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `BaseError`                | Core     | The base error for every runtime. It keeps the `cause` chain, a rich stack, and timestamps.         |
+| `StructuredError`          | Core     | The technical error that you **throw** and log. It adds `code`, `category`, `retryable`, `details`. |
+| `StructuredAggregateError` | Core     | A `StructuredError` that collects many failures in `errors`.                                        |
+| `PublicError`              | Boundary | The safe and **message-free** view of an error. This view crosses to the client.                    |
+| `LocalizedPublicError`     | Boundary | A `PublicError` with a `message` and a `locale`. The backend makes it only when it localizes.       |
+| `ProblemDetails`           | Boundary | The RFC 9457 `application/problem+json` body for HTTP.                                              |
 
-**Core** is what you throw and log. The three **Boundary** types are successive
-shapes of the *same* error on its way out (curate, then optionally localize, then
-RFC 9457), not alternatives. The `@shirudo/base-error/public-error` subpath drives
-that flow from one descriptor per public code.
+You throw and log a **Core** type. The three **Boundary** types are not
+alternatives. They are the shapes that one error takes in order on its way out.
+First, `project` curates the error. Then `localize` can add a message. Last,
+`toProblem` maps the result to RFC 9457. The subpath
+`@shirudo/base-error/public-error` drives this flow from one descriptor per
+public code.
 
 ## Documentation
 
-The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-ts/tree/main/docs/guide)
-(run it locally with `pnpm docs:dev`):
+The full guide is in
+[`docs/guide/`](https://github.com/shi-rudo/base-error-ts/tree/main/docs/guide).
+To read it locally, run `pnpm docs:dev`.
 
 **Introduction**
 
@@ -99,12 +105,12 @@ The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-t
 - [Validation errors](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/validation.md)
 - [Matching errors (`matchError`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/matching.md)
 - [Cause chains](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/cause-chains.md)
-- [Type guards & assertions](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/guards.md)
+- [Type guards and assertions](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/guards.md)
 
 **Boundaries**
 
 - [Public error pipeline](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/public-error.md)
-- [Observability & logging (incl. PII redaction & `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
+- [Observability and logging (with PII redaction and `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
 
 **Reference**
 
@@ -113,8 +119,8 @@ The full guide lives in [`docs/guide/`](https://github.com/shi-rudo/base-error-t
 
 ## TypeScript
 
-Ships ESM + CommonJS + type declarations. Requires TypeScript 5.x with `strict`
-mode for the full type-safety story.
+The package ships ESM, CommonJS, and type declarations. For the complete type
+safety you need TypeScript 5.0 or a later version, with `strict` mode.
 
 ## License
 

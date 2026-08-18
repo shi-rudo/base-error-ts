@@ -178,6 +178,9 @@ export class BaseError<T extends string> extends Error {
    * fields of a `cause`, and any subclass-added top-level field): masks every
    * leaf whose key is **not** listed, so a newly-added field leaks nothing by
    * default. Container objects are recursed so nested allowed leaves survive.
+   * A leaf inside an **array** has no key of its own and is judged under the
+   * key of the array that holds it, so a list of tokens is masked as a whole
+   * unless that key is allowed.
    * Only the library's own structural envelope is kept: the fixed top-level
    * fields ({@link BaseError.#ROOT_ENVELOPE_KEYS}: `name`/`message`/`stack`/
    * `code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`)
@@ -224,6 +227,22 @@ export class BaseError<T extends string> extends Error {
 
   /** Sentinel returned by a redaction decision to mean "descend / keep as-is". */
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
+
+  /**
+   * The markers the serializer itself writes in place of a value it refused to
+   * expand. They are the library's own words, never user data, so redaction
+   * leaves them readable: masking them would turn a truncated log into one that
+   * looks complete. Matched exactly, so a member that merely resembles a marker
+   * is still masked.
+   */
+  static readonly #SERIALIZER_MARKER =
+    /^\[(?:Circular cause chain|Max cause depth exceeded|\d+ more aggregated errors)\]$/;
+
+  /*#__PURE__*/ static #isSerializerMarker(value: unknown): boolean {
+    return (
+      typeof value === "string" && BaseError.#SERIALIZER_MARKER.test(value)
+    );
+  }
 
   /**
    * Largest **data** nesting depth the redaction walker descends into. Bounded
@@ -332,6 +351,7 @@ export class BaseError<T extends string> extends Error {
     region: RedactRegion,
     depth = 0,
     state: { nodes: number } = { nodes: 0 },
+    key = "",
   ): unknown {
     // Past a cap, replace any container with a marker rather than recursing.
     // Leaves are unaffected (they never recurse), so shallow data is intact.
@@ -346,9 +366,32 @@ export class BaseError<T extends string> extends Error {
       }
     }
     if (Array.isArray(value)) {
-      return value.map((item) =>
-        BaseError.#redactWalk(item, decide, region, depth + 1, state),
-      );
+      // Aggregate members sit on the cause spine (see #childRegion), bounded
+      // separately by #MAX_CAUSE_DEPTH at serialization time. Like the rest of
+      // that spine they stay out of the data-depth budget, so a deep aggregate
+      // cannot marker-truncate a shallow `details` nested beneath it.
+      const itemDepth = region === "cause" ? depth : depth + 1;
+      return value.map((item) => {
+        if (Array.isArray(item) || BaseError.#isWalkable(item)) {
+          return BaseError.#redactWalk(
+            item,
+            decide,
+            region,
+            itemDepth,
+            state,
+            key,
+          );
+        }
+        // A leaf inside an array has no key of its own, so it is judged under
+        // the key of the array that holds it, in every region. Without this an
+        // allow-list keeps every scalar element, which is the opposite of what
+        // it promises: an aggregate's members are arbitrary values (a
+        // `Promise.allSettled` reason need not be an `Error`), and `errors` is
+        // not an envelope key, so a string member is data like any other.
+        if (BaseError.#isSerializerMarker(item)) return item;
+        const decision = decide(key, item, region);
+        return decision === BaseError.#RECURSE ? item : decision;
+      });
     }
     if (BaseError.#isWalkable(value)) {
       // Null-prototype target so an own `__proto__`/`constructor` key from
@@ -377,6 +420,7 @@ export class BaseError<T extends string> extends Error {
               childRegion,
               childDepth,
               state,
+              key,
             );
           } else {
             out[key] = val;
@@ -408,6 +452,12 @@ export class BaseError<T extends string> extends Error {
     if (region === "data") return "data";
     if (key === "details") return "data";
     if (key === "cause") return "cause";
+    // An aggregate's members are further cause nodes, so they keep the same
+    // structural envelope a `cause` gets, at the root as well as inside a
+    // cause. `errors` is deliberately **not** added to #ROOT_ENVELOPE_KEYS:
+    // only a container transitions region, so a scalar named `errors` is still
+    // a data leaf and stays masked under an allow-list.
+    if (key === "errors") return "cause";
     if (region === "cause") {
       return BaseError.#ENVELOPE_KEYS.has(key) ? "cause" : "data";
     }
@@ -448,6 +498,14 @@ export class BaseError<T extends string> extends Error {
       stack,
       cause: this.#serializeCause(cause, new Set(), 0),
     };
+
+    // A subclass that aggregates failures carries them in `errors`, the field
+    // a native `AggregateError` uses. Read by shape, so any such subclass gets
+    // the same bounded, cycle-safe serialization as an aggregate cause.
+    const members = BaseError.#readMembers(this);
+    if (members.length > 0) {
+      json.errors = this.#serializeAggregate(members, new Set([this]), 1);
+    }
 
     return json;
   }
@@ -525,23 +583,69 @@ export class BaseError<T extends string> extends Error {
    * redaction shapes rewrite only the log object.
    */
   public override toString(): string {
-    const parts: string[] = [];
-    let current: unknown = this as unknown;
-    const seen = new Set<unknown>();
+    return BaseError.#renderChain(this, new Set<unknown>(), "", 0).join("\n");
+  }
+
+  /**
+   * Renders one cause chain into lines. A node that carries aggregate members
+   * gets a count on its own line, and each member is rendered as its own
+   * chain, indented one level deeper. The `seen` set is shared across the whole
+   * tree, so a cycle or a repeated branch ends with a marker instead of
+   * recursing.
+   */
+  /*#__PURE__*/ static #renderChain(
+    start: unknown,
+    seen: Set<unknown>,
+    indent: string,
+    depth: number,
+  ): string[] {
+    // Aggregates recurse, and a string render must never throw: bound the
+    // nesting with the same cap the log serializer uses, so a pathologically
+    // deep tree degrades to a marker instead of overflowing the host stack
+    // (which is far smaller on an edge isolate than on Node).
+    if (depth > BaseError.#MAX_CAUSE_DEPTH) {
+      return [`${indent}[Max cause depth exceeded]`];
+    }
+    const lines: string[] = [];
+    let current: unknown = start;
+    let first = true;
 
     while (current != null) {
+      const prefix = first ? indent : `${indent}Caused by: `;
+      first = false;
+
       if (seen.has(current)) {
-        parts.push("[Circular cause chain]");
+        lines.push(`${prefix}[Circular cause chain]`);
         break;
       }
       seen.add(current);
 
-      if (current instanceof BaseError) {
-        parts.push(`[${current.name}] ${current.#renderMessage()}`);
-      } else if (current instanceof Error) {
-        parts.push(`${current.name}: ${current.message}`);
-      } else {
-        parts.push(String(current));
+      const members = BaseError.#readMembers(current);
+      const suffix =
+        members.length > 0 ? ` (+${members.length} aggregated)` : "";
+      lines.push(`${prefix}${BaseError.#renderNode(current)}${suffix}`);
+
+      const shown = members.slice(0, BaseError.#MAX_AGGREGATE_ERRORS);
+      for (const member of shown) {
+        const rendered = BaseError.#renderChain(
+          member,
+          seen,
+          `${indent}    `,
+          depth + 1,
+        );
+        // The head of a member is bulleted at the parent's indent; its own
+        // chain keeps the deeper indent, so the tree stays readable. Appended
+        // one by one: a spread of an unbounded chain exceeds the argument
+        // limit, which is another way for a string render to throw.
+        for (let index = 0; index < rendered.length; index++) {
+          const line = rendered[index] as string;
+          lines.push(index === 0 ? `${indent}  - ${line.trimStart()}` : line);
+        }
+      }
+      if (members.length > shown.length) {
+        lines.push(
+          `${indent}  [${members.length - shown.length} more aggregated errors]`,
+        );
       }
 
       current =
@@ -550,7 +654,35 @@ export class BaseError<T extends string> extends Error {
           : undefined;
     }
 
-    return parts.join("\nCaused by: ");
+    return lines;
+  }
+
+  /** One node as a single line, honoring a deny-listed `message`. */
+  /*#__PURE__*/ static #renderNode(node: unknown): string {
+    if (node instanceof BaseError) {
+      return `[${node.name}] ${node.#renderMessage()}`;
+    }
+    if (node instanceof Error) {
+      return `${node.name}: ${node.message}`;
+    }
+    return String(node);
+  }
+
+  /**
+   * The members of an aggregate, read by shape rather than by
+   * `instanceof AggregateError`, so a cross-realm or custom fan-out error is
+   * handled too. The single reader for every path that needs them (log
+   * serialization and `toString`). A throwing getter yields no members: a
+   * hostile or lazily computed field must not break a log or a string render.
+   */
+  /*#__PURE__*/ static #readMembers(node: unknown): readonly unknown[] {
+    if (typeof node !== "object" || node === null) return [];
+    try {
+      const members = (node as { errors?: unknown }).errors;
+      return Array.isArray(members) ? members : [];
+    } catch {
+      return [];
+    }
   }
 
   // ----------------------------------------------------------------
@@ -643,6 +775,18 @@ export class BaseError<T extends string> extends Error {
       if ("retryable" in cause) serialized.retryable = errorRecord.retryable;
       if ("details" in cause) serialized.details = errorRecord.details;
 
+      // An aggregate's members (`AggregateError.errors`, and any error-like
+      // value carrying the same shape) are own but **non-enumerable** on every
+      // supported runtime, so `JSON.stringify` and `Object.entries` drop them
+      // exactly like `message`/`stack`. Read explicitly, by shape rather than
+      // by `instanceof AggregateError`, so cross-realm and custom fan-out
+      // errors serialize too. Without this the branch failures that produced
+      // the error never reach the log at all.
+      const members = BaseError.#readMembers(cause);
+      if (members.length > 0) {
+        serialized.errors = this.#serializeAggregate(members, seen, depth + 1);
+      }
+
       // Recursively serialize nested causes
       if ("cause" in cause && errorRecord.cause !== undefined) {
         serialized.cause = this.#serializeCause(
@@ -694,6 +838,36 @@ export class BaseError<T extends string> extends Error {
    * wire-clone budgets.
    */
   static readonly #MAX_JSON_NODES = 100_000;
+
+  /**
+   * Largest number of members serialized per aggregate node. The cause budget
+   * bounds the spine's depth, not an aggregate's width: one `Promise.any` over
+   * a large pool rejects with a member per branch, and a log line is not the
+   * place for thousands of them. The remainder collapses to a count marker.
+   */
+  static readonly #MAX_AGGREGATE_ERRORS = 100;
+
+  /**
+   * Serializes an aggregate's members, capped in width. Members share the
+   * enclosing `seen` set, so an error reachable from more than one branch is
+   * rendered at its first occurrence and marked afterwards, and the walk
+   * terminates on a self-referencing aggregate.
+   */
+  /*#__PURE__*/ #serializeAggregate(
+    errors: readonly unknown[],
+    seen: Set<unknown>,
+    depth: number,
+  ): unknown[] {
+    const serialized: unknown[] = errors
+      .slice(0, BaseError.#MAX_AGGREGATE_ERRORS)
+      .map((error) => this.#serializeCause(error, seen, depth));
+
+    const dropped = errors.length - serialized.length;
+    if (dropped > 0) {
+      serialized.push(`[${dropped} more aggregated errors]`);
+    }
+    return serialized;
+  }
 
   /**
    * Creates a more useful representation of circular objects for debugging.

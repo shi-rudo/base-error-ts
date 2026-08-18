@@ -5,6 +5,7 @@ import {
   getRootCause,
   someCauseChain,
 } from "./cause-chain.js";
+import type { CauseTraversalOptions } from "./cause-chain.js";
 
 type RetryableError = { retryable: true } & Record<string, unknown>;
 
@@ -17,7 +18,11 @@ type RetryableError = { retryable: true } & Record<string, unknown>;
  * directly and only set `retryable: true` will NOT match. For those, use
  * {@link someChainRetryable} instead.
  *
+ * Pass `{ aggregates: true }` to walk the members of an `AggregateError` too,
+ * which is off by default.
+ *
  * @param error - The error to check
+ * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}
  * @returns True if any error in the chain is a retryable StructuredError
  *
  * @example
@@ -27,8 +32,11 @@ type RetryableError = { retryable: true } & Record<string, unknown>;
  * }
  * ```
  */
-export function isChainRetryable(error: unknown): boolean {
-  return someCauseChain(error, isRetryableStructuredError);
+export function isChainRetryable(
+  error: unknown,
+  options?: number | CauseTraversalOptions,
+): boolean {
+  return someCauseChain(error, isRetryableStructuredError, options);
 }
 
 /**
@@ -42,7 +50,7 @@ export function isChainRetryable(error: unknown): boolean {
  * that discriminate by class rather than `code`/`category` strings.
  *
  * @param error - The error to check
- * @param maxDepth - Maximum chain depth to traverse (default: 100)
+ * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}
  * @returns True if any error in the chain has `retryable === true`
  *
  * @example
@@ -58,9 +66,9 @@ export function isChainRetryable(error: unknown): boolean {
  */
 export function someChainRetryable(
   error: unknown,
-  maxDepth: number = 100,
+  options?: number | CauseTraversalOptions,
 ): boolean {
-  return someCauseChain(error, isRetryable, maxDepth);
+  return someCauseChain(error, isRetryable, options);
 }
 
 /**
@@ -99,8 +107,11 @@ export function getRootCauseRetryable(error: unknown): boolean {
  */
 export function getFirstRetryableCause(
   error: unknown,
+  options?: number | CauseTraversalOptions,
 ): RetryableError | undefined {
-  return findInCauseChain(error, (e): e is RetryableError =>
-    isRetryableStructuredError(e),
+  return findInCauseChain(
+    error,
+    (e): e is RetryableError => isRetryableStructuredError(e),
+    options,
   );
 }
