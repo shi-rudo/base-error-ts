@@ -46,7 +46,7 @@ try {
 
 `isError` recognizes native errors and portable error-like objects with string
 `name` and `message` fields (plus an optional string `stack`). Structural
-recognition works after a realm boundary, but establishes shape only—not local
+recognition works after a realm boundary, but establishes shape only, not local
 `instanceof Error` identity or trust.
 
 Use `hasErrorCode` for Node.js system errors and third-party errors with stable

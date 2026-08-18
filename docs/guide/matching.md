@@ -70,8 +70,8 @@ const result = matchThrown(error)
 // Promise<RetryResult> | "not-retried"
 ```
 
-Dispatch itself is synchronous. The selected handler value—including a
-promise—is returned unchanged.
+Dispatch itself is synchronous. The selected handler value (including a
+promise) is returned unchanged.
 
 `matchThrown` is deliberately non-exhaustive: arbitrary `unknown` is an open
 set. It does not provide `.exhaustive()`, `.map()`, `.select()`, or negative
