@@ -57,3 +57,7 @@ yarn.lock
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Agent instruction files are local from 8.2.0 on, not part of the repo
+CLAUDE.md
+AGENTS.md
