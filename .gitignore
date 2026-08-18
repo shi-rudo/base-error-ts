@@ -48,6 +48,8 @@ yarn.lock
 # ai agents
 .cursor/
 .claude/
+.agents/
+.codex/
 
 # Beads / Dolt files (added by bd init)
 .dolt/
@@ -60,4 +62,5 @@ yarn.lock
 
 # Agent instruction files are local from 8.2.0 on, not part of the repo
 CLAUDE.md
+CLAUDE.local.md
 AGENTS.md
