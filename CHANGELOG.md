@@ -8,6 +8,8 @@
 
 - **`toString()` renders a cause with no string form.** A null-prototype object cause, or one whose `Symbol.toPrimitive` throws, made `String(cause)` throw out of `toString()`, which is exactly the render a template-literal log line runs in a `catch`. Such a node now renders as `[Unrenderable cause]`; an `Error` whose `name`/`message` getter throws falls back to the `Error.prototype` defaults.
 
+- **`StructuredError.fromJSON` carries a total node budget.** Reconstruction bounded depth (100) and the members per aggregate (100), but not their product: a payload with a 100-wide aggregate nested three deep reconstructs a million `Error` objects, each capturing a stack (measured at 3 s), and a shared reference makes such a payload a few hundred bytes in memory. One `fromJSON` call now reconstructs at most 1000 errors, the budget the tree traversal already uses. Past it, a `cause` drops exactly as it does past the depth cap, and the remaining members of an aggregate collapse into the `[N more aggregated errors]` marker. A payload this library's own serializer writes stays well inside the budget.
+
 - **A `bigint` cause is logged as its decimal string.** `#serializeCause` returned primitives as-is, but a `bigint` has no JSON form, so `JSON.stringify(err)` threw inside the consumer's logger, where the fail-closed redaction catch cannot reach. The plain-object cause path already guarded `BigInt`; the primitive path now writes `10n` as `"10"`. `details` stay the caller's raw data, as documented.
 
 ## 8.2.0 - 2026-08-18

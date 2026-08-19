@@ -359,7 +359,70 @@ describe("fromJSON hardening", () => {
     expect(cause.errors).toHaveLength(101);
     expect(cause.errors[100]).toBe("[400 more aggregated errors]");
   });
+
+  it("bounds the total number of reconstructed errors, not just depth and width", () => {
+    // Depth and width caps alone allow 100^depth reconstructions, each an
+    // Error with a stack capture. A shared reference makes the payload tiny.
+    let node: Record<string, unknown> = { name: "Error", message: "leaf" };
+    for (let level = 0; level < 3; level++) {
+      node = {
+        name: "AggregateError",
+        message: `level ${level}`,
+        errors: Array.from({ length: 100 }, () => node),
+      };
+    }
+    const payload = {
+      code: "OUTER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "outer failed",
+      cause: node,
+    };
+
+    const restored = StructuredError.fromJSON(payload);
+
+    expect(countErrors(restored)).toBeLessThanOrEqual(1000);
+    const outerAggregate = (restored as unknown as { cause: AggregateError })
+      .cause;
+    expect(outerAggregate.errors[outerAggregate.errors.length - 1]).toMatch(
+      /^\[\d+ more aggregated errors\]$/,
+    );
+  });
+
+  it("reconstructs a payload within the budget in full", () => {
+    const payload = {
+      code: "OUTER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "outer failed",
+      cause: {
+        name: "AggregateError",
+        message: "wide",
+        errors: Array.from({ length: 100 }, (_, index) => ({
+          name: "Error",
+          message: `branch ${index}`,
+          cause: { name: "Error", message: `root ${index}` },
+        })),
+      },
+    };
+
+    const restored = StructuredError.fromJSON(payload);
+
+    expect(countErrors(restored)).toBe(202);
+  });
 });
+
+/** Every Error reachable through `cause` and `errors`, each counted once. */
+function countErrors(node: unknown, seen = new Set<unknown>()): number {
+  if (!(node instanceof Error) || seen.has(node)) return 0;
+  seen.add(node);
+  let count = 1;
+  count += countErrors((node as { cause?: unknown }).cause, seen);
+  for (const member of (node as { errors?: unknown[] }).errors ?? []) {
+    count += countErrors(member, seen);
+  }
+  return count;
+}
 
 describe("errno codes on reconstructed plain errors", () => {
   it("restores a Node-style `code` so hasErrorCode still matches", () => {

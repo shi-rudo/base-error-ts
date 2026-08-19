@@ -137,15 +137,29 @@ export class StructuredError<
    * data). Narrow on `code`, not on `_tag`/instanceof.
    */
   public static fromJSON(json: unknown): StructuredError<string, string> {
-    return StructuredError.#fromJSON(json, 0);
+    return StructuredError.#fromJSON(json, 0, {
+      nodes: StructuredError.#MAX_NODES,
+    });
   }
 
   static readonly #MAX_DEPTH = 100;
 
+  /**
+   * Total number of errors one `fromJSON` call reconstructs. The depth cap and
+   * the per-node width cap still allow `100^depth` reconstructions, and a
+   * shared reference makes such a payload tiny in memory, so the walk also
+   * carries a node budget, the same one the tree traversal uses. Past it, a
+   * `cause` drops like it does past the depth cap, and the remaining members
+   * of an aggregate collapse into the count marker.
+   */
+  static readonly #MAX_NODES = 1000;
+
   static #fromJSON(
     json: unknown,
     depth: number,
+    budget: { nodes: number },
   ): StructuredError<string, string> {
+    budget.nodes--;
     const obj: Record<string, unknown> =
       typeof json === "object" && json !== null
         ? (json as Record<string, unknown>)
@@ -173,7 +187,7 @@ export class StructuredError<
       typeof obj.details === "object" && obj.details !== null
         ? { ...(obj.details as Record<string, unknown>) }
         : undefined;
-    const cause = StructuredError.#reconstructCause(obj.cause, depth);
+    const cause = StructuredError.#reconstructCause(obj.cause, depth, budget);
 
     const error = new StructuredError({
       code,
@@ -200,7 +214,7 @@ export class StructuredError<
     // non-enumerable, which also makes the round-trip stable across repeats.
     if (Array.isArray(obj.errors)) {
       Object.defineProperty(error, "errors", {
-        value: StructuredError.#reconstructMembers(obj.errors, depth),
+        value: StructuredError.#reconstructMembers(obj.errors, depth, budget),
         configurable: true,
         writable: true,
         enumerable: false,
@@ -239,17 +253,28 @@ export class StructuredError<
    * Rebuilds an aggregate's members. Each member goes back through
    * {@link StructuredError.#reconstructCause}, so a nested aggregate, a
    * structured branch and the serializer's width marker (a plain string) all
-   * come back in the shape they were logged in.
+   * come back in the shape they were logged in. The walk stops at the width
+   * cap or when the node budget runs out, whichever comes first.
    */
   static #reconstructMembers(
     members: readonly unknown[],
     depth: number,
+    budget: { nodes: number },
   ): unknown[] {
-    const reconstructed: unknown[] = members
-      .slice(0, StructuredError.#MAX_MEMBERS)
-      .map((member) => StructuredError.#reconstructCause(member, depth + 1));
+    const reconstructed: unknown[] = [];
+    let taken = 0;
+    while (
+      taken < members.length &&
+      taken < StructuredError.#MAX_MEMBERS &&
+      budget.nodes > 0
+    ) {
+      reconstructed.push(
+        StructuredError.#reconstructCause(members[taken], depth + 1, budget),
+      );
+      taken++;
+    }
 
-    const rest = members.slice(StructuredError.#MAX_MEMBERS);
+    const rest = members.slice(taken);
     if (rest.length > 0) {
       // A payload this library produced is already capped, and its tail is the
       // serializer's own count marker. Carry that string through verbatim
@@ -265,13 +290,20 @@ export class StructuredError<
     return reconstructed;
   }
 
-  static #reconstructCause(value: unknown, depth: number): unknown {
+  static #reconstructCause(
+    value: unknown,
+    depth: number,
+    budget: { nodes: number },
+  ): unknown {
     if (depth >= StructuredError.#MAX_DEPTH) {
       return undefined;
     }
     if (typeof value !== "object" || value === null) {
       // Primitives (and null) are kept verbatim.
       return value;
+    }
+    if (budget.nodes <= 0) {
+      return undefined;
     }
 
     const obj = value as Record<string, unknown>;
@@ -282,7 +314,7 @@ export class StructuredError<
       typeof obj.category === "string" &&
       typeof obj.retryable === "boolean"
     ) {
-      return StructuredError.#fromJSON(obj, depth + 1);
+      return StructuredError.#fromJSON(obj, depth + 1, budget);
     }
 
     // Aggregate shape -> a real AggregateError, so the branch failures survive
@@ -290,8 +322,9 @@ export class StructuredError<
     // workerd, where it also degrades the class to a plain `Error`), which makes
     // this round-trip the only lossless way across a worker or queue boundary.
     if (Array.isArray(obj.errors)) {
+      budget.nodes--;
       const aggregate = new AggregateError(
-        StructuredError.#reconstructMembers(obj.errors, depth),
+        StructuredError.#reconstructMembers(obj.errors, depth, budget),
         typeof obj.message === "string" ? obj.message : "",
       );
       if (typeof obj.name === "string") {
@@ -300,7 +333,11 @@ export class StructuredError<
       if (typeof obj.stack === "string") {
         aggregate.stack = obj.stack;
       }
-      const nested = StructuredError.#reconstructCause(obj.cause, depth + 1);
+      const nested = StructuredError.#reconstructCause(
+        obj.cause,
+        depth + 1,
+        budget,
+      );
       if (nested !== undefined) {
         (aggregate as unknown as { cause: unknown }).cause = nested;
       }
@@ -309,6 +346,7 @@ export class StructuredError<
 
     // Plain error shape -> a basic Error, chained.
     if (typeof obj.message === "string") {
+      budget.nodes--;
       const err = new Error(obj.message);
       if (typeof obj.name === "string") {
         err.name = obj.name;
@@ -325,7 +363,11 @@ export class StructuredError<
       if (typeof obj.code === "string" || typeof obj.code === "number") {
         (err as unknown as Record<string, unknown>).code = obj.code;
       }
-      const nested = StructuredError.#reconstructCause(obj.cause, depth + 1);
+      const nested = StructuredError.#reconstructCause(
+        obj.cause,
+        depth + 1,
+        budget,
+      );
       if (nested !== undefined) {
         (err as unknown as { cause: unknown }).cause = nested;
       }
