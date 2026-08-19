@@ -127,8 +127,10 @@ export class PublicErrorCatalog<TPublicCode extends string = string> {
         `PublicErrorCatalog: code "${code}" is already registered.`,
       );
     }
-    this.#byCode.set(code, descriptor as AnyDescriptor);
+    // Validate before inserting: a rejected descriptor must leave no trace,
+    // or it would resolve without a transport and hold its code forever.
     this.#index(descriptor as AnyDescriptor);
+    this.#byCode.set(code, descriptor as AnyDescriptor);
     return this as unknown as PublicErrorCatalog<TPublicCode | TNewCode>;
   }
 
@@ -141,11 +143,11 @@ export class PublicErrorCatalog<TPublicCode extends string = string> {
     match: (error: unknown) => error is TError;
     descriptor: PublicErrorDescriptor<TError, TDetails, TNewCode>;
   }): PublicErrorCatalog<TPublicCode | TNewCode> {
+    this.#index(entry.descriptor as AnyDescriptor);
     this.#predicates.push({
       match: entry.match as (error: unknown) => boolean,
       value: entry.descriptor as AnyDescriptor,
     });
-    this.#index(entry.descriptor as AnyDescriptor);
     return this as unknown as PublicErrorCatalog<TPublicCode | TNewCode>;
   }
 

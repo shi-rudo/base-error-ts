@@ -77,3 +77,49 @@ describe("registration validates the RFC 9457 transport fields", () => {
     ).toThrow(/status/);
   });
 });
+
+describe("a rejected descriptor leaves no trace in the catalog", () => {
+  it("frees the internal code for a valid registration", () => {
+    const catalog = ok();
+    expect(() =>
+      catalog.registerByCode("x", bad({ publicCode: "x_pub", status: 42 })),
+    ).toThrow(/status/);
+
+    catalog.registerByCode("x", { publicCode: "x_pub", status: 400 });
+
+    expect(catalog.transportFor("x_pub")).toEqual({ status: 400 });
+    expect(catalog.resolve({ code: "x" })).toMatchObject({
+      found: true,
+      via: "code",
+      descriptor: { publicCode: "x_pub", status: 400 },
+    });
+  });
+
+  it("does not resolve by code to the rejected descriptor", () => {
+    const catalog = ok();
+    expect(() =>
+      catalog.registerByCode("x", bad({ publicCode: "x_pub", status: 42 })),
+    ).toThrow(/status/);
+
+    expect(catalog.resolve({ code: "x" })).toEqual({
+      found: false,
+      matcherThrew: false,
+    });
+    expect(catalog.transportFor("x_pub")).toBeUndefined();
+  });
+
+  it("does not resolve by predicate to the rejected descriptor", () => {
+    const catalog = ok();
+    expect(() =>
+      catalog.register({
+        match: (_e: unknown): _e is never => true,
+        descriptor: bad({ publicCode: "p_pub", status: 1 }),
+      }),
+    ).toThrow(/status/);
+
+    expect(catalog.resolve(new Error("any"))).toEqual({
+      found: false,
+      matcherThrew: false,
+    });
+  });
+});

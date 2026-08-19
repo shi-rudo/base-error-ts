@@ -10,6 +10,8 @@
 
 - **`StructuredError.fromJSON` carries a total node budget.** Reconstruction bounded depth (100) and the members per aggregate (100), but not their product: a payload with a 100-wide aggregate nested three deep reconstructs a million `Error` objects, each capturing a stack (measured at 3 s), and a shared reference makes such a payload a few hundred bytes in memory. One `fromJSON` call now reconstructs at most 1000 errors, the budget the tree traversal already uses. Past it, a `cause` drops exactly as it does past the depth cap, and the remaining members of an aggregate collapse into the `[N more aggregated errors]` marker. A payload this library's own serializer writes stays well inside the budget.
 
+- **`PublicErrorCatalog` validates a descriptor before inserting it.** `registerByCode` and `register` stored the descriptor first and validated second, so a rejected descriptor (an invalid `status`, an empty `type`, a category outside the declared set) stayed half-registered: it resolved for its internal code, had no transport, so `toProblem` threw on it, and held the code, so the corrected registration was refused as a duplicate. The insert now happens only after validation; a throw leaves the catalog as it was.
+
 - **A `bigint` cause is logged as its decimal string.** `#serializeCause` returned primitives as-is, but a `bigint` has no JSON form, so `JSON.stringify(err)` threw inside the consumer's logger, where the fail-closed redaction catch cannot reach. The plain-object cause path already guarded `BigInt`; the primitive path now writes `10n` as `"10"`. `details` stay the caller's raw data, as documented.
 
 ## 8.2.0 - 2026-08-18
