@@ -694,3 +694,75 @@ describe("log redaction", () => {
     });
   });
 });
+
+describe("redactAllow keeps the serializer's own cause markers readable", () => {
+  const structured = (cause: unknown) =>
+    new StructuredError({
+      code: "C",
+      category: "X",
+      retryable: false,
+      message: "m",
+      cause,
+    });
+
+  it("keeps the cycle marker on a nested cause", () => {
+    const first = new Error("first");
+    const second = new Error("second");
+    Object.defineProperty(first, "cause", { value: second });
+    Object.defineProperty(second, "cause", { value: first });
+
+    const log = structured(second).redactAllow([]).toLogObject();
+
+    const nested = (log.cause as Record<string, unknown>).cause as Record<
+      string,
+      unknown
+    >;
+    expect(nested.cause).toBe("[Circular cause chain]");
+  });
+
+  it("keeps the depth marker at the end of a long chain", () => {
+    let chain: unknown = new Error("bottom");
+    for (let level = 0; level < 150; level++) {
+      const next = new Error(`level ${level}`);
+      Object.defineProperty(next, "cause", { value: chain });
+      chain = next;
+    }
+
+    const json = JSON.stringify(
+      structured(chain).redactAllow([]).toLogObject(),
+    );
+
+    expect(json).toContain("[Max cause depth exceeded]");
+  });
+
+  it("keeps the unserializable marker on a nested cause", () => {
+    const inner = new Error("inner");
+    Object.defineProperty(inner, "cause", {
+      value: new Proxy(
+        {},
+        {
+          getPrototypeOf() {
+            throw new Error("trap");
+          },
+        },
+      ),
+    });
+
+    const log = structured(inner).redactAllow([]).toLogObject();
+
+    expect((log.cause as Record<string, unknown>).cause).toBe(
+      "[Unserializable cause]",
+    );
+  });
+
+  it("still masks a foreign string under `cause` that merely resembles a marker", () => {
+    const inner = new Error("inner");
+    Object.defineProperty(inner, "cause", {
+      value: "[Circular cause chain] (not really)",
+    });
+
+    const log = structured(inner).redactAllow([]).toLogObject();
+
+    expect((log.cause as Record<string, unknown>).cause).toBe("[REDACTED]");
+  });
+});

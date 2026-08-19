@@ -403,6 +403,13 @@ export class BaseError<T extends string> extends Error {
       // stage. (OWASP Prototype Pollution Prevention.)
       const out = Object.create(null) as Record<string, unknown>;
       for (const [key, val] of Object.entries(value)) {
+        // The serializer's own markers (a nested `cause` cut by the cycle or
+        // depth cap, or one it could not serialize) are kept verbatim, as in
+        // the array branch: they are the library's words, not user data.
+        if (BaseError.#isSerializerMarker(val)) {
+          out[key] = val;
+          continue;
+        }
         // A leaf's keep/mask decision is made in the region it *lives in* (the
         // parent); the child region only governs recursion. Conflating the two
         // wrongly masks a region-transition key that holds a leaf (e.g. a
