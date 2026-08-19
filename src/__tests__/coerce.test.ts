@@ -60,6 +60,31 @@ describe("toStructuredError", () => {
     expect((err as unknown as { cause: unknown }).cause).toBeUndefined();
   });
 
+  it("passes through a structured error from another copy of the package", () => {
+    // Same shape and behavior, different prototype chain: what a second copy
+    // of this package (CJS next to ESM, two versions in one tree) produces.
+    const foreign = Object.assign(new Error("foreign"), {
+      code: "FOREIGN",
+      category: "REMOTE",
+      retryable: true,
+      toLogObject: () => ({}),
+    });
+
+    expect(toStructuredError(foreign)).toBe(foreign);
+  });
+
+  it("wraps a plain object with the structured shape but no behavior", () => {
+    // A parsed JSON payload is not a StructuredError: it cannot log itself.
+    const payload = { code: "REMOTE", category: "REMOTE", retryable: false };
+
+    const err = toStructuredError(payload);
+
+    expect(err).not.toBe(payload);
+    expect(err).toBeInstanceOf(StructuredError);
+    expect(err.message).toBe("Unknown error");
+    expect((err as unknown as { cause: unknown }).cause).toBe(payload);
+  });
+
   it("preserves a non-Error object as cause with a fallback message", () => {
     const value = { weird: true };
     const err = toStructuredError(value);

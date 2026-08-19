@@ -6,8 +6,7 @@ import {
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
 } from "../utils/problem-validation.js";
-import { PublicErrorCatalog } from "./PublicErrorCatalog.js";
-import type { Transport } from "./PublicErrorCatalog.js";
+import type { PublicErrorCatalog, Transport } from "./PublicErrorCatalog.js";
 import type { FieldFault, LocalizedPublicError, PublicError } from "./types.js";
 
 export { PROBLEM_DETAILS_JSON };
@@ -161,10 +160,9 @@ export function toProblem<
   if (!isNonEmptyString(view.code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
-  const transport =
-    source instanceof PublicErrorCatalog
-      ? transportOrThrow(source, view.code)
-      : assertValidTransport(source);
+  const transport = isCatalog(source)
+    ? transportOrThrow(source, view.code)
+    : assertValidTransport(source);
   const localized = hasMessage(view) ? view : undefined;
   const omitted: OmittedMember[] = [];
 
@@ -284,6 +282,20 @@ function hasMessage<TDetails, TCode extends string>(
   // `content-language: undefined`, so a partial view stays unlocalized.
   return (
     typeof partial.message === "string" && typeof partial.locale === "string"
+  );
+}
+
+/**
+ * Tells a catalog from an explicit transport by shape: a catalog answers
+ * `transportFor`, a transport is a plain `{ status, type?, title? }`. Not
+ * `instanceof`, which is realm-bound and fails for a catalog built by a second
+ * copy of this package (CJS next to ESM, two versions in one tree).
+ */
+function isCatalog(
+  source: PublicErrorCatalog | Transport,
+): source is PublicErrorCatalog {
+  return (
+    typeof (source as Partial<PublicErrorCatalog>).transportFor === "function"
   );
 }
 

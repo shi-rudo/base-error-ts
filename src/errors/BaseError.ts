@@ -668,7 +668,7 @@ export class BaseError<T extends string> extends Error {
       if (node instanceof BaseError) {
         return `[${node.name}] ${node.#renderMessage()}`;
       }
-      if (node instanceof Error) {
+      if (BaseError.#isNativeError(node)) {
         const name = readProperty(node, "name") ?? "Error";
         const message = readProperty(node, "message") ?? "";
         return `${String(name)}: ${String(message)}`;
@@ -676,6 +676,25 @@ export class BaseError<T extends string> extends Error {
       return String(node);
     } catch {
       return "[Unrenderable cause]";
+    }
+  }
+
+  /**
+   * Whether `value` is a native `Error` from any realm. `instanceof` is
+   * realm-bound: an error from a worker, a `vm` context, an iframe, or a second
+   * copy of this package fails it and would fall to the plain-object path,
+   * which drops the non-enumerable `name`/`message`/`stack` and logs `{}`. The
+   * `Object.prototype.toString` tag reads the `[[ErrorData]]` slot, which every
+   * native error carries regardless of realm. A plain object that merely
+   * *looks* like an error is deliberately not matched: its fields are
+   * enumerable, and the plain-object path keeps all of them.
+   */
+  /*#__PURE__*/ static #isNativeError(value: unknown): value is Error {
+    if (value instanceof Error) return true;
+    try {
+      return Object.prototype.toString.call(value) === "[object Error]";
+    } catch {
+      return false;
     }
   }
 
@@ -765,7 +784,7 @@ export class BaseError<T extends string> extends Error {
       return "[Max cause depth exceeded]";
     }
 
-    if (cause instanceof Error) {
+    if (BaseError.#isNativeError(cause)) {
       if (seen.has(cause)) {
         return "[Circular cause chain]";
       }

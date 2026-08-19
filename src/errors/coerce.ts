@@ -1,5 +1,6 @@
 import { StructuredError } from "./StructuredError.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
+import { isError, isStructuredError } from "./guards.js";
 
 /** Fallback configuration for {@link toStructuredError}. */
 export type CoerceOptions = {
@@ -20,7 +21,11 @@ export function toStructuredError(
   // Pass-through: an existing structured error keeps its own identity. The
   // return type is intentionally `StructuredError<string, string>` (not the
   // option literals) because pass-through can return any code/category.
-  if (value instanceof StructuredError) {
+  // Recognized by shape, not `instanceof`, so a structured error from another
+  // realm or a second copy of this package passes through too. The shape
+  // includes the behavior: a plain object with the three fields (a parsed
+  // payload) cannot log itself and is wrapped like any other value.
+  if (isStructuredError(value) && typeof value.toLogObject === "function") {
     return value;
   }
 
@@ -30,7 +35,7 @@ export function toStructuredError(
 
   let message: string;
   let cause: unknown;
-  if (value instanceof Error) {
+  if (isError(value)) {
     message = options.message ?? value.message;
     cause = value;
   } else if (typeof value === "string") {

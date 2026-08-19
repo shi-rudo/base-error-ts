@@ -6,6 +6,7 @@ import {
   projectWithDescriptor,
   toProblem,
 } from "../public-error/index.js";
+import type { PublicErrorCatalog } from "../public-error/index.js";
 import type {
   LocalizedPublicError,
   PublicError,
@@ -75,6 +76,24 @@ describe("catalog-free: toProblem with an explicit transport", () => {
     const result = toProblem({ status: 418 }, view);
     expect(result.body.title).toBe("I'm a teapot.");
     expect(result.headers["content-language"]).toBe("en");
+  });
+});
+
+describe("toProblem tells a catalog from a transport by shape", () => {
+  it("reads the transport from a catalog built by another copy of the package", () => {
+    const view: PublicError = {
+      code: "im_a_teapot",
+      category: "fun",
+      retryable: false,
+    };
+    const foreignCatalog = {
+      transportFor: (publicCode: string) =>
+        publicCode === "im_a_teapot" ? { status: 418 } : undefined,
+    } as unknown as PublicErrorCatalog;
+
+    const result = toProblem(foreignCatalog, view);
+
+    expect(result.status).toBe(418);
   });
 });
 
