@@ -1,3 +1,4 @@
+import { readMembers } from "../errors/guarded-read.js";
 import { isErrorWithCause } from "./guards.js";
 
 /**
@@ -45,21 +46,6 @@ function resolveOptions(
     aggregates: options?.aggregates === true,
     maxNodes: options?.maxNodes ?? DEFAULT_MAX_NODES,
   };
-}
-
-/**
- * The members of an aggregate, read by shape so that a cross-realm
- * `AggregateError` and a custom fan-out error both work.
- */
-function readMembers(value: unknown): readonly unknown[] {
-  if (typeof value !== "object" || value === null) return [];
-  try {
-    const members = (value as { errors?: unknown }).errors;
-    return Array.isArray(members) ? members : [];
-  } catch {
-    // A throwing getter must not break a traversal that runs in a catch path.
-    return [];
-  }
 }
 
 /**

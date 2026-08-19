@@ -1,3 +1,5 @@
+import { readMembers } from "./guarded-read.js";
+
 // This avoids polluting the global scope
 interface V8ErrorConstructor {
   captureStackTrace?(
@@ -502,7 +504,7 @@ export class BaseError<T extends string> extends Error {
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
     // the same bounded, cycle-safe serialization as an aggregate cause.
-    const members = BaseError.#readMembers(this);
+    const members = readMembers(this);
     if (members.length > 0) {
       json.errors = this.#serializeAggregate(members, new Set([this]), 1);
     }
@@ -620,7 +622,7 @@ export class BaseError<T extends string> extends Error {
       }
       seen.add(current);
 
-      const members = BaseError.#readMembers(current);
+      const members = readMembers(current);
       const suffix =
         members.length > 0 ? ` (+${members.length} aggregated)` : "";
       lines.push(`${prefix}${BaseError.#renderNode(current)}${suffix}`);
@@ -666,23 +668,6 @@ export class BaseError<T extends string> extends Error {
       return `${node.name}: ${node.message}`;
     }
     return String(node);
-  }
-
-  /**
-   * The members of an aggregate, read by shape rather than by
-   * `instanceof AggregateError`, so a cross-realm or custom fan-out error is
-   * handled too. The single reader for every path that needs them (log
-   * serialization and `toString`). A throwing getter yields no members: a
-   * hostile or lazily computed field must not break a log or a string render.
-   */
-  /*#__PURE__*/ static #readMembers(node: unknown): readonly unknown[] {
-    if (typeof node !== "object" || node === null) return [];
-    try {
-      const members = (node as { errors?: unknown }).errors;
-      return Array.isArray(members) ? members : [];
-    } catch {
-      return [];
-    }
   }
 
   // ----------------------------------------------------------------
@@ -782,7 +767,7 @@ export class BaseError<T extends string> extends Error {
       // by `instanceof AggregateError`, so cross-realm and custom fan-out
       // errors serialize too. Without this the branch failures that produced
       // the error never reach the log at all.
-      const members = BaseError.#readMembers(cause);
+      const members = readMembers(cause);
       if (members.length > 0) {
         serialized.errors = this.#serializeAggregate(members, seen, depth + 1);
       }
