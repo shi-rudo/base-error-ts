@@ -56,14 +56,31 @@
   "type": "module",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./public-error": {
-      "types": "./dist/public-error/index.d.ts",
-      "import": "./dist/public-error/index.js",
-      "require": "./dist/public-error/index.cjs"
+      "import": {
+        "types": "./dist/public-error/index.d.ts",
+        "default": "./dist/public-error/index.js"
+      },
+      "require": {
+        "types": "./dist/public-error/index.d.cts",
+        "default": "./dist/public-error/index.cjs"
+      }
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "public-error": [
+        "./dist/public-error/index.d.ts"
+      ]
     }
   },
   "scripts": {
