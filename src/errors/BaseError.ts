@@ -1,4 +1,4 @@
-import { readMembers } from "./guarded-read.js";
+import { readMembers, readProperty } from "./guarded-read.js";
 
 // This avoids polluting the global scope
 interface V8ErrorConstructor {
@@ -238,7 +238,7 @@ export class BaseError<T extends string> extends Error {
    * is still masked.
    */
   static readonly #SERIALIZER_MARKER =
-    /^\[(?:Circular cause chain|Max cause depth exceeded|\d+ more aggregated errors)\]$/;
+    /^\[(?:Circular cause chain|Max cause depth exceeded|Unserializable cause|\d+ more aggregated errors)\]$/;
 
   /*#__PURE__*/ static #isSerializerMarker(value: unknown): boolean {
     return (
@@ -650,24 +650,33 @@ export class BaseError<T extends string> extends Error {
         );
       }
 
-      current =
-        typeof current === "object" && current !== null && "cause" in current
-          ? (current as Record<string, unknown>).cause
-          : undefined;
+      current = readProperty(current, "cause");
     }
 
     return lines;
   }
 
-  /** One node as a single line, honoring a deny-listed `message`. */
+  /**
+   * One node as a single line, honoring a deny-listed `message`. A string
+   * render runs in catch paths and must not throw: a foreign `name`/`message`
+   * that throws falls back to the `Error.prototype` defaults, and a value with
+   * no string form at all (a null-prototype object, a throwing
+   * `Symbol.toPrimitive`) renders as a marker.
+   */
   /*#__PURE__*/ static #renderNode(node: unknown): string {
-    if (node instanceof BaseError) {
-      return `[${node.name}] ${node.#renderMessage()}`;
+    try {
+      if (node instanceof BaseError) {
+        return `[${node.name}] ${node.#renderMessage()}`;
+      }
+      if (node instanceof Error) {
+        const name = readProperty(node, "name") ?? "Error";
+        const message = readProperty(node, "message") ?? "";
+        return `${String(name)}: ${String(message)}`;
+      }
+      return String(node);
+    } catch {
+      return "[Unrenderable cause]";
     }
-    if (node instanceof Error) {
-      return `${node.name}: ${node.message}`;
-    }
-    return String(node);
   }
 
   // ----------------------------------------------------------------
@@ -726,8 +735,24 @@ export class BaseError<T extends string> extends Error {
    * Preserves stack traces, StructuredError fields, and nested data.
    * Uses a seen set to detect circular cause chains, and a depth bound so an
    * acyclic-but-very-deep chain is capped instead of recursing unbounded.
+   *
+   * Total per node: each foreign read is guarded, and a value that still
+   * defeats serialization (a Proxy whose traps throw) becomes a marker, so one
+   * hostile node costs its own entry in the log and nothing else.
    */
   /*#__PURE__*/ #serializeCause(
+    cause: unknown,
+    seen: Set<unknown>,
+    depth: number,
+  ): unknown {
+    try {
+      return this.#serializeCauseNode(cause, seen, depth);
+    } catch {
+      return "[Unserializable cause]";
+    }
+  }
+
+  /*#__PURE__*/ #serializeCauseNode(
     cause: unknown,
     seen: Set<unknown>,
     depth: number,
@@ -746,19 +771,20 @@ export class BaseError<T extends string> extends Error {
       }
       seen.add(cause);
 
+      // Every field is a foreign read: a cause is whatever the caller threw,
+      // and this runs in a catch path, so a throwing getter reads as absent.
       const serialized: Record<string, unknown> = {
-        name: cause.name,
-        message: cause.message,
-        stack: cause.stack,
+        name: readProperty(cause, "name"),
+        message: readProperty(cause, "message"),
+        stack: readProperty(cause, "stack"),
       };
 
       // Preserve StructuredError fields if present (duck-typing)
       // This avoids circular dependency between BaseError and StructuredError
-      const errorRecord = cause as unknown as Record<string, unknown>;
-      if ("code" in cause) serialized.code = errorRecord.code;
-      if ("category" in cause) serialized.category = errorRecord.category;
-      if ("retryable" in cause) serialized.retryable = errorRecord.retryable;
-      if ("details" in cause) serialized.details = errorRecord.details;
+      for (const key of ["code", "category", "retryable", "details"]) {
+        const value = readProperty(cause, key);
+        if (value !== undefined) serialized[key] = value;
+      }
 
       // An aggregate's members (`AggregateError.errors`, and any error-like
       // value carrying the same shape) are own but **non-enumerable** on every
@@ -773,12 +799,9 @@ export class BaseError<T extends string> extends Error {
       }
 
       // Recursively serialize nested causes
-      if ("cause" in cause && errorRecord.cause !== undefined) {
-        serialized.cause = this.#serializeCause(
-          errorRecord.cause,
-          seen,
-          depth + 1,
-        );
+      const nested = readProperty(cause, "cause");
+      if (nested !== undefined) {
+        serialized.cause = this.#serializeCause(nested, seen, depth + 1);
       }
 
       return serialized;
@@ -812,8 +835,10 @@ export class BaseError<T extends string> extends Error {
       }
     }
 
-    // For primitives (string, number, boolean), return as-is
-    return cause;
+    // A bigint has no JSON form and would make the consumer's JSON.stringify
+    // throw, so it is written as its decimal string. Every other primitive is
+    // returned as-is.
+    return typeof cause === "bigint" ? cause.toString() : cause;
   }
 
   /**

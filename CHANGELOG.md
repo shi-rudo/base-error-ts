@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **The catch paths no longer throw on a hostile cause.** The log serializer, `toString()`, the cause-chain helpers and the shape guards read `name`/`message`/`stack`/`code`/`category`/`retryable`/`details`/`cause` from values this library did not create, inside `catch` blocks where a new exception destroys the original error. Those reads were unguarded: a throwing getter on a cause's `stack` made `toLogObject`/`toJSON`/`JSON.stringify(err)` throw, a throwing `cause` getter broke `getRootCause`, `isChainRetryable`, `findInCauseChain` and `toString()`, and a Proxy with throwing traps made `isStructuredError`/`isRetryable`/`isErrorWithCause` throw instead of returning `false`. Every foreign read now goes through one guarded reader (a throwing getter reads as absent), the guards fail closed, and a cause node that still defeats serialization becomes a `"[Unserializable cause]"` marker while its well-behaved neighbors are logged in full.
+
+- **`toString()` renders a cause with no string form.** A null-prototype object cause, or one whose `Symbol.toPrimitive` throws, made `String(cause)` throw out of `toString()`, which is exactly the render a template-literal log line runs in a `catch`. Such a node now renders as `[Unrenderable cause]`; an `Error` whose `name`/`message` getter throws falls back to the `Error.prototype` defaults.
+
+- **A `bigint` cause is logged as its decimal string.** `#serializeCause` returned primitives as-is, but a `bigint` has no JSON form, so `JSON.stringify(err)` threw inside the consumer's logger, where the fail-closed redaction catch cannot reach. The plain-object cause path already guarded `BigInt`; the primitive path now writes `10n` as `"10"`. `details` stay the caller's raw data, as documented.
+
 ## 8.2.0 - 2026-08-18
 
 Aggregate errors, end to end. An `AggregateError` used to enter this library and lose everything that made it useful: its members never reached a log, never survived the wire, and never reached a retry decision. This release closes that path in the serializer, the redaction walker, `fromJSON`, `toString` and the cause-chain helpers, adds a first-class aggregate of your own, and fixes one unrelated allow-list gap found on the way.

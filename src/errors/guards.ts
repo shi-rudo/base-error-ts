@@ -3,6 +3,7 @@
  */
 
 import { BaseError } from "./BaseError.js";
+import { readProperty } from "./guarded-read.js";
 import { StructuredError } from "./StructuredError.js";
 
 /** Portable fields shared by native and structurally recognized errors. */
@@ -144,18 +145,24 @@ export function isBaseError(value: unknown): value is BaseError<string> {
 export function isStructuredError(
   value: unknown,
 ): value is StructuredError<string, string> {
-  // Fast path: instanceof check
-  if (value instanceof StructuredError) return true;
+  try {
+    // Fast path: instanceof check
+    if (value instanceof StructuredError) return true;
 
-  // Fallback: duck-typing for cross-realm or serialized errors
-  if (typeof value !== "object" || value === null) return false;
+    // Fallback: duck-typing for cross-realm or serialized errors
+    if (typeof value !== "object" || value === null) return false;
 
-  const err = value as Record<string, unknown>;
-  return (
-    typeof err.code === "string" &&
-    typeof err.category === "string" &&
-    typeof err.retryable === "boolean"
-  );
+    const err = value as Record<string, unknown>;
+    return (
+      typeof err.code === "string" &&
+      typeof err.category === "string" &&
+      typeof err.retryable === "boolean"
+    );
+  } catch {
+    // A throwing getter or Proxy trap is a foreign input; the guard runs in
+    // catch paths and fails closed.
+    return false;
+  }
 }
 
 /**
@@ -183,10 +190,5 @@ export function isStructuredError(
 export function isRetryable(
   value: unknown,
 ): value is { retryable: true } & Record<string, unknown> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "retryable" in value &&
-    (value as Record<string, unknown>).retryable === true
-  );
+  return readProperty(value, "retryable") === true;
 }

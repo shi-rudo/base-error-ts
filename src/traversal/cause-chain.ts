@@ -1,5 +1,4 @@
-import { readMembers } from "../errors/guarded-read.js";
-import { isErrorWithCause } from "./guards.js";
+import { readMembers, readProperty } from "../errors/guarded-read.js";
 
 /**
  * How far and how wide a traversal goes. Every helper also accepts a plain
@@ -68,8 +67,9 @@ function* traverseCauseTree(
   budget.nodes--;
   yield error;
 
-  if (isErrorWithCause(error)) {
-    yield* traverseCauseTree(error.cause, depth + 1, options, seen, budget);
+  const cause = readProperty(error, "cause");
+  if (cause !== undefined) {
+    yield* traverseCauseTree(cause, depth + 1, options, seen, budget);
   }
   for (const member of readMembers(error)) {
     yield* traverseCauseTree(member, depth + 1, options, seen, budget);
@@ -116,8 +116,9 @@ function* traverseCauseChain(
     seen.add(current);
     yield current;
 
-    if (!isErrorWithCause(current)) return;
-    current = current.cause;
+    const cause = readProperty(current, "cause");
+    if (cause === undefined) return;
+    current = cause;
   }
 }
 

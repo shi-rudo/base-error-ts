@@ -114,6 +114,10 @@ Structural guards (`isError`, `hasErrorCode`, `isStructuredError`,
 as authorization to disclose details, trust network payloads, or execute domain
 behavior. Constructor guards establish local identity but are realm-local.
 
+The structural guards also fail closed: a throwing getter or a Proxy whose traps
+throw reads as "not a match" rather than throwing out of the guard, because a
+guard runs in `catch` blocks where a new exception destroys the original error.
+
 Catalog guards add a stronger, catalog-local guarantee. `AppErrors.is(value)`
 accepts only instances created by that exact catalog and rejects structurally
 similar, deserialized and foreign-catalog values. Use it when domain behavior
