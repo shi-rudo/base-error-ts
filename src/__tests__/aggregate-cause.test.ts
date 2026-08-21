@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { errorWithThrowingGetter } from "./hostile-values.fixture.js";
 import { hasErrorCode, isStructuredError, StructuredError } from "../index.js";
 
 /** The serialized shape of one node in a logged cause chain. */
@@ -575,19 +576,8 @@ describe("toString() stays total", () => {
 });
 
 describe("a throwing `errors` getter", () => {
-  const withThrowingMembers = (): Error => {
-    const error = new Error("hostile");
-    Object.defineProperty(error, "errors", {
-      get() {
-        throw new Error("getter");
-      },
-      configurable: true,
-    });
-    return error;
-  };
-
   it("does not break the log path", () => {
-    const error = wrap(withThrowingMembers());
+    const error = wrap(errorWithThrowingGetter("errors"));
 
     expect(() => error.toLogObject()).not.toThrow();
     expect((error.toLogObject().cause as Record<string, unknown>).message).toBe(

@@ -15,35 +15,10 @@ import {
   toStructuredError,
 } from "../index.js";
 
-/** An Error whose `key` getter throws on every read. */
-function errorWithThrowingGetter(key: string): Error {
-  const error = new Error("hostile");
-  Object.defineProperty(error, key, {
-    get() {
-      throw new Error(`${key} getter`);
-    },
-    configurable: true,
-  });
-  return error;
-}
-
-/** A Proxy whose every trap throws, as a maximally hostile foreign value. */
-function hostileProxy(): object {
-  return new Proxy(
-    {},
-    {
-      get() {
-        throw new Error("get trap");
-      },
-      has() {
-        throw new Error("has trap");
-      },
-      getPrototypeOf() {
-        throw new Error("getPrototypeOf trap");
-      },
-    },
-  );
-}
+import {
+  errorWithThrowingGetter,
+  hostileProxy,
+} from "./hostile-values.fixture.js";
 
 function wrap(cause: unknown): BaseError<"Outer"> {
   return new BaseError<"Outer">("outer failed", cause, { name: "Outer" });

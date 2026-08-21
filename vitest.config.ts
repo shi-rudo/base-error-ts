@@ -19,6 +19,7 @@ export default defineConfig({
         "**/coverage/**",
         "**/*.test.ts",
         "**/*.types.ts",
+        "**/*.fixture.ts",
       ],
       thresholds: {
         statements: 95,

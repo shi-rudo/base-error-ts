@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hostileProxy } from "./hostile-values.fixture.js";
 
 import {
   hasErrorCode,
@@ -48,29 +49,11 @@ describe("isError", () => {
   });
 
   it("fails closed for throwing property access", () => {
-    const value = new Proxy(
-      {},
-      {
-        get() {
-          throw new Error("blocked");
-        },
-      },
-    );
-
-    expect(isError(value)).toBe(false);
+    expect(isError(hostileProxy(["get"]))).toBe(false);
   });
 
   it("fails closed when prototype inspection throws", () => {
-    const value = new Proxy(
-      {},
-      {
-        getPrototypeOf() {
-          throw new Error("blocked");
-        },
-      },
-    );
-
-    expect(isError(value)).toBe(false);
+    expect(isError(hostileProxy(["getPrototypeOf"]))).toBe(false);
   });
 });
 

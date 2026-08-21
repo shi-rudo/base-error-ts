@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { hostileProxy } from "./hostile-values.fixture.js";
 import { StructuredError, BaseError } from "../index.js";
 
 class TestError extends BaseError<"TestError"> {}
@@ -738,14 +739,7 @@ describe("redactAllow keeps the serializer's own cause markers readable", () => 
   it("keeps the unserializable marker on a nested cause", () => {
     const inner = new Error("inner");
     Object.defineProperty(inner, "cause", {
-      value: new Proxy(
-        {},
-        {
-          getPrototypeOf() {
-            throw new Error("trap");
-          },
-        },
-      ),
+      value: hostileProxy(["getPrototypeOf"]),
     });
 
     const log = structured(inner).redactAllow([]).toLogObject();
