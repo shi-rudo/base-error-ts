@@ -85,6 +85,24 @@ describe("toStructuredError", () => {
     expect((err as unknown as { cause: unknown }).cause).toBe(payload);
   });
 
+  it("wraps a bare payload even when it carries a callable toLogObject", () => {
+    // The pass-through promises the full StructuredError surface (toJSON,
+    // redact, Error identity for `throw`). A payload that is not even
+    // error-like cannot honor it, however many methods it fakes.
+    const payload = {
+      code: "R",
+      category: "X",
+      retryable: false,
+      toLogObject: () => ({}),
+    };
+
+    const err = toStructuredError(payload);
+
+    expect(err).not.toBe(payload);
+    expect(err).toBeInstanceOf(StructuredError);
+    expect((err as unknown as { cause: unknown }).cause).toBe(payload);
+  });
+
   it("preserves a non-Error object as cause with a fallback message", () => {
     const value = { weird: true };
     const err = toStructuredError(value);

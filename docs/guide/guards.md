@@ -189,10 +189,11 @@ try {
 
 Both error rows are recognized by shape, not by `instanceof`, so an error from
 another realm (a worker, an iframe, a second copy of this package) takes the
-same row as a local one. "A `StructuredError`" means the structured shape
-**with** its behavior (`toLogObject`): a parsed payload that merely carries
-`code`/`category`/`retryable` cannot log itself, so it is wrapped like any other
-value and kept as `cause`.
+same row as a local one. "A `StructuredError`" means an error-like value
+(string `name`/`message`) with the structured fields **and** the behavior
+(`toLogObject`): a parsed payload that merely carries
+`code`/`category`/`retryable` cannot honor the promised surface, so it is
+wrapped like any other value and kept as `cause`.
 
 Honest defaults: `code` `"UNKNOWN_ERROR"`, `category` `"INTERNAL"`, `retryable`
 `false`. It is a **boundary/observability tool, not a modeling tool**: it does

@@ -24,11 +24,14 @@ export function toStructuredError(
   // option literals) because pass-through can return any code/category.
   // Recognized by shape, not `instanceof`, so a structured error from another
   // realm or a second copy of this package passes through too. The shape
-  // includes the behavior: a plain object with the three fields (a parsed
-  // payload) cannot log itself and is wrapped like any other value.
+  // includes being error-like (string `name`/`message`) and the behavior: a
+  // bare payload with the three fields cannot honor the promised surface
+  // (`toJSON`, redaction, an Error to `throw`), however many methods it
+  // fakes, and is wrapped like any other value.
   // `toLogObject` is a foreign read like any other: a throwing getter behind
   // the passing guard must wrap, not escape the catch path.
   if (
+    isError(value) &&
     isStructuredError(value) &&
     typeof readProperty(value, "toLogObject") === "function"
   ) {
