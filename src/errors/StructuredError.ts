@@ -1,6 +1,7 @@
 import { BaseError } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
+import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
 
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
@@ -288,7 +289,7 @@ export class StructuredError<
       reconstructed.push(
         rest.length === 1 && typeof tail === "string"
           ? tail
-          : `[${rest.length} more aggregated errors]`,
+          : moreAggregatedErrorsMarker(rest.length),
       );
     }
     return reconstructed;

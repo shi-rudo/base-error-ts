@@ -1,4 +1,11 @@
 import { readMembers, readProperty } from "./guarded-read.js";
+import {
+  CIRCULAR_CAUSE_CHAIN_MARKER,
+  MAX_CAUSE_DEPTH_MARKER,
+  UNSERIALIZABLE_CAUSE_MARKER,
+  isSerializerMarker,
+  moreAggregatedErrorsMarker,
+} from "./serializer-markers.js";
 
 // This avoids polluting the global scope
 interface V8ErrorConstructor {
@@ -237,22 +244,6 @@ export class BaseError<T extends string> extends Error {
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
 
   /**
-   * The markers the serializer itself writes in place of a value it refused to
-   * expand. They are the library's own words, never user data, so redaction
-   * leaves them readable: masking them would turn a truncated log into one that
-   * looks complete. Matched exactly, so a member that merely resembles a marker
-   * is still masked.
-   */
-  static readonly #SERIALIZER_MARKER =
-    /^\[(?:Circular cause chain|Max cause depth exceeded|Unserializable cause|\d+ more aggregated errors)\]$/;
-
-  /*#__PURE__*/ static #isSerializerMarker(value: unknown): boolean {
-    return (
-      typeof value === "string" && BaseError.#SERIALIZER_MARKER.test(value)
-    );
-  }
-
-  /**
    * Largest **data** nesting depth the redaction walker descends into. Bounded
    * so a pathologically deep `details` tree degrades to a marker at the deep end
    * (shallow fields survive) instead of overflowing the stack and tripping the
@@ -398,7 +389,7 @@ export class BaseError<T extends string> extends Error {
         // not an envelope key, so a string member is data like any other.
         // Only on the cause spine: in a data region an exact marker lookalike
         // is user data and must not slip past a deny- or allow-list.
-        if (region === "cause" && BaseError.#isSerializerMarker(item)) {
+        if (region === "cause" && isSerializerMarker(item)) {
           return item;
         }
         const decision = decide(key, item, region);
@@ -417,7 +408,7 @@ export class BaseError<T extends string> extends Error {
         // depth cap, or one it could not serialize) are kept verbatim, as in
         // the array branch. Only on the cause spine, where the serializer
         // writes them: in a data region an exact lookalike is user data.
-        if (region === "cause" && BaseError.#isSerializerMarker(val)) {
+        if (region === "cause" && isSerializerMarker(val)) {
           out[key] = val;
           continue;
         }
@@ -624,7 +615,7 @@ export class BaseError<T extends string> extends Error {
     // deep tree degrades to a marker instead of overflowing the host stack
     // (which is far smaller on an edge isolate than on Node).
     if (depth > BaseError.#MAX_CAUSE_DEPTH) {
-      return [`${indent}[Max cause depth exceeded]`];
+      return [`${indent}${MAX_CAUSE_DEPTH_MARKER}`];
     }
     const lines: string[] = [];
     let current: unknown = start;
@@ -635,7 +626,7 @@ export class BaseError<T extends string> extends Error {
       first = false;
 
       if (seen.has(current)) {
-        lines.push(`${prefix}[Circular cause chain]`);
+        lines.push(`${prefix}${CIRCULAR_CAUSE_CHAIN_MARKER}`);
         break;
       }
       seen.add(current);
@@ -664,7 +655,7 @@ export class BaseError<T extends string> extends Error {
       }
       if (members.length > shown.length) {
         lines.push(
-          `${indent}  [${members.length - shown.length} more aggregated errors]`,
+          `${indent}  ${moreAggregatedErrorsMarker(members.length - shown.length)}`,
         );
       }
 
@@ -799,7 +790,7 @@ export class BaseError<T extends string> extends Error {
     try {
       return this.#serializeCauseNode(cause, seen, depth);
     } catch {
-      return "[Unserializable cause]";
+      return UNSERIALIZABLE_CAUSE_MARKER;
     }
   }
 
@@ -813,12 +804,12 @@ export class BaseError<T extends string> extends Error {
     }
 
     if (depth >= BaseError.#MAX_CAUSE_DEPTH) {
-      return "[Max cause depth exceeded]";
+      return MAX_CAUSE_DEPTH_MARKER;
     }
 
     if (BaseError.#isNativeError(cause)) {
       if (seen.has(cause)) {
-        return "[Circular cause chain]";
+        return CIRCULAR_CAUSE_CHAIN_MARKER;
       }
       seen.add(cause);
 
@@ -925,7 +916,7 @@ export class BaseError<T extends string> extends Error {
 
     const dropped = errors.length - serialized.length;
     if (dropped > 0) {
-      serialized.push(`[${dropped} more aggregated errors]`);
+      serialized.push(moreAggregatedErrorsMarker(dropped));
     }
     return serialized;
   }
