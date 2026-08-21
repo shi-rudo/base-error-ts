@@ -963,6 +963,12 @@ export class BaseError<T extends string> extends Error {
         enumerable: false,
       });
     };
+    // The engine-managed `stack` that `super()` captured is removed, not
+    // redefined over: on V8 11 (Node 20) redefining it materializes the held
+    // stack first, which calls `Error.prepareStackTrace` eagerly for frames
+    // nobody reads. `delete` discards them without formatting on every
+    // engine; V8 12+ (`stack` as a plain accessor pair) needs neither.
+    delete (this as { stack?: string }).stack;
     Object.defineProperty(this, "stack", {
       configurable: true,
       enumerable: false,

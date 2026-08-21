@@ -18,6 +18,8 @@
 
 - **`redactAllow` keeps the serializer's own markers on a nested cause.** The cycle and depth markers (`[Circular cause chain]`, `[Max cause depth exceeded]`) the serializer writes under a nested cause's `cause` key sat in the cause region under a non-envelope key, so an allow-list masked them to `[REDACTED]`: a log cut short by a cycle looked like a log whose cause was a secret. The array branch already kept these markers (8.2.0); the object branch now does too, matched exactly, so a foreign string that merely resembles a marker is still masked. The new `[Unserializable cause]` marker is covered the same way.
 
+- **Construction no longer symbolizes the stack on Node 20.** The lazy-stack installer redefines `this.stack` with its memoizing accessor. On V8 11 (Node 20) that redefinition first materializes the stack `super()` captured, which calls `Error.prepareStackTrace` eagerly on every construction, for frames nobody reads; V8 12+ (Node 22+, where `stack` is a plain accessor pair) does not. The engine-managed property is now deleted before the accessor is installed, which discards the unread frames without formatting them on every engine. This also turned the `test (20.x)` CI job red on every `main` run since 8.1.0; `test (22.x)` and workerd were unaffected.
+
 - **A `bigint` cause is logged as its decimal string.** `#serializeCause` returned primitives as-is, but a `bigint` has no JSON form, so `JSON.stringify(err)` threw inside the consumer's logger, where the fail-closed redaction catch cannot reach. The plain-object cause path already guarded `BigInt`; the primitive path now writes `10n` as `"10"`. `details` stay the caller's raw data, as documented.
 
 ## 8.2.0 - 2026-08-18
