@@ -933,6 +933,17 @@ export class BaseError<T extends string> extends Error {
    * memoizing accessor: the first get symbolizes, filters, and replaces
    * itself with a plain writable data property; a set before the first get
    * (a rehydrated or user-assigned stack) wins unfiltered.
+   *
+   * This capture duplicates the one `super()` already performed, and that is
+   * deliberate: both remedies measure or behave worse. Suppressing the first
+   * capture with `Error.stackTraceLimit = 0` around `super()` deopts V8's
+   * capture fast path process-wide (measured on Node 24: construction 4x
+   * slower, and plain `new Error` slower for the rest of the process). And
+   * the frames `super()` captured cannot replace the holder's: on V8 11
+   * (Node 20) reading their descriptor materializes them eagerly, and on
+   * V8 12+ they lack the constructor trimming `captureStackTrace` gives the
+   * holder. The unread first capture costs ~1 microsecond and is discarded
+   * unformatted (see the `delete` below).
    */
   /*#__PURE__*/ #installLazyStack(): void {
     // Cast Error to our local interface for type-safe access.
