@@ -701,15 +701,29 @@ export class BaseError<T extends string> extends Error {
    * Whether `value` is a native `Error` from any realm. `instanceof` is
    * realm-bound: an error from a worker, a `vm` context, an iframe, or a second
    * copy of this package fails it and would fall to the plain-object path,
-   * which drops the non-enumerable `name`/`message`/`stack` and logs `{}`. The
-   * `Object.prototype.toString` tag reads the `[[ErrorData]]` slot, which every
-   * native error carries regardless of realm. A plain object that merely
+   * which drops the non-enumerable `name`/`message`/`stack` and logs `{}`.
+   * `Error.isError` (where the runtime has it) and the
+   * `Object.prototype.toString` fallback read the `[[ErrorData]]` slot, which
+   * every native error carries regardless of realm. A plain object that merely
    * *looks* like an error is deliberately not matched: its fields are
-   * enumerable, and the plain-object path keeps all of them.
+   * enumerable, and the plain-object path keeps all of them. The fallback must
+   * reject a `Symbol.toStringTag` carrier first: the tag overrides `toString`,
+   * so a plain object tagged `"Error"` would masquerade as native and lose
+   * every field, while a genuine native error carries no such tag.
    */
   /*#__PURE__*/ static #isNativeError(value: unknown): value is Error {
     if (value instanceof Error) return true;
+    const ErrorCtor = Error as { isError?: (value: unknown) => boolean };
+    if (typeof ErrorCtor.isError === "function") {
+      return ErrorCtor.isError(value);
+    }
     try {
+      if (
+        (value as { [Symbol.toStringTag]?: unknown })[Symbol.toStringTag] !==
+        undefined
+      ) {
+        return false;
+      }
       return Object.prototype.toString.call(value) === "[object Error]";
     } catch {
       return false;

@@ -470,6 +470,24 @@ describe("BaseError", () => {
       expect(json.cause).toEqual(objectCause);
     });
 
+    it("keeps every field of a plain object tagged as an Error", () => {
+      // Object.prototype.toString honors Symbol.toStringTag, so a tagged DTO
+      // masquerades as "[object Error]". It is still a plain object: taking
+      // the native-error path would drop every enumerable field.
+      const tagged = {
+        [Symbol.toStringTag]: "Error",
+        requestId: "abc",
+        detail: "important",
+      };
+
+      const error = new AutoNamedError("outer", tagged);
+
+      expect(error.toJSON().cause).toEqual({
+        requestId: "abc",
+        detail: "important",
+      });
+    });
+
     it("should handle primitive causes", () => {
       const stringCause = "Simple error message";
       const numberCause = 404;
