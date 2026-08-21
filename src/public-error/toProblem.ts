@@ -1,5 +1,5 @@
-import { cloneJsonSafe } from "../utils/json-safe.js";
-import type { JsonSafeValue } from "../utils/json-safe.js";
+import { cloneJsonSafe } from "../errors/json-safe.js";
+import type { JsonSafeValue } from "../errors/json-safe.js";
 import {
   isHttpStatusCode,
   isNonEmptyString,

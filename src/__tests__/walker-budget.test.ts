@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { StructuredError, defineErrors } from "../index.js";
-import { cloneJsonSafe } from "../utils/json-safe.js";
+import { cloneJsonSafe } from "../errors/json-safe.js";
 import { PublicErrorCatalog } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
 import { toProblem } from "../public-error/toProblem.js";
