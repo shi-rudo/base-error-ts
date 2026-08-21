@@ -1,14 +1,10 @@
 import { StructuredError } from "./StructuredError.js";
 import type { RedactMask } from "./BaseError.js";
+import { cloneJsonSafe } from "./json-safe.js";
+import type { JsonSafeValue } from "./json-safe.js";
 
-/** JSON-safe static metadata supported by catalog definitions. */
-export type CatalogJsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | readonly CatalogJsonValue[]
-  | { readonly [key: string]: CatalogJsonValue };
+/** JSON-safe static metadata supported by catalog definitions. Alias of {@link JsonSafeValue}, whose module owns the JSON-safety rules. */
+export type CatalogJsonValue = JsonSafeValue;
 
 /** Static boundary metadata attached to one catalog definition. */
 export type CatalogMetadata = Readonly<Record<string, CatalogJsonValue>>;
@@ -187,71 +183,6 @@ type RuntimeSpec = {
   readonly redaction?: CatalogRedactionPolicy;
 };
 
-/**
- * Total-node budget for one metadata snapshot. Shared (DAG) references are
- * cloned once per reference, so a small definition could legally expand
- * exponentially; past the budget it is rejected like any other non-JSON-safe
- * metadata. Definition-time and developer-facing, so failing fast is correct.
- */
-const MAX_METADATA_NODES = 100_000;
-
-function cloneJsonValue(
-  value: unknown,
-  seen: Set<object>,
-  state: { nodes: number },
-): CatalogJsonValue {
-  if (++state.nodes > MAX_METADATA_NODES) {
-    throw new Error("defineErrors: metadata must be JSON-safe");
-  }
-  if (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "boolean"
-  ) {
-    return value;
-  }
-  if (typeof value === "number") {
-    if (Number.isFinite(value)) return value;
-    throw new Error("defineErrors: metadata must be JSON-safe");
-  }
-  if (typeof value !== "object") {
-    throw new Error("defineErrors: metadata must be JSON-safe");
-  }
-  if (seen.has(value)) {
-    throw new Error("defineErrors: metadata must be JSON-safe");
-  }
-
-  seen.add(value);
-  try {
-    if (Array.isArray(value)) {
-      for (let index = 0; index < value.length; index++) {
-        if (!Object.prototype.hasOwnProperty.call(value, index)) {
-          throw new Error("defineErrors: metadata must be JSON-safe");
-        }
-      }
-      return Object.freeze(
-        value.map((item) => cloneJsonValue(item, seen, state)),
-      ) as readonly CatalogJsonValue[];
-    }
-
-    const prototype = Object.getPrototypeOf(value) as unknown;
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new Error("defineErrors: metadata must be JSON-safe");
-    }
-    if (Object.getOwnPropertySymbols(value).length > 0) {
-      throw new Error("defineErrors: metadata must be JSON-safe");
-    }
-
-    const clone = Object.create(null) as Record<string, CatalogJsonValue>;
-    for (const [key, item] of Object.entries(value)) {
-      clone[key] = cloneJsonValue(item, seen, state);
-    }
-    return Object.freeze(clone);
-  } finally {
-    seen.delete(value);
-  }
-}
-
 function snapshotRedaction(value: unknown): CatalogRedactionPolicy | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "object" || value === null) {
@@ -389,8 +320,8 @@ export function defineErrors(
     const metadata =
       spec.metadata === undefined
         ? undefined
-        : (cloneJsonValue(spec.metadata, new Set(), {
-            nodes: 0,
+        : (cloneJsonSafe(spec.metadata, {
+            errorMessage: "defineErrors: metadata must be JSON-safe",
           }) as CatalogMetadata);
     const redaction = snapshotRedaction(spec.redaction);
 
