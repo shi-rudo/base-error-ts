@@ -90,6 +90,13 @@ export default [
       ],
     },
   },
+  // Build scripts run on Node only; declare the runtime globals they use.
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: { console: "readonly", URL: "readonly", process: "readonly" },
+    },
+  },
   {
     ignores: ["dist/**", "coverage/**", "node_modules/**", "docs/**"],
   },

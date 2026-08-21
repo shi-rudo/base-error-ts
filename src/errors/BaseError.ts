@@ -121,7 +121,13 @@ export class BaseError<T extends string> extends Error {
     // otherwise fall back to the constructor name. Both `name` and `_tag`
     // derive from it so they can never diverge. Passing an explicit
     // `name` stabilizes the discriminant under class-name minification.
-    const resolvedName = options.name ?? this.constructor.name;
+    // A direct `new BaseError(...)` uses the literal instead of inference:
+    // the bundler rewrites this class into a renamed binding (its body reads
+    // its own statics), and `constructor.name` would report that binding
+    // (`_BaseError`). verify-dist.mjs guards this on every build.
+    const resolvedName =
+      options.name ??
+      (new.target === BaseError ? "BaseError" : this.constructor.name);
     this.name = resolvedName as T;
     this._tag = resolvedName;
 

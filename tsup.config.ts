@@ -17,4 +17,5 @@ export default defineConfig({
   outDir: "dist",
   noExternal: [], // Bundle all dependencies
   platform: "neutral", // Target both Node.js and browsers
+  onSuccess: "node scripts/verify-dist.mjs",
 });
