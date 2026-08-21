@@ -381,12 +381,37 @@ describe("fromJSON hardening", () => {
 
     const restored = StructuredError.fromJSON(payload);
 
-    expect(countErrors(restored)).toBeLessThanOrEqual(1000);
+    // The root error itself is not a cause node; the budget bounds the rest.
+    expect(countErrors(restored) - 1).toBeLessThanOrEqual(10_000);
     const outerAggregate = (restored as unknown as { cause: AggregateError })
       .cause;
     expect(outerAggregate.errors[outerAggregate.errors.length - 1]).toMatch(
       /^\[\d+ more aggregated errors\]$/,
     );
+  });
+
+  it("round-trips the serializer's own maximum aggregate output losslessly", () => {
+    // Width 100 with 15-deep branch chains is inside every serializer cap and
+    // writes ~1500 nodes; the reconstruction budget must not truncate what
+    // the serializer legitimately produced.
+    const members = Array.from({ length: 100 }, (_, index) => {
+      let chain = new Error(`leaf ${index}`);
+      for (let level = 0; level < 14; level++) {
+        const next = new Error(`branch ${index} level ${level}`);
+        Object.defineProperty(next, "cause", { value: chain });
+        chain = next;
+      }
+      return chain;
+    });
+    const source = wrap(new AggregateError(members, "wide and deep"));
+
+    const restored = StructuredError.fromJSON(
+      JSON.parse(JSON.stringify(source)),
+    );
+
+    const cause = (restored as unknown as { cause: AggregateError }).cause;
+    expect(cause.errors).toHaveLength(100);
+    expect(countErrors(restored)).toBe(1 + 1 + 100 * 15);
   });
 
   it("reconstructs a payload within the budget in full", () => {

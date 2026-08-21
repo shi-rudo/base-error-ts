@@ -145,21 +145,25 @@ export class StructuredError<
   static readonly #MAX_DEPTH = 100;
 
   /**
-   * Total number of errors one `fromJSON` call reconstructs. The depth cap and
-   * the per-node width cap still allow `100^depth` reconstructions, and a
-   * shared reference makes such a payload tiny in memory, so the walk also
-   * carries a node budget, the same one the tree traversal uses. Past it, a
-   * `cause` drops like it does past the depth cap, and the remaining members
-   * of an aggregate collapse into the count marker.
+   * Total number of cause-graph nodes one `fromJSON` call reconstructs. The
+   * depth cap and the per-node width cap still allow `100^depth`
+   * reconstructions, and a shared reference makes such a payload tiny in
+   * memory, so the walk also carries a node budget. Sized above the ~1500
+   * nodes a maximal serializer output legitimately carries (width 100, deep
+   * branch chains), so this library's own log shape round-trips losslessly,
+   * while a hostile payload is capped at ~10^4 stack captures (tens of
+   * milliseconds, not seconds). Past the budget, a `cause` drops like it does
+   * past the depth cap, and the remaining members of an aggregate collapse
+   * into the count marker. Charged at exactly one site, the top of
+   * {@link StructuredError.#reconstructCause}'s object path.
    */
-  static readonly #MAX_NODES = 1000;
+  static readonly #MAX_NODES = 10_000;
 
   static #fromJSON(
     json: unknown,
     depth: number,
     budget: { nodes: number },
   ): StructuredError<string, string> {
-    budget.nodes--;
     const obj: Record<string, unknown> =
       typeof json === "object" && json !== null
         ? (json as Record<string, unknown>)
@@ -305,6 +309,7 @@ export class StructuredError<
     if (budget.nodes <= 0) {
       return undefined;
     }
+    budget.nodes--;
 
     const obj = value as Record<string, unknown>;
 
@@ -322,7 +327,6 @@ export class StructuredError<
     // workerd, where it also degrades the class to a plain `Error`), which makes
     // this round-trip the only lossless way across a worker or queue boundary.
     if (Array.isArray(obj.errors)) {
-      budget.nodes--;
       const aggregate = new AggregateError(
         StructuredError.#reconstructMembers(obj.errors, depth, budget),
         typeof obj.message === "string" ? obj.message : "",
@@ -346,7 +350,6 @@ export class StructuredError<
 
     // Plain error shape -> a basic Error, chained.
     if (typeof obj.message === "string") {
-      budget.nodes--;
       const err = new Error(obj.message);
       if (typeof obj.name === "string") {
         err.name = obj.name;
