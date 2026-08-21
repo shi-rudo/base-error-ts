@@ -755,6 +755,41 @@ describe("redactAllow keeps the serializer's own cause markers readable", () => 
     );
   });
 
+  it("masks an exact marker string sitting in a data region (deny-list)", () => {
+    const log = new StructuredError({
+      code: "C",
+      category: "X",
+      retryable: false,
+      message: "m",
+      details: { password: "[Circular cause chain]" },
+    })
+      .redact(["password"])
+      .toLogObject();
+
+    expect((log.details as Record<string, unknown>).password).toBe(
+      "[REDACTED]",
+    );
+  });
+
+  it("masks an exact marker string sitting in a data region (allow-list)", () => {
+    const log = new StructuredError({
+      code: "C",
+      category: "X",
+      retryable: false,
+      message: "m",
+      details: {
+        note: "[7 more aggregated errors]",
+        tokens: ["[Circular cause chain]"],
+      },
+    })
+      .redactAllow([])
+      .toLogObject();
+
+    const details = log.details as Record<string, unknown>;
+    expect(details.note).toBe("[REDACTED]");
+    expect(details.tokens).toEqual(["[REDACTED]"]);
+  });
+
   it("still masks a foreign string under `cause` that merely resembles a marker", () => {
     const inner = new Error("inner");
     Object.defineProperty(inner, "cause", {

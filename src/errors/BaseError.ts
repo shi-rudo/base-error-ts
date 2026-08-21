@@ -396,7 +396,11 @@ export class BaseError<T extends string> extends Error {
         // it promises: an aggregate's members are arbitrary values (a
         // `Promise.allSettled` reason need not be an `Error`), and `errors` is
         // not an envelope key, so a string member is data like any other.
-        if (BaseError.#isSerializerMarker(item)) return item;
+        // Only on the cause spine: in a data region an exact marker lookalike
+        // is user data and must not slip past a deny- or allow-list.
+        if (region === "cause" && BaseError.#isSerializerMarker(item)) {
+          return item;
+        }
         const decision = decide(key, item, region);
         return decision === BaseError.#RECURSE ? item : decision;
       });
@@ -411,8 +415,9 @@ export class BaseError<T extends string> extends Error {
       for (const [key, val] of Object.entries(value)) {
         // The serializer's own markers (a nested `cause` cut by the cycle or
         // depth cap, or one it could not serialize) are kept verbatim, as in
-        // the array branch: they are the library's words, not user data.
-        if (BaseError.#isSerializerMarker(val)) {
+        // the array branch. Only on the cause spine, where the serializer
+        // writes them: in a data region an exact lookalike is user data.
+        if (region === "cause" && BaseError.#isSerializerMarker(val)) {
           out[key] = val;
           continue;
         }
