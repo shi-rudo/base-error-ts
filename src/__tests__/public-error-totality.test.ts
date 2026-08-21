@@ -19,6 +19,29 @@ const fallbackOnly = (): PublicErrorCatalog =>
     fallback: { publicCode: "internal_error", status: 500, retryable: false },
   });
 
+describe("resolve: a hostile error value", () => {
+  it("projects the fallback for a Proxy whose traps throw", () => {
+    const proxy = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("get trap");
+        },
+        has() {
+          throw new Error("has trap");
+        },
+        getPrototypeOf() {
+          throw new Error("getPrototypeOf trap");
+        },
+      },
+    );
+
+    const view = project(fallbackOnly(), proxy);
+
+    expect(view.code).toBe("internal_error");
+  });
+});
+
 describe("resolve: predicate matching after code", () => {
   it("matches by predicate when no code matches", () => {
     const catalog = fallbackOnly().register({

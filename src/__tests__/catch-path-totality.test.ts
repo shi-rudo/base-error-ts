@@ -9,6 +9,7 @@ import {
   isChainRetryable,
   isErrorWithCause,
   isRetryable,
+  isRetryableStructuredError,
   isStructuredError,
   someChainRetryable,
   toStructuredError,
@@ -141,6 +142,39 @@ describe("totality in catch paths: toString of an unrenderable cause", () => {
 
     expect(() => error.toString()).not.toThrow();
     expect(error.toString()).toContain("Caused by: [Unrenderable cause]");
+  });
+});
+
+describe("totality in catch paths: a throwing getter behind a passing guard", () => {
+  it("wraps a structured shape whose toLogObject getter throws", () => {
+    const hostile = {
+      code: "C",
+      category: "X",
+      retryable: false,
+      get toLogObject(): () => Record<string, unknown> {
+        throw new Error("gotcha");
+      },
+    };
+
+    const error = toStructuredError(hostile);
+
+    expect(error).toBeInstanceOf(StructuredError);
+    expect((error as unknown as { cause: unknown }).cause).toBe(hostile);
+  });
+
+  it("fails closed when retryable throws on its second read", () => {
+    let reads = 0;
+    const hostile = {
+      code: "C",
+      category: "X",
+      get retryable(): boolean {
+        reads++;
+        if (reads > 1) throw new Error("second read");
+        return true;
+      },
+    };
+
+    expect(isRetryableStructuredError(hostile)).toBe(false);
   });
 });
 

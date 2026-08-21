@@ -1,5 +1,6 @@
 import { StructuredError } from "./StructuredError.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
+import { readProperty } from "./guarded-read.js";
 import { isError, isStructuredError } from "./guards.js";
 
 /** Fallback configuration for {@link toStructuredError}. */
@@ -25,7 +26,12 @@ export function toStructuredError(
   // realm or a second copy of this package passes through too. The shape
   // includes the behavior: a plain object with the three fields (a parsed
   // payload) cannot log itself and is wrapped like any other value.
-  if (isStructuredError(value) && typeof value.toLogObject === "function") {
+  // `toLogObject` is a foreign read like any other: a throwing getter behind
+  // the passing guard must wrap, not escape the catch path.
+  if (
+    isStructuredError(value) &&
+    typeof readProperty(value, "toLogObject") === "function"
+  ) {
     return value;
   }
 

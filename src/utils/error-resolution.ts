@@ -5,6 +5,8 @@
  * a single definition.
  */
 
+import { readProperty } from "../errors/guarded-read.js";
+
 /** A predicate matcher paired with the value it resolves to. */
 export type PredicateEntry<T> = {
   readonly match: (error: unknown) => boolean;
@@ -22,19 +24,12 @@ export type CodeResolution<T> =
   | { readonly found: false; readonly matcherThrew: boolean };
 
 /**
- * The string `code` of an error-like object, or `undefined`. A throwing `code`
- * getter is treated as no code, so resolution stays total.
+ * The string `code` of an error-like object, or `undefined`. A throwing getter
+ * or Proxy trap reads as no code, so resolution stays total.
  */
 export function readErrorCode(error: unknown): string | undefined {
-  if (typeof error === "object" && error !== null && "code" in error) {
-    try {
-      const code = (error as { code: unknown }).code;
-      if (typeof code === "string") return code;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
+  const code = readProperty(error, "code");
+  return typeof code === "string" ? code : undefined;
 }
 
 /**
