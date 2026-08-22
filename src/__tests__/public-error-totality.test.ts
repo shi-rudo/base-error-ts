@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hostileProxy } from "./hostile-values.fixture.js";
 
 import {
   PublicErrorCatalog,
@@ -21,22 +22,7 @@ const fallbackOnly = (): PublicErrorCatalog =>
 
 describe("resolve: a hostile error value", () => {
   it("projects the fallback for a Proxy whose traps throw", () => {
-    const proxy = new Proxy(
-      {},
-      {
-        get() {
-          throw new Error("get trap");
-        },
-        has() {
-          throw new Error("has trap");
-        },
-        getPrototypeOf() {
-          throw new Error("getPrototypeOf trap");
-        },
-      },
-    );
-
-    const view = project(fallbackOnly(), proxy);
+    const view = project(fallbackOnly(), hostileProxy());
 
     expect(view.code).toBe("internal_error");
   });
