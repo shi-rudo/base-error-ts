@@ -175,6 +175,7 @@ To read it locally, run `pnpm docs:dev`.
 **Reference**
 
 - [Migration](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/migration.md)
+- [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)
 
 ## Requirements
