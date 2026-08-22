@@ -47,6 +47,11 @@ jobs:
       - name: Type check
         run: pnpm typecheck
 
+      # The example service imports the library like a consumer; a stale
+      # import there must fail here, because tsx runs it without a check.
+      - name: Type check the voucher-service example
+        run: pnpm typecheck:examples
+
       - name: Run linter
         run: pnpm lint
 

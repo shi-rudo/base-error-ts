@@ -10,7 +10,8 @@
 import { StructuredError, hasErrorCode } from "../../src/index.js";
 import { consumeDeadLetters } from "./queue.js";
 import { startVoucherService } from "./server.js";
-import type { NotificationProvider, PaymentGateway } from "./redemption.js";
+import type { NotificationProvider } from "./notifications.js";
+import type { PaymentGateway } from "./redemption.js";
 
 const failures: string[] = [];
 function expect(name: string, ok: boolean): void {

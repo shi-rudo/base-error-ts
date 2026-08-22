@@ -92,6 +92,7 @@
     "lint": "eslint . --ext .ts",
     "lint:fix": "eslint . --ext .ts --fix",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "typecheck:examples": "tsc --noEmit -p tsconfig.examples.json",
     "format": "prettier --write .",
     "build": "pnpm typecheck && pnpm test:run && pnpm lint && tsup",
     "docs:dev": "vitepress dev docs",
