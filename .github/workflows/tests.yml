@@ -60,6 +60,53 @@ jobs:
       - name: Build package
         run: pnpm build
 
+  # The vitest suite cannot run on Bun or Deno, so each gets a smoke job: the
+  # built package runs scripts/runtime-smoke.mjs, which carries the
+  # load-bearing behaviors (totality, redaction, fromJSON, the pipeline).
+  smoke-bun:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build package
+        run: pnpm exec tsup
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+      - name: Run the runtime smoke on Bun
+        run: bun scripts/runtime-smoke.mjs
+
+  smoke-deno:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build package
+        run: pnpm exec tsup
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Run the runtime smoke on Deno
+        run: deno run scripts/runtime-smoke.mjs
+
   # Runs the runtime-pure suite on the real Workers runtime (workerd via
   # miniflare) to catch edge-incompatibilities Node cannot (accidental globals,
   # captureStackTrace assumptions, Node-only APIs).
