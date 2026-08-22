@@ -37,4 +37,9 @@ for (let index = start + 1; index < lines.length; index++) {
   }
 }
 
-process.stdout.write(`${lines.slice(start + 1, end).join("\n").trim()}\n`);
+process.stdout.write(
+  `${lines
+    .slice(start + 1, end)
+    .join("\n")
+    .trim()}\n`,
+);
