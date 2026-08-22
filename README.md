@@ -6,10 +6,16 @@
 [![Tests](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml/badge.svg)](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml)
 
 A base error class for TypeScript. It runs on Node.js, on modern browsers, and
-on edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). The core is
-purely technical. A separate public-error pipeline makes the safe and localized
-output for a client. The core has no client serializer, so it never leaks
-internal state by default. The package has no runtime dependencies.
+on edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). The package
+has no runtime dependencies.
+
+The library separates two audiences: your logs and your clients. An error that
+you throw carries the full technical truth for your logs: message, stack,
+cause chain, and details. None of that reaches a client by accident, because
+the core cannot serialize an error for a client at all. When a client must see
+an error, the separate public-error pipeline builds the response from an
+allowlist that you registered. That response is a safe view, an optional
+localized message, and an RFC 9457 body.
 
 ## Features
 
