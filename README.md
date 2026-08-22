@@ -8,8 +8,8 @@
 A base error class for TypeScript. It runs on Node.js, on modern browsers, and
 on edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). The core is
 purely technical. A separate public-error pipeline makes the safe and localized
-output for a client. The core has no client serializer, so it **never leaks
-internal state by default**. The package has no runtime dependencies.
+output for a client. The core has no client serializer, so it never leaks
+internal state by default. The package has no runtime dependencies.
 
 ## Features
 
@@ -18,12 +18,12 @@ internal state by default**. The package has no runtime dependencies.
 - 🧱 **Structured errors**: Each error has a typed `code`, a `category`, a `retryable` flag, and `details`.
 - 🎯 **Exhaustive `matchError`**: The compiler checks the dispatch on `code`.
 - 🗂️ **Exhaustive class sets**: A `defineErrorClassSet` definition gives a complete and precisely typed handler table. You can use one definition many times.
-- 🧩 **Open-world `matchThrown`**: A fluent matcher accepts constructors and guards for an arbitrary caught value.
+- 🧩 **Open-world `matchThrown`**: A fluent matcher accepts constructors and guards for any caught value.
 - 🧭 **General error guards**: You can narrow native errors, Node.js-style errors, and custom errors without a cast.
 - 📒 **Error catalog**: `defineErrors` gives namespaced factories, immutable metadata, provenance guards, and redaction for the catalog.
 - 🧵 **Fan-out errors**: `StructuredAggregateError` collects many failures in one error. The cause-chain helpers walk the members with `{ aggregates: true }`.
 - ✅ **Validation aggregate**: You can collect field issues into one error. The issues are compatible with Standard Schema.
-- 🔁 **Wire round-trip**: `toLogObject` and `fromJSON` rebuild an error in the same context. They also replay a log. Both keep the members of an `AggregateError`, which `structuredClone` drops.
+- 🔁 **Wire round-trip**: `toLogObject` writes an error, and `fromJSON` rebuilds it in the same context, also from a stored log. Both keep the members of an `AggregateError`, which `structuredClone` drops.
 - 🌍 **Public error pipeline**: `@shirudo/base-error/public-error` turns an error into a curated view, an optional localized variant, and an RFC 9457 `application/problem+json` body. One descriptor per public code controls all three.
 - 🛡️ **PII redaction**: `redact`, `redactAllow` and `partialMask` add sticky redaction to the log path. This redaction is opt-in.
 
@@ -119,8 +119,8 @@ To read it locally, run `pnpm docs:dev`.
 
 ## TypeScript
 
-The package ships ESM, CommonJS, and type declarations. For the complete type
-safety you need TypeScript 5.0 or a later version, with `strict` mode.
+The package ships ESM, CommonJS, and type declarations. Full type safety needs
+TypeScript 5.0 or a later version, with `strict` mode.
 
 ## License
 
