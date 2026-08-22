@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@shirudo/base-error?color=blue)](https://www.npmjs.com/package/@shirudo/base-error)
-[![Bundle Size](https://img.shields.io/bundlephobia/minzip/@shirudo/base-error)](https://bundlephobia.com/package/@shirudo/base-error)
+[![Bundle Size](https://img.shields.io/bundlejs/size/%40shirudo%2Fbase-error)](https://bundlejs.com/?q=%40shirudo%2Fbase-error)
 [![Tests](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml/badge.svg)](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml)
 
 A base error class for TypeScript. It runs on Node.js, on modern browsers, and
