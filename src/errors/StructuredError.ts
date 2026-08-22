@@ -2,6 +2,7 @@ import { BaseError } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
+import { readProperty } from "./guarded-read.js";
 
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
@@ -165,34 +166,39 @@ export class StructuredError<
     depth: number,
     budget: { nodes: number },
   ): StructuredError<string, string> {
-    const obj: Record<string, unknown> =
-      typeof json === "object" && json !== null
-        ? (json as Record<string, unknown>)
-        : {};
+    // Every payload field is a foreign read: the documented contract is that
+    // malformed input yields the fallback envelope and never a throw, and an
+    // in-process payload can carry throwing getters.
+    const obj: unknown = typeof json === "object" && json !== null ? json : {};
 
+    const rawCode = readProperty(obj, "code");
     const code =
-      typeof obj.code === "string" ? obj.code : UNKNOWN_ERROR_DEFAULTS.code;
+      typeof rawCode === "string" ? rawCode : UNKNOWN_ERROR_DEFAULTS.code;
+    const rawCategory = readProperty(obj, "category");
     const category =
-      typeof obj.category === "string"
-        ? obj.category
+      typeof rawCategory === "string"
+        ? rawCategory
         : UNKNOWN_ERROR_DEFAULTS.category;
+    const rawRetryable = readProperty(obj, "retryable");
     const retryable =
-      typeof obj.retryable === "boolean"
-        ? obj.retryable
+      typeof rawRetryable === "boolean"
+        ? rawRetryable
         : UNKNOWN_ERROR_DEFAULTS.retryable;
+    const rawMessage = readProperty(obj, "message");
     const message =
-      typeof obj.message === "string"
-        ? obj.message
+      typeof rawMessage === "string"
+        ? rawMessage
         : UNKNOWN_ERROR_DEFAULTS.message;
     // Shallow copy: decouples the error's top-level details from the input
     // payload, so mutating the payload afterwards cannot change the error.
     // Values nested deeper stay shared; a freshly JSON.parsed payload is not
     // normally reused, so that is an accepted depth of guarantee.
-    const details =
-      typeof obj.details === "object" && obj.details !== null
-        ? { ...(obj.details as Record<string, unknown>) }
-        : undefined;
-    const cause = StructuredError.#reconstructCause(obj.cause, depth, budget);
+    const details = StructuredError.#copyDetails(readProperty(obj, "details"));
+    const cause = StructuredError.#reconstructCause(
+      readProperty(obj, "cause"),
+      depth,
+      budget,
+    );
 
     const error = new StructuredError({
       code,
@@ -204,12 +210,22 @@ export class StructuredError<
     });
 
     // Rehydrate the original identity rather than the freshly generated values.
-    StructuredError.#rehydrate(error, "stack", obj.stack, "string");
-    StructuredError.#rehydrate(error, "timestamp", obj.timestamp, "number");
+    StructuredError.#rehydrate(
+      error,
+      "stack",
+      readProperty(obj, "stack"),
+      "string",
+    );
+    StructuredError.#rehydrate(
+      error,
+      "timestamp",
+      readProperty(obj, "timestamp"),
+      "number",
+    );
     StructuredError.#rehydrate(
       error,
       "timestampIso",
-      obj.timestampIso,
+      readProperty(obj, "timestampIso"),
       "string",
     );
 
@@ -217,9 +233,10 @@ export class StructuredError<
     // sets its own `errors`). The log serializer reads them by shape, so the
     // wire keeps them; restore them the way a native aggregate holds them,
     // non-enumerable, which also makes the round-trip stable across repeats.
-    if (Array.isArray(obj.errors)) {
+    const rawMembers = readProperty(obj, "errors");
+    if (Array.isArray(rawMembers)) {
       Object.defineProperty(error, "errors", {
-        value: StructuredError.#reconstructMembers(obj.errors, depth, budget),
+        value: StructuredError.#reconstructMembers(rawMembers, depth, budget),
         configurable: true,
         writable: true,
         enumerable: false,
@@ -227,6 +244,22 @@ export class StructuredError<
     }
 
     return error as StructuredError<string, string>;
+  }
+
+  /**
+   * The shallow, decoupled copy of a payload's `details`, or `undefined`. A
+   * details object whose own getter throws during the copy is dropped: the
+   * envelope survives without it.
+   */
+  static #copyDetails(value: unknown): Record<string, unknown> | undefined {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return undefined;
+    }
+    try {
+      return { ...(value as Record<string, unknown>) };
+    } catch {
+      return undefined;
+    }
   }
 
   static #rehydrate(
@@ -312,13 +345,14 @@ export class StructuredError<
     }
     budget.nodes--;
 
-    const obj = value as Record<string, unknown>;
+    const obj: unknown = value;
 
-    // Structured shape -> nested StructuredError.
+    // Structured shape -> nested StructuredError. Guarded reads throughout:
+    // the never-throws contract covers every nested node too.
     if (
-      typeof obj.code === "string" &&
-      typeof obj.category === "string" &&
-      typeof obj.retryable === "boolean"
+      typeof readProperty(obj, "code") === "string" &&
+      typeof readProperty(obj, "category") === "string" &&
+      typeof readProperty(obj, "retryable") === "boolean"
     ) {
       return StructuredError.#fromJSON(obj, depth + 1, budget);
     }
@@ -327,19 +361,23 @@ export class StructuredError<
     // the wire. `structuredClone` drops them (verified on Node, Bun, Deno and
     // workerd, where it also degrades the class to a plain `Error`), which makes
     // this round-trip the only lossless way across a worker or queue boundary.
-    if (Array.isArray(obj.errors)) {
+    const members = readProperty(obj, "errors");
+    const messageField = readProperty(obj, "message");
+    const nameField = readProperty(obj, "name");
+    const stackField = readProperty(obj, "stack");
+    if (Array.isArray(members)) {
       const aggregate = new AggregateError(
-        StructuredError.#reconstructMembers(obj.errors, depth, budget),
-        typeof obj.message === "string" ? obj.message : "",
+        StructuredError.#reconstructMembers(members, depth, budget),
+        typeof messageField === "string" ? messageField : "",
       );
-      if (typeof obj.name === "string") {
-        aggregate.name = obj.name;
+      if (typeof nameField === "string") {
+        aggregate.name = nameField;
       }
-      if (typeof obj.stack === "string") {
-        aggregate.stack = obj.stack;
+      if (typeof stackField === "string") {
+        aggregate.stack = stackField;
       }
       const nested = StructuredError.#reconstructCause(
-        obj.cause,
+        readProperty(obj, "cause"),
         depth + 1,
         budget,
       );
@@ -350,13 +388,13 @@ export class StructuredError<
     }
 
     // Plain error shape -> a basic Error, chained.
-    if (typeof obj.message === "string") {
-      const err = new Error(obj.message);
-      if (typeof obj.name === "string") {
-        err.name = obj.name;
+    if (typeof messageField === "string") {
+      const err = new Error(messageField);
+      if (typeof nameField === "string") {
+        err.name = nameField;
       }
-      if (typeof obj.stack === "string") {
-        err.stack = obj.stack;
+      if (typeof stackField === "string") {
+        err.stack = stackField;
       }
       // A Node-style errno `code` (`ECONNREFUSED`, `ENOENT`, …) is what
       // {@link hasErrorCode} matches on, and it is what an aggregate's members
@@ -364,11 +402,12 @@ export class StructuredError<
       // than handing back an error the library's own guard can no longer
       // recognize. It stays a lone field: without `category`/`retryable` the
       // result does not read as a `StructuredError`.
-      if (typeof obj.code === "string" || typeof obj.code === "number") {
-        (err as unknown as Record<string, unknown>).code = obj.code;
+      const codeField = readProperty(obj, "code");
+      if (typeof codeField === "string" || typeof codeField === "number") {
+        (err as unknown as Record<string, unknown>).code = codeField;
       }
       const nested = StructuredError.#reconstructCause(
-        obj.cause,
+        readProperty(obj, "cause"),
         depth + 1,
         budget,
       );

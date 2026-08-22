@@ -109,6 +109,73 @@ describe("StructuredError.fromJSON", () => {
         expect(restored.code).toBe("UNKNOWN_ERROR");
       },
     );
+
+    for (const field of [
+      "code",
+      "category",
+      "retryable",
+      "message",
+      "details",
+      "cause",
+      "stack",
+      "timestamp",
+      "timestampIso",
+      "errors",
+    ]) {
+      it(`does not throw when the \`${field}\` getter of an in-process payload throws`, () => {
+        const payload: Record<string, unknown> = {
+          code: "C",
+          category: "X",
+          retryable: false,
+          message: "m",
+        };
+        delete payload[field];
+        Object.defineProperty(payload, field, {
+          get() {
+            throw new Error(`${field} getter`);
+          },
+          enumerable: true,
+        });
+
+        const restored = StructuredError.fromJSON(payload);
+
+        expect(restored).toBeInstanceOf(StructuredError);
+      });
+    }
+
+    it("does not throw when a cause field's getter throws", () => {
+      const restored = StructuredError.fromJSON({
+        code: "C",
+        category: "X",
+        retryable: false,
+        message: "m",
+        cause: {
+          name: "Error",
+          get message(): string {
+            throw new Error("nested message getter");
+          },
+        },
+      });
+
+      expect(restored).toBeInstanceOf(StructuredError);
+    });
+
+    it("drops details whose own property getter throws during the copy", () => {
+      const restored = StructuredError.fromJSON({
+        code: "C",
+        category: "X",
+        retryable: false,
+        message: "m",
+        details: {
+          get secret(): string {
+            throw new Error("secret getter");
+          },
+        },
+      });
+
+      expect(restored.code).toBe("C");
+      expect(restored.details).toBeUndefined();
+    });
   });
 
   describe("security", () => {
