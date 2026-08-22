@@ -39,6 +39,52 @@ describe("a cause from another realm", () => {
     expect(error.toString()).toContain("Caused by: Error: foreign msg");
   });
 
+  it("is recognized when it carries a Symbol.toStringTag, with and without Error.isError", () => {
+    const ErrorCtor = Error as { isError?: (value: unknown) => boolean };
+    const original = ErrorCtor.isError;
+    const tagged = (): Error => {
+      const foreign = foreignError("foreign msg");
+      Object.defineProperty(foreign, Symbol.toStringTag, { value: "Error" });
+      return foreign;
+    };
+    try {
+      // The Error.isError branch (where the runtime has it).
+      let cause = new BaseError("outer", tagged()).toLogObject()
+        .cause as Record<string, unknown>;
+      expect(cause.message).toBe("foreign msg");
+
+      // The toString fallback branch (Node 20 and 22 have no Error.isError).
+      delete ErrorCtor.isError;
+      cause = new BaseError("outer", tagged()).toLogObject().cause as Record<
+        string,
+        unknown
+      >;
+      expect(cause.message).toBe("foreign msg");
+    } finally {
+      if (original !== undefined) ErrorCtor.isError = original;
+    }
+  });
+
+  it("is still serialized when a patched Error.isError throws", () => {
+    const ErrorCtor = Error as { isError?: (value: unknown) => boolean };
+    const original = ErrorCtor.isError;
+    try {
+      ErrorCtor.isError = () => {
+        throw new Error("broken polyfill");
+      };
+
+      const cause = new BaseError(
+        "outer",
+        foreignError("foreign msg"),
+      ).toLogObject().cause as Record<string, unknown>;
+
+      expect(cause.message).toBe("foreign msg");
+    } finally {
+      if (original !== undefined) ErrorCtor.isError = original;
+      else delete ErrorCtor.isError;
+    }
+  });
+
   it("keeps its message when coerced with toStructuredError", () => {
     const foreign = foreignError("foreign msg");
 

@@ -488,6 +488,29 @@ describe("BaseError", () => {
       });
     });
 
+    it("keeps the fields of a tagged plain object even under a loose Error.isError polyfill", () => {
+      // A toString-based polyfill answers true for a tagged plain object; the
+      // tag rejection must run before the delegation, whatever the slot check
+      // would say.
+      const ErrorCtor = Error as { isError?: (value: unknown) => boolean };
+      const original = ErrorCtor.isError;
+      try {
+        ErrorCtor.isError = (value) =>
+          Object.prototype.toString.call(value) === "[object Error]";
+
+        const tagged = {
+          [Symbol.toStringTag]: "Error",
+          requestId: "abc",
+        };
+        const error = new AutoNamedError("outer", tagged);
+
+        expect(error.toJSON().cause).toEqual({ requestId: "abc" });
+      } finally {
+        if (original !== undefined) ErrorCtor.isError = original;
+        else delete ErrorCtor.isError;
+      }
+    });
+
     it("should handle primitive causes", () => {
       const stringCause = "Simple error message";
       const numberCause = 404;
