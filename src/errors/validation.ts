@@ -1,4 +1,5 @@
 import { StructuredError } from "./StructuredError.js";
+import { readProperty } from "./guarded-read.js";
 
 /**
  * A single validation issue. Structurally identical to Standard Schema's
@@ -131,7 +132,7 @@ export class ValidationError<
       );
       out.pointer = ValidationError.#toPointer(issue.path);
     }
-    const code = (issue as { code?: unknown }).code;
+    const code = readProperty(issue, "code");
     if (typeof code === "string") {
       out.code = code;
     }

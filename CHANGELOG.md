@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`publicIssues` survives a hostile issue.** An issue whose `code` getter throws is projected without the code instead of throwing out of the whitelist. Every remaining raw foreign read in library source moved to the guarded reader, and a lint rule now bans the two read shapes that syntax can catch (a property probe with `in`, a member access on an inline cast), so the next raw read fails the linter instead of review.
+
 ## 8.3.0 - 2026-08-22
 
 Hardening release. The catch paths are total against hostile values: throwing getters, Proxy traps, and tagged masquerades. Every walker and every reconstruction is bounded. Redaction keeps the serializer's markers readable only where the serializer writes them. Cross-realm errors keep their identity without `instanceof`, and a CJS TypeScript consumer gets the CJS declarations. All changes are fixes within the documented contracts. The individually noted behavior tightenings are deliberate.

@@ -1,4 +1,5 @@
 import { cloneJsonSafe } from "../errors/json-safe.js";
+import { readProperty } from "../errors/guarded-read.js";
 import type { JsonSafeValue } from "../errors/json-safe.js";
 import {
   isHttpStatusCode,
@@ -294,9 +295,7 @@ function hasMessage<TDetails, TCode extends string>(
 function isCatalog(
   source: PublicErrorCatalog | Transport,
 ): source is PublicErrorCatalog {
-  return (
-    typeof (source as Partial<PublicErrorCatalog>).transportFor === "function"
-  );
+  return typeof readProperty(source, "transportFor") === "function";
 }
 
 /**

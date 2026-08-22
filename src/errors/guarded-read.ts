@@ -11,10 +11,10 @@
  * Reads one property of a foreign value. A non-object, a missing property and
  * a throwing getter all read as `undefined`.
  */
-export function readProperty(value: unknown, key: string): unknown {
+export function readProperty(value: unknown, key: string | symbol): unknown {
   if (typeof value !== "object" || value === null) return undefined;
   try {
-    return (value as Record<string, unknown>)[key];
+    return (value as Record<string | symbol, unknown>)[key];
   } catch {
     return undefined;
   }
