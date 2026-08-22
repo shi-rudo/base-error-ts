@@ -122,7 +122,11 @@ describe("totality in catch paths: toString of an unrenderable cause", () => {
 
 describe("totality in catch paths: a throwing getter behind a passing guard", () => {
   it("wraps a structured shape whose toLogObject getter throws", () => {
+    // Error-shaped on purpose: `isError` and `isStructuredError` must pass,
+    // so the flow reaches the guarded `toLogObject` read this test pins.
     const hostile = {
+      name: "E",
+      message: "m",
       code: "C",
       category: "X",
       retryable: false,
