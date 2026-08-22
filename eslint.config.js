@@ -94,7 +94,12 @@ export default [
   {
     files: ["scripts/**/*.mjs"],
     languageOptions: {
-      globals: { console: "readonly", URL: "readonly", process: "readonly" },
+      globals: {
+        console: "readonly",
+        URL: "readonly",
+        process: "readonly",
+        AggregateError: "readonly",
+      },
     },
   },
   {
