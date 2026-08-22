@@ -17,7 +17,8 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  # write: the workflow creates the GitHub Release for the tag.
+  contents: write
   # Required for OIDC. Without it npm cannot verify the workflow's identity.
   id-token: write
 
@@ -65,3 +66,13 @@ jobs:
       # gate that stands between a bad commit and the registry.
       - name: Publish
         run: npm publish
+
+      # The tag's CHANGELOG.md section becomes the notes, so the changelog
+      # stays the single owner of the release notes. Runs after the npm
+      # publish: a notes failure must not block the registry, only this step.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node scripts/changelog-section.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
+          gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "$GITHUB_REF_NAME" --notes-file release-notes.md
