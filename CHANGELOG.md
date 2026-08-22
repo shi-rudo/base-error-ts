@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 8.3.0 - 2026-08-22
+
+Hardening release. The catch paths are total against hostile values: throwing getters, Proxy traps, and tagged masquerades. Every walker and every reconstruction is bounded. Redaction keeps the serializer's markers readable only where the serializer writes them. Cross-realm errors keep their identity without `instanceof`, and a CJS TypeScript consumer gets the CJS declarations. All changes are fixes within the documented contracts. The individually noted behavior tightenings are deliberate.
 
 ### Fixed
 
