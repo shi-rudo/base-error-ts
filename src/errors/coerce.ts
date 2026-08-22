@@ -45,7 +45,14 @@ export function toStructuredError(
   let message: string;
   let cause: unknown;
   if (isError(value)) {
-    message = options.message ?? value.message;
+    // The message is a foreign read like any other: a stateful getter that
+    // passed inside `isError` may throw on this next read.
+    const ownMessage = readProperty(value, "message");
+    message =
+      options.message ??
+      (typeof ownMessage === "string"
+        ? ownMessage
+        : UNKNOWN_ERROR_DEFAULTS.message);
     cause = value;
   } else if (typeof value === "string") {
     message = options.message ?? value;

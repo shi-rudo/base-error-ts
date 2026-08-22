@@ -137,6 +137,24 @@ describe("totality in catch paths: a throwing getter behind a passing guard", ()
     expect((error as unknown as { cause: unknown }).cause).toBe(hostile);
   });
 
+  it("wraps an error-like value whose message getter throws on a later read", () => {
+    let reads = 0;
+    const hostile = {
+      name: "E",
+      get message(): string {
+        reads++;
+        if (reads > 2) throw new Error("third read");
+        return "m";
+      },
+    };
+
+    const error = toStructuredError(hostile);
+
+    expect(error).toBeInstanceOf(StructuredError);
+    expect(error.message).toBe("Unknown error");
+    expect((error as unknown as { cause: unknown }).cause).toBe(hostile);
+  });
+
   it("fails closed when retryable throws on its second read", () => {
     let reads = 0;
     const hostile = {
