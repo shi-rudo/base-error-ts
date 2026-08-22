@@ -150,13 +150,17 @@ export class StructuredError<
    * Total number of cause-graph nodes one `fromJSON` call reconstructs. The
    * depth cap and the per-node width cap still allow `100^depth`
    * reconstructions, and a shared reference makes such a payload tiny in
-   * memory, so the walk also carries a node budget. Sized above the ~1500
-   * nodes a maximal serializer output legitimately carries (width 100, deep
-   * branch chains), so this library's own log shape round-trips losslessly,
-   * while a hostile payload is capped at ~10^4 stack captures (tens of
-   * milliseconds, not seconds). Past the budget, a `cause` drops like it does
-   * past the depth cap, and the remaining members of an aggregate collapse
-   * into the count marker. Charged at exactly one site, the top of
+   * memory, so the walk also carries a node budget.
+   *
+   * The serializer has no total-node cap (depth 100 and width 100 per node
+   * compound), so no finite budget covers every legal serializer output and
+   * this constant cannot come from the serializer caps. 10,000 is a deliberate
+   * ceiling: every realistic log shape round-trips losslessly, while a hostile
+   * payload is capped at ~10^4 stack captures (tens of milliseconds, not
+   * seconds). Reconstruction of deeper-nested aggregates truncates: past the
+   * budget, a `cause` drops like it does past the depth cap, and the
+   * remaining members of an aggregate collapse into the count marker. Charged
+   * at exactly one site, the top of
    * {@link StructuredError.#reconstructCause}'s object path.
    */
   static readonly #MAX_NODES = 10_000;

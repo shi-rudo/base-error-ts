@@ -415,6 +415,39 @@ describe("fromJSON hardening", () => {
     expect(countErrors(restored)).toBe(1 + 1 + 100 * 15);
   });
 
+  it("truncates a nested-aggregate payload past the budget with the count marker", () => {
+    // An aggregate of 100 aggregates of 100 errors is legal serializer output
+    // (10,101 cause nodes), but the serializer has no total-node cap, so no
+    // finite reconstruction budget covers every legal output. Past the
+    // budget, reconstruction stays bounded and marks what it dropped.
+    const inner = {
+      name: "AggregateError",
+      message: "inner",
+      errors: Array.from({ length: 100 }, (_, index) => ({
+        name: "Error",
+        message: `leaf ${index}`,
+      })),
+    };
+    const payload = {
+      code: "OUTER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "outer failed",
+      cause: {
+        name: "AggregateError",
+        message: "outer",
+        errors: Array.from({ length: 100 }, () => inner),
+      },
+    };
+
+    const restored = StructuredError.fromJSON(payload);
+
+    expect(countErrors(restored) - 1).toBeLessThanOrEqual(10_000);
+    expect(JSON.stringify(restored.toLogObject())).toContain(
+      "more aggregated errors",
+    );
+  });
+
   it("reconstructs a payload within the budget in full", () => {
     const payload = {
       code: "OUTER",
