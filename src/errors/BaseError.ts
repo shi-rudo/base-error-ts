@@ -387,11 +387,7 @@ export class BaseError<T extends string> extends Error {
         // it promises: an aggregate's members are arbitrary values (a
         // `Promise.allSettled` reason need not be an `Error`), and `errors` is
         // not an envelope key, so a string member is data like any other.
-        // Only on the cause spine: in a data region an exact marker lookalike
-        // is user data and must not slip past a deny- or allow-list.
-        if (region === "cause" && isSerializerMarker(item)) {
-          return item;
-        }
+        if (BaseError.#isStructuralMarker(item, region)) return item;
         const decision = decide(key, item, region);
         return decision === BaseError.#RECURSE ? item : decision;
       });
@@ -404,11 +400,7 @@ export class BaseError<T extends string> extends Error {
       // stage. (OWASP Prototype Pollution Prevention.)
       const out = Object.create(null) as Record<string, unknown>;
       for (const [key, val] of Object.entries(value)) {
-        // The serializer's own markers (a nested `cause` cut by the cycle or
-        // depth cap, or one it could not serialize) are kept verbatim, as in
-        // the array branch. Only on the cause spine, where the serializer
-        // writes them: in a data region an exact lookalike is user data.
-        if (region === "cause" && isSerializerMarker(val)) {
+        if (BaseError.#isStructuralMarker(val, region)) {
           out[key] = val;
           continue;
         }
@@ -443,6 +435,22 @@ export class BaseError<T extends string> extends Error {
       return out;
     }
     return value;
+  }
+
+  /**
+   * Whether `value` is one of the serializer's own markers **in a place the
+   * serializer writes them**: the cause spine. There a marker is the
+   * library's word (a `cause` cut by the cycle or depth cap, an aggregate
+   * tail, a node it could not serialize) and stays readable through any
+   * redaction. In a data region an exact lookalike is user data and must not
+   * slip past a deny- or allow-list. One predicate owns both halves of the
+   * rule, so a walker branch cannot apply one without the other.
+   */
+  /*#__PURE__*/ static #isStructuralMarker(
+    value: unknown,
+    region: RedactRegion,
+  ): boolean {
+    return region === "cause" && isSerializerMarker(value);
   }
 
   /**
