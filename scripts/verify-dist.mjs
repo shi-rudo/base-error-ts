@@ -26,7 +26,12 @@ const CONSTRUCT = {
   },
   StructuredError: {
     make: (C) =>
-      new C({ code: "SOME_CODE", category: "X", retryable: false, message: "m" }),
+      new C({
+        code: "SOME_CODE",
+        category: "X",
+        retryable: false,
+        message: "m",
+      }),
     name: "SOME_CODE",
     tag: "StructuredError",
   },
