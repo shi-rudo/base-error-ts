@@ -1,4 +1,5 @@
 import { isRetryAfterSeconds } from "../utils/problem-validation.js";
+import { readProperty } from "../errors/guarded-read.js";
 import type { PublicErrorCatalog } from "./PublicErrorCatalog.js";
 import type {
   FieldFault,
@@ -165,9 +166,7 @@ function safeFields(
 
 function isFieldFault(value: unknown): value is FieldFault {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as FieldFault).field === "string" &&
-    typeof (value as FieldFault).code === "string"
+    typeof readProperty(value, "field") === "string" &&
+    typeof readProperty(value, "code") === "string"
   );
 }

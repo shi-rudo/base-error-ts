@@ -507,7 +507,8 @@ export class BaseError<T extends string> extends Error {
    */
   protected buildLogObject(): Record<string, unknown> {
     const { name, message, timestamp, timestampIso, stack } = this;
-    const cause = (this as unknown as Record<string, unknown>).cause;
+    const ownProperties = this as unknown as Record<string, unknown>;
+    const cause = ownProperties.cause;
 
     const json: Record<string, unknown> = {
       name,
@@ -556,7 +557,7 @@ export class BaseError<T extends string> extends Error {
         message: "[log redaction failed]",
       };
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-        if (key in raw) {
+        if (Object.prototype.hasOwnProperty.call(raw, key)) {
           safe[key] = raw[key];
         }
       }
@@ -721,8 +722,7 @@ export class BaseError<T extends string> extends Error {
     if (typeof value !== "object" || value === null) return false;
     try {
       if (
-        (value as { [Symbol.toStringTag]?: unknown })[Symbol.toStringTag] !==
-          undefined &&
+        readProperty(value, Symbol.toStringTag) !== undefined &&
         (typeof readProperty(value, "name") !== "string" ||
           typeof readProperty(value, "message") !== "string")
       ) {
@@ -782,7 +782,8 @@ export class BaseError<T extends string> extends Error {
       });
     } catch {
       // Fallback for environments where defineProperty fails
-      (this as unknown as Record<string, unknown>).cause = cause;
+      const ownProperties = this as unknown as Record<string, unknown>;
+      ownProperties.cause = cause;
     }
   }
 
@@ -998,7 +999,8 @@ export class BaseError<T extends string> extends Error {
       try {
         throw new Error();
       } catch (e) {
-        tempStack = (e as Error).stack;
+        const thrown = e as Error;
+        tempStack = thrown.stack;
       }
       readRawStack = () => tempStack;
     }
@@ -1016,7 +1018,8 @@ export class BaseError<T extends string> extends Error {
     // stack first, which calls `Error.prepareStackTrace` eagerly for frames
     // nobody reads. `delete` discards them without formatting on every
     // engine; V8 12+ (`stack` as a plain accessor pair) needs neither.
-    delete (this as { stack?: string }).stack;
+    const ownStack = this as { stack?: string };
+    delete ownStack.stack;
     Object.defineProperty(this, "stack", {
       configurable: true,
       enumerable: false,

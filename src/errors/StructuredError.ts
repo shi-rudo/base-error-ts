@@ -386,7 +386,8 @@ export class StructuredError<
         budget,
       );
       if (nested !== undefined) {
-        (aggregate as unknown as { cause: unknown }).cause = nested;
+        const aggregateCause = aggregate as unknown as { cause: unknown };
+        aggregateCause.cause = nested;
       }
       return aggregate;
     }
@@ -408,7 +409,8 @@ export class StructuredError<
       // result does not read as a `StructuredError`.
       const codeField = readProperty(obj, "code");
       if (typeof codeField === "string" || typeof codeField === "number") {
-        (err as unknown as Record<string, unknown>).code = codeField;
+        const errProperties = err as unknown as Record<string, unknown>;
+        errProperties.code = codeField;
       }
       const nested = StructuredError.#reconstructCause(
         readProperty(obj, "cause"),
@@ -416,7 +418,8 @@ export class StructuredError<
         budget,
       );
       if (nested !== undefined) {
-        (err as unknown as { cause: unknown }).cause = nested;
+        const errCause = err as unknown as { cause: unknown };
+        errCause.cause = nested;
       }
       return err;
     }

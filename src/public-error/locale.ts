@@ -35,7 +35,9 @@ export function truncationChain(canonicalTag: string): string[] {
   while (parts.length > 0) {
     chain.push(parts.join("-"));
     parts = parts.slice(0, -1);
-    if (parts.length > 0 && (parts[parts.length - 1] as string).length === 1) {
+    const lastPart =
+      parts.length > 0 ? (parts[parts.length - 1] as string) : "";
+    if (lastPart.length === 1) {
       parts = parts.slice(0, -1);
     }
   }

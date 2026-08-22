@@ -163,6 +163,27 @@ describe("ValidationError", () => {
     });
   });
 
+  describe("publicIssues: hostile issues", () => {
+    it("projects an issue whose code getter throws, without the code", () => {
+      const hostile = { message: "bad value" } as Record<string, unknown>;
+      Object.defineProperty(hostile, "code", {
+        get() {
+          throw new Error("code getter");
+        },
+        enumerable: true,
+      });
+      const error = new ValidationError("invalid", {
+        issues: [hostile as never],
+      });
+
+      const issues = error.publicIssues();
+
+      expect(issues).toHaveLength(1);
+      expect(issues[0]?.message).toBe("bad value");
+      expect(issues[0]?.code).toBeUndefined();
+    });
+  });
+
   describe("serialization", () => {
     it("carries the full issues (with extras) in toLogObject", () => {
       const v = new ValidationError("Invalid").addIssue({

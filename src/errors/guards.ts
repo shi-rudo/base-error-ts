@@ -60,11 +60,7 @@ export function hasErrorCode<const C extends string | number>(
   return (value: unknown): value is ErrorLike & { readonly code: C } => {
     if (!isError(value)) return false;
 
-    try {
-      return (value as ErrorLike & { readonly code?: unknown }).code === code;
-    } catch {
-      return false;
-    }
+    return readProperty(value, "code") === code;
   };
 }
 
