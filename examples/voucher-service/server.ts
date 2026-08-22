@@ -16,13 +16,10 @@ import {
 import { localize, project, toProblem } from "../../src/public-error/index.js";
 import { logError } from "./logging.js";
 import { notifyRedemption } from "./notifications.js";
+import type { NotificationProvider } from "./notifications.js";
 import { enqueueDeadLetter } from "./queue.js";
 import { redeemVoucher } from "./redemption.js";
-import type {
-  NotificationProvider,
-  PaymentGateway,
-  Voucher,
-} from "./redemption.js";
+import type { PaymentGateway, Voucher } from "./redemption.js";
 import { PublicVoucherErrors } from "./public-errors.js";
 
 export type VoucherService = {
@@ -32,7 +29,9 @@ export type VoucherService = {
 
 function requestedLocales(acceptLanguage: string | undefined): string[] {
   if (acceptLanguage === undefined) return ["en"];
-  return acceptLanguage.split(",").map((part) => part.split(";")[0].trim());
+  return acceptLanguage
+    .split(",")
+    .map((part) => (part.split(";")[0] ?? "").trim());
 }
 
 function respondWithError(
@@ -61,8 +60,8 @@ function respondWithError(
   return {
     status: problem.status,
     headers: {
-      "content-type": "application/problem+json",
       ...problem.headers,
+      "content-type": "application/problem+json",
     },
     body: JSON.stringify(problem.body),
   };

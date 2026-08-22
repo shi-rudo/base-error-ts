@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false,
+    "isolatedDeclarations": false
+  },
+  "include": ["examples/voucher-service/**/*.ts", "src/**/*"]
+}
