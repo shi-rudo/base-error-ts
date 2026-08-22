@@ -2,34 +2,51 @@
  * Post-build check of the bundles in dist/. tsup runs it via `onSuccess`.
  *
  * The bundler rewrites a class into a renamed binding when its body reads its
- * own statics (`var _BaseError = class _BaseError …`). Without a guard,
+ * own statics (`var _BaseError = class _BaseError ...`). Without a guard,
  * `constructor.name`, the fallback for `name`/`_tag`, reports that binding.
  * This check fails the build when a bundle leaks a mangled name.
  *
- * Coverage is derived, not remembered: every export whose prototype chain
- * reaches `Error` must have a construction recipe below. A new error class
- * without one fails the build, so the check can never silently lag behind
- * the export surface.
+ * Coverage is derived in both directions. Every export whose prototype chain
+ * reaches `Error` must have a recipe in CONSTRUCT, and every recipe must match
+ * a detected export. A new error class without a recipe fails the build. A
+ * class that stops matching the detection also fails the build, instead of
+ * losing its check silently.
  */
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-/** One instance of each error class, keyed by export name. */
+/** One recipe per exported error class: how to build it, and the exact names an instance must carry. */
 const CONSTRUCT = {
-  BaseError: (C) => new C("m"),
-  StructuredError: (C) =>
-    new C({ code: "SOME_CODE", category: "X", retryable: false, message: "m" }),
-  StructuredAggregateError: (C) =>
-    new C({
-      code: "SOME_CODE",
-      category: "X",
-      retryable: false,
-      message: "m",
-      errors: [],
-    }),
-  ValidationError: (C) => new C("m"),
+  BaseError: {
+    make: (C) => new C("m"),
+    name: "BaseError",
+    tag: "BaseError",
+  },
+  StructuredError: {
+    make: (C) =>
+      new C({ code: "SOME_CODE", category: "X", retryable: false, message: "m" }),
+    name: "SOME_CODE",
+    tag: "StructuredError",
+  },
+  StructuredAggregateError: {
+    make: (C) =>
+      new C({
+        code: "SOME_CODE",
+        category: "X",
+        retryable: false,
+        message: "m",
+        errors: [],
+      }),
+    name: "SOME_CODE",
+    tag: "StructuredAggregateError",
+  },
+  ValidationError: {
+    make: (C) => new C("m"),
+    name: "VALIDATION_FAILED",
+    tag: "ValidationError",
+  },
 };
 
 const bundles = [
@@ -38,54 +55,44 @@ const bundles = [
 ];
 
 for (const [format, bundle] of bundles) {
-  const errorClasses = Object.entries(bundle).filter(
-    ([, value]) =>
-      typeof value === "function" &&
-      typeof value.prototype === "object" &&
-      value.prototype instanceof Error,
-  );
-  assert.ok(
-    errorClasses.length >= 4,
-    `${format}: expected the error classes among the exports, found ${errorClasses.length}`,
+  const detected = Object.entries(bundle)
+    .filter(
+      ([, value]) =>
+        typeof value === "function" &&
+        typeof value.prototype === "object" &&
+        value.prototype instanceof Error,
+    )
+    .map(([exportName]) => exportName)
+    .sort();
+
+  assert.deepEqual(
+    detected,
+    Object.keys(CONSTRUCT).sort(),
+    `${format}: the detected error-class exports and the CONSTRUCT recipes must be the same set. Update CONSTRUCT in scripts/verify-dist.mjs.`,
   );
 
-  for (const [exportName, ErrorClass] of errorClasses) {
-    const construct = CONSTRUCT[exportName];
-    assert.ok(
-      construct,
-      `${format}: no construction recipe for exported error class "${exportName}" — add one to CONSTRUCT in scripts/verify-dist.mjs`,
+  for (const exportName of detected) {
+    const recipe = CONSTRUCT[exportName];
+    const instance = recipe.make(bundle[exportName]);
+    assert.equal(
+      instance.name,
+      recipe.name,
+      `${format}: ${exportName} instance name`,
     );
-    const instance = construct(ErrorClass);
-    assert.ok(
-      !instance.name.startsWith("_"),
-      `${format}: ${exportName} instance leaks a mangled name: ${instance.name}`,
-    );
-    assert.ok(
-      !instance._tag.startsWith("_"),
-      `${format}: ${exportName} instance leaks a mangled _tag: ${instance._tag}`,
+    assert.equal(
+      instance._tag,
+      recipe.tag,
+      `${format}: ${exportName} instance _tag`,
     );
   }
 
-  const { BaseError, StructuredError } = bundle;
-  const base = new BaseError("m");
-  assert.equal(base.name, "BaseError", `${format}: BaseError name`);
-  assert.equal(base._tag, "BaseError", `${format}: BaseError _tag`);
-
-  class OrderRejectedError extends BaseError {}
+  class OrderRejectedError extends bundle.BaseError {}
   const subclass = new OrderRejectedError("m");
   assert.equal(
     subclass.name,
     "OrderRejectedError",
     `${format}: subclass name inference`,
   );
-
-  const structured = new StructuredError({
-    code: "SOME_CODE",
-    category: "X",
-    retryable: false,
-    message: "m",
-  });
-  assert.equal(structured._tag, "StructuredError", `${format}: _tag literal`);
 }
 
 console.log("verify-dist: bundle class names are intact");
