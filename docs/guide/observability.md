@@ -153,7 +153,9 @@ err.redact(["age"], { mask: () => 0 }); // keep the type
 
 For the common "show _which_ secret it was without exposing it" case, use the
 built-in `partialMask`, which reveals a prefix/suffix and masks the rest, and
-**fully** masks values too short to reveal safely (and non-strings):
+**fully** masks values too short to reveal safely (and non-strings). An invalid
+`keepStart` or `keepEnd` (negative, `NaN`, infinite, or not an integer) makes
+the mask fully mask every value:
 
 ```ts
 import { partialMask } from "@shirudo/base-error";

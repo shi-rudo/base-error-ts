@@ -41,6 +41,43 @@ describe("partialMask", () => {
     );
   });
 
+  it("masks a value entirely when keepEnd is negative", () => {
+    // 4 + (-4) = 0 passes the too-short guard, and slice(0, 4) is the whole value
+    expect(apply(partialMask({ keepStart: 4, keepEnd: -4 }), "abcd")).toBe("…");
+  });
+
+  it("masks a value entirely when keepStart is negative", () => {
+    // slice(0, -1) reveals all but one char
+    expect(
+      apply(partialMask({ keepStart: -1, keepEnd: 4 }), "abcdefghij"),
+    ).toBe("…");
+  });
+
+  it("masks a value entirely when keepStart or keepEnd is NaN", () => {
+    expect(apply(partialMask({ keepStart: NaN }), "abcdefghij")).toBe("…");
+    expect(apply(partialMask({ keepEnd: NaN }), "abcdefghij")).toBe("…");
+  });
+
+  it("masks a value entirely when keepStart or keepEnd is not finite", () => {
+    expect(apply(partialMask({ keepStart: Infinity }), "abcdefghij")).toBe("…");
+    expect(apply(partialMask({ keepEnd: -Infinity }), "abcdefghij")).toBe("…");
+  });
+
+  it("masks a value entirely when keepStart or keepEnd is not an integer", () => {
+    expect(
+      apply(partialMask({ keepStart: 2.5, keepEnd: 2 }), "abcdefghij"),
+    ).toBe("…");
+    expect(
+      apply(partialMask({ keepStart: 2, keepEnd: 2.5 }), "abcdefghij"),
+    ).toBe("…");
+  });
+
+  it("uses the custom fill as the full mask for an invalid option", () => {
+    expect(apply(partialMask({ keepEnd: -4, fill: "***" }), "abcdefghij")).toBe(
+      "***",
+    );
+  });
+
   it("plugs into redact as a mask", () => {
     const log = new StructuredError({
       code: "X",
