@@ -32,6 +32,14 @@ chain**, timestamps, and (for [`StructuredError`](./structured-error)) `code`,
 `toJSON()` is an alias, so `JSON.stringify(error)` produces the same log-grade
 output.
 
+Every cause in the chain is copied as data. Its `details`, and any other field
+a `StructuredError` cause carries, reach the log object JSON-safe and decoupled
+from the cause: a `Date` becomes its ISO string, a bigint field its decimal
+string, and a value JSON cannot take (a cycle, a bigint nested in an object, a
+throwing `toJSON`) becomes a `[Circular …]` marker. A later mutation of the
+cause does not change a log object already built. The error's own `details`
+stay raw.
+
 ### Aggregate causes
 
 When a cause carries an `errors` array (a native `AggregateError` from

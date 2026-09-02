@@ -929,7 +929,10 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Intelligently serializes the cause for JSON output.
-   * Preserves stack traces, StructuredError fields, and nested data.
+   * Preserves stack traces, StructuredError fields, and nested data. Every
+   * field taken off a native error is copied as data (see #serializeData),
+   * so the log object shares no reference with the cause and the consumer's
+   * `JSON.stringify` never meets a bigint or a cycle the cause carried.
    * Uses a seen set to detect circular cause chains, and a depth bound so an
    * acyclic-but-very-deep chain is capped instead of recursing unbounded.
    *
@@ -975,16 +978,19 @@ export class BaseError<T extends string> extends Error {
 
       // Every field is a foreign read: a cause is whatever the caller threw,
       // and this runs in a catch path, so a throwing getter reads as absent.
+      // Every value is copied as data (see #serializeData): the log object
+      // must not share a reference with the cause, and the consumer's
+      // JSON.stringify must not meet a bigint or a cycle the cause carried.
       const serialized: Record<string, unknown> = {
-        name: readProperty(cause, "name"),
-        message: readProperty(cause, "message"),
-        stack: readProperty(cause, "stack"),
+        name: this.#serializeData(readProperty(cause, "name")),
+        message: this.#serializeData(readProperty(cause, "message")),
+        stack: this.#serializeData(readProperty(cause, "stack")),
       };
 
       // Preserve StructuredError fields if present (duck-typing)
       // This avoids circular dependency between BaseError and StructuredError
       for (const key of ["code", "category", "retryable", "details"]) {
-        const value = readProperty(cause, key);
+        const value = this.#serializeData(readProperty(cause, key));
         if (value !== undefined) serialized[key] = value;
       }
 
@@ -1017,45 +1023,64 @@ export class BaseError<T extends string> extends Error {
         : BaseError.#redactFailClosed(redactor, serialized);
     }
 
-    if (typeof cause === "object" && cause !== null) {
+    // A cause that is not an error is data.
+    return this.#serializeData(cause);
+  }
+
+  /**
+   * A foreign value as the log object carries it: decoupled from its source
+   * and safe for the consumer's `JSON.stringify`. One rule for a plain-object
+   * cause and for every field copied off a native error (`details`, `code`,
+   * an object under `stack`), so both branches carry the same guarantees.
+   *
+   * A primitive passes as-is, except a bigint, which has no JSON form and is
+   * written as its decimal string. A function or symbol has no JSON form
+   * either and reads as absent. An object is copied through the native JSON
+   * round-trip: it keeps structured data, honors `toJSON`, drops what JSON
+   * drops, and shares no reference with the source. A value the round-trip
+   * cannot take (a cycle, a nested bigint, a throwing `toJSON`, a graph past
+   * the node budget) degrades to the circular-object marker. Total: nothing
+   * in here throws.
+   */
+  /*#__PURE__*/ #serializeData(value: unknown): unknown {
+    if (typeof value === "object" && value !== null) {
       try {
-        // For plain objects, serialize with native JSON semantics (preserves
-        // structured data useful for debugging). The counting replacer bounds
-        // the total node count: JSON.stringify duplicates shared (DAG)
-        // references per reference, so a small hostile payload could expand
-        // exponentially; past the budget it degrades to the fallback marker.
-        // Kept as the native stringify/parse round-trip on purpose: it
-        // measures ~40% faster than an equivalent JS walker.
+        // The counting replacer bounds the total node count: JSON.stringify
+        // duplicates shared (DAG) references per reference, so a small
+        // hostile payload could expand exponentially; past the budget it
+        // degrades to the fallback marker. Kept as the native stringify/parse
+        // round-trip on purpose: it measures ~40% faster than an equivalent
+        // JS walker.
         let nodes = 0;
-        const json = JSON.stringify(cause, (_key, value: unknown) => {
+        const json = JSON.stringify(value, (_key, item: unknown) => {
           if (++nodes > BaseError.#MAX_JSON_NODES) {
             throw new Error("payload exceeds serialization bounds");
           }
-          return value;
+          return item;
         });
         if (json === undefined) {
           // A top-level toJSON returning undefined has no JSON form.
-          return this.#serializeCircularObject(cause);
+          return this.#serializeCircularObject(value);
         }
         return JSON.parse(json);
       } catch {
         // If JSON.stringify fails (circular references, BigInt, a size
         // blowup, ...), create a more useful representation
-        return this.#serializeCircularObject(cause);
+        return this.#serializeCircularObject(value);
       }
     }
-
-    // A bigint has no JSON form and would make the consumer's JSON.stringify
-    // throw, so it is written as its decimal string. Every other primitive is
-    // returned as-is.
-    return typeof cause === "bigint" ? cause.toString() : cause;
+    if (typeof value === "bigint") return value.toString();
+    if (typeof value === "function" || typeof value === "symbol") {
+      return undefined;
+    }
+    return value;
   }
 
   /**
-   * Total-node budget for one plain-object cause payload, enforced by a
-   * counting replacer so a shared-reference (DAG) blowup degrades to the
-   * fallback marker instead of exhausting CPU. Matches the redaction and
-   * wire-clone budgets.
+   * Total-node budget for one data value in the log object (a plain-object
+   * cause, a native cause's `details`), enforced by a counting replacer so a
+   * shared-reference (DAG) blowup degrades to the fallback marker instead of
+   * exhausting CPU. Matches the redaction and wire-clone budgets.
    */
   static readonly #MAX_JSON_NODES = 100_000;
 
@@ -1091,15 +1116,21 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Creates a more useful representation of circular objects for debugging.
-   * Instead of just "[object Object]", it extracts key information.
+   * Instead of just "[object Object]", it extracts key information. Total:
+   * the constructor and key reads are foreign, and a Proxy whose traps throw
+   * gets the bare marker instead of an exception.
    */
   /*#__PURE__*/ #serializeCircularObject(obj: object): string {
-    const type = obj.constructor?.name || "Object";
-    const keys = Object.keys(obj).slice(0, 5); // Show first 5 keys
-    const keyInfo = keys.length > 0 ? ` with keys: [${keys.join(", ")}]` : "";
-    const moreKeys = Object.keys(obj).length > 5 ? "..." : "";
+    try {
+      const type = obj.constructor?.name || "Object";
+      const keys = Object.keys(obj).slice(0, 5); // Show first 5 keys
+      const keyInfo = keys.length > 0 ? ` with keys: [${keys.join(", ")}]` : "";
+      const moreKeys = Object.keys(obj).length > 5 ? "..." : "";
 
-    return `[Circular ${type}${keyInfo}${moreKeys}]`;
+      return `[Circular ${type}${keyInfo}${moreKeys}]`;
+    } catch {
+      return "[Circular Object]";
+    }
   }
 
   /**
