@@ -247,7 +247,10 @@ Two mechanical guarantees:
 1. **Only a fixed whitelist crosses.** Whatever is stored, `publicIssues()`
    yields only `{ message, path, code?, pointer? }`, never raw validator extras
    (a Zod native issue may carry `received`/the rejected input value; those must
-   never reach the wire).
+   never reach the wire). `message` is part of the whitelist and crosses
+   unchanged. A validator's default message that embeds the rejected value
+   (Valibot, ArkType, Zod 3 `enum`) puts it on the wire, so the caller owns the
+   messages it exposes.
 2. **Crossing is explicit**, reusing the existing `extensions` mechanism:
 
 ```ts

@@ -8,7 +8,10 @@ import { readProperty } from "./guarded-read.js";
  * attaches are kept for logs but never cross to a client.
  */
 export type ValidationIssue = {
-  /** Human-readable message. Keep it client-safe if you choose to expose it. */
+  /**
+   * Human-readable message. It crosses `publicIssues()` unchanged, and a
+   * validator's default message can embed the rejected value.
+   */
   readonly message: string;
   /** Path to the offending value (Standard Schema form). */
   readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
@@ -109,10 +112,12 @@ export class ValidationError<
   }
 
   /**
-   * Client-safe projection of the issues. Returns only the fixed whitelist
+   * Projection of the issues for a client. Returns only the fixed whitelist
    * (`message`, `path`, `code?`, `pointer?`); raw validator extras are never included.
-   * Provide `mapIssue` to emit a fully custom wire shape (e.g. RFC-7807
-   * `{ name, reason }`).
+   * `message` crosses unchanged, and the default messages of Valibot and ArkType
+   * (and of Zod 3 for `enum`) embed the rejected value. When the messages are
+   * not yours, project `pointer` and `code` only, or provide `mapIssue` to emit
+   * a fully custom wire shape (e.g. RFC-7807 `{ name, reason }`).
    */
   public publicIssues(options?: PublicIssuesOptions): PublicIssue[] {
     const mapIssue = options?.mapIssue ?? ValidationError.#defaultProjection;

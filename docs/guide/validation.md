@@ -64,17 +64,34 @@ only a fixed whitelist can ever cross.
 
 `publicIssues()` yields that whitelist: `{ message, path, code?, pointer? }`,
 **never** raw validator extras (a Zod-native issue may carry the rejected input
-value; it can never reach the wire). A `pointer` string (e.g. `"address.zip"`)
-is derived from the path for HTTP clients.
+value in a `received` field; that field never reaches the wire). A `pointer`
+string (e.g. `"address.zip"`) is derived from the path for HTTP clients.
 
 ```ts
 v.publicIssues();
 // [{ message: "Enter a valid email.", path: ["email"], pointer: "email" }]
 ```
 
-This whitelist is the safe payload to surface at the boundary. Project it onto a
-public view via the [public-error pipeline](./public-error), where
-`projectDetails` is the explicit allowlist that lets vetted error data through:
+`message` is part of the whitelist and crosses **unchanged**. That is safe for
+messages you wrote. It is not safe for every validator's default messages.
+Valibot and ArkType embed the rejected value in theirs
+(`Invalid email: Received "…"` and `must be an email address (was "…")`), and so
+does Zod 3 for `enum`; Zod 4 does not. When the messages are not yours, project
+`pointer` and `code` only and let the client render the text from the code, as
+`examples/voucher-service/public-errors.ts` does:
+
+```ts
+projectFields: (error: ValidationError) =>
+  error.publicIssues().map((issue) => ({
+    field: issue.pointer ?? "",
+    code: issue.code ?? "invalid",
+  })),
+```
+
+With messages you wrote, the whole whitelist is the payload to surface at the
+boundary. Project it onto a public view via the
+[public-error pipeline](./public-error), where `projectDetails` is the explicit
+allowlist that lets vetted error data through:
 
 ```ts
 import { LocalizedMessageSet } from "@shirudo/base-error/public-error";

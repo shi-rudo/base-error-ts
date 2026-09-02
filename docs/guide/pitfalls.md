@@ -93,3 +93,17 @@ console.log(err); // ✗ Node inspection prints the stack → raw message
 When redaction matters, route errors through a structured serializer that hits
 `toJSON` (`logger.error({ err })`) instead of interpolating them into log
 strings. See [Observability](./observability#redacting-pii-from-logs).
+
+## 6. `publicIssues()` passes the validator's `message` through
+
+The whitelist drops validator extras such as a `received` field, but `message`
+is whitelisted and crosses unchanged. The default messages of Valibot and
+ArkType embed the rejected value, and so does Zod 3 for `enum`:
+
+```ts
+v.publicIssues()[0].message;
+// 'Invalid email: Received "hunter2"' ← Valibot's default message, on the wire
+```
+
+When the messages are not yours, project `pointer` and `code` only, or pass
+`mapIssue`. See [Validation](./validation#exposing-issues-safely).
