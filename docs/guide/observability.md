@@ -186,6 +186,9 @@ The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps it
 structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`);
 but **any other field on a cause is data** and is masked, so a plain object that
 merely _resembles_ a structured error can't smuggle siblings through. The
+envelope fields are primitives: an **object or array under an envelope name**
+(`stack: { message: "…" }`, `code: { … }`) is data too, at the top level and on
+a cause, so a leaf inside it is masked whatever it is called. The
 classification is by position, not by shape, so there is nothing to spoof. (The
 technical `message` is structural here; scrub free text in it with `redactWith`.)
 

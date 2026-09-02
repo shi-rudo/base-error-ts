@@ -205,8 +205,10 @@ export class BaseError<T extends string> extends Error {
    * allow-listed. A cause's foreign fields (anything outside that fixed set,
    * and everything nested beneath them) are treated as data, so a plain object
    * that merely *looks* like a structured error cannot smuggle siblings (or
-   * envelope-named keys buried in foreign subtrees) through. Sticky; last
-   * redactor wins.
+   * envelope-named keys buried in foreign subtrees) through. An envelope key
+   * holds a primitive: a **container** under an envelope name (`stack: {…}`,
+   * `code: {…}`) is data, at the root and inside a cause, so its leaves are
+   * masked whatever they are named. Sticky; last redactor wins.
    *
    * ⚠️ Scope: rewrites the **log object** only. The technical `message` is part
    * of the kept structural envelope, so `toString`, `err.stack`, and Node's
@@ -282,12 +284,12 @@ export class BaseError<T extends string> extends Error {
   ]);
 
   /**
-   * The library's own **top-level** structural fields, the only root keys an
-   * allow-list keeps (and, for containers, the only root keys that stay in the
-   * root/cause regions). Everything else at the top level (a field a subclass
+   * The library's own **top-level** structural fields, the only root leaves an
+   * allow-list keeps. Everything else at the top level (a field a subclass
    * adds via `buildLogObject`) is data, so a subclass-added field leaks nothing
-   * through `redactAllow` by default. Private for the same reason as
-   * {@link BaseError.#ENVELOPE_KEYS}.
+   * through `redactAllow` by default. Which region a root **container** enters
+   * is decided by {@link BaseError.#childRegion}, not by this set. Private for
+   * the same reason as {@link BaseError.#ENVELOPE_KEYS}.
    */
   static readonly #ROOT_ENVELOPE_KEYS: ReadonlySet<string> = new Set([
     ...BaseError.#ENVELOPE_KEYS,
@@ -454,15 +456,16 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Region a child key enters. `details` → data (data is sticky for the whole
-   * subtree); `cause` → cause. Inside a `cause`, only the structural envelope
-   * keys stay `cause`; every other (foreign) child, and therefore everything
-   * nested beneath it, drops to data, so envelope-named keys buried in a
-   * cause's foreign subtrees cannot be mistaken for the cause's own envelope.
-   * At the root, the same rule applies against {@link
-   * BaseError.#ROOT_ENVELOPE_KEYS}: a foreign top-level key (one a subclass
-   * added via `buildLogObject`) drops to data, so its whole subtree gets
-   * allow-list protection instead of the root region's keep-everything.
+   * Region a child **container** enters (a leaf never transitions; its
+   * keep/mask decision is made in the region it lives in). Data is sticky for
+   * the whole subtree. `details` → data. `cause` and `errors` → cause: they
+   * are the only containers on the cause spine. Every other container drops
+   * to data, at the root as well as inside a cause. That covers a foreign key
+   * (a field a subclass added via `buildLogObject`, a sibling a plain-object
+   * cause carries) and also an **envelope-named** key: the envelope fields
+   * (`name`/`message`/`stack`/`code`/`category`/`retryable`) are primitives,
+   * so a container found under one of those names is not the envelope. It is
+   * data, and an envelope-named leaf nested inside it stays masked.
    */
   /*#__PURE__*/ static #childRegion(
     region: RedactRegion,
@@ -477,10 +480,7 @@ export class BaseError<T extends string> extends Error {
     // only a container transitions region, so a scalar named `errors` is still
     // a data leaf and stays masked under an allow-list.
     if (key === "errors") return "cause";
-    if (region === "cause") {
-      return BaseError.#ENVELOPE_KEYS.has(key) ? "cause" : "data";
-    }
-    return BaseError.#ROOT_ENVELOPE_KEYS.has(key) ? "root" : "data";
+    return "data";
   }
 
   /**
