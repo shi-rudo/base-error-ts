@@ -143,6 +143,14 @@ err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTE
 JSON.stringify(err); // also masked
 ```
 
+The policy travels with the error. When another error carries it as `cause`
+(or as a member of an aggregate), the cause node in the outer log object is
+masked by the cause's own policy first, over the node and everything beneath
+it, and the outer error's policy runs over the whole log object afterwards.
+This holds for errors of the same realm only. An error that crossed a worker
+boundary, or one that came from a second copy of the package, logs as a foreign
+error without a policy.
+
 The mask is configurable: a string, or a **function** of `(value, key)` for
 partial masking or type preservation:
 

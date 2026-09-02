@@ -159,7 +159,9 @@ export class BaseError<T extends string> extends Error {
   /**
    * Redacts the given keys (deep, at any depth) from the **log** output
    * (`toLogObject`/`toJSON`). Sticky on the instance, so it also applies when a
-   * logger auto-serializes the error via `JSON.stringify`.
+   * logger auto-serializes the error via `JSON.stringify`, and when another
+   * error of the same realm logs this one as its `cause` (see
+   * {@link toLogObject}).
    *
    * ⚠️ Scope: redaction rewrites the **log object**, not every string render.
    * When `keys` includes `"message"`, {@link toString} masks the technical
@@ -208,7 +210,9 @@ export class BaseError<T extends string> extends Error {
    * envelope-named keys buried in foreign subtrees) through. An envelope key
    * holds a primitive: a **container** under an envelope name (`stack: {…}`,
    * `code: {…}`) is data, at the root and inside a cause, so its leaves are
-   * masked whatever they are named. Sticky; last redactor wins.
+   * masked whatever they are named. Sticky; last redactor wins, and the
+   * policy holds when another error of the same realm logs this one as its
+   * `cause` (see {@link toLogObject}).
    *
    * ⚠️ Scope: rewrites the **log object** only. The technical `message` is part
    * of the kept structural envelope, so `toString`, `err.stack`, and Node's
@@ -542,6 +546,14 @@ export class BaseError<T extends string> extends Error {
    * Serialises the error for logs. Includes technical message, stack and cause,
    * with the instance redactor applied (see {@link redact} / {@link redactWith}).
    *
+   * A cause that is a BaseError of the same realm and carries its own sticky
+   * policy is masked by that policy first, over its node and everything
+   * beneath it, and this error's redactor walks the result afterwards. This
+   * holds for a nested cause and for an aggregate member alike. A cause from
+   * another realm (a worker boundary, a second copy of the package) and a
+   * Proxy around a BaseError carry no reachable policy and are logged like a
+   * foreign error.
+   *
    * ⚠️ This is a **log** serialization: it carries the technical message, stack,
    * cause chain and raw `details`. **Never return it to a client.** Anything that
    * auto-serializes the error (`JSON.stringify`, `res.json(err)`, `Response.json`,
@@ -555,12 +567,25 @@ export class BaseError<T extends string> extends Error {
     if (!this.#redactor) {
       return raw;
     }
+    return BaseError.#redactFailClosed(this.#redactor, raw);
+  }
+
+  /**
+   * Runs a redactor over a log object. Fail-closed: a broken redactor must
+   * neither crash the logging path nor leak the unredacted payload, so a
+   * throw replaces the object with the triage envelope (message, stack,
+   * details, and cause are dropped; only the non-sensitive structural fields
+   * survive). Shared by the root log object and by every cause node that
+   * carries its own policy, so one node's broken redactor costs that node
+   * and nothing above it.
+   */
+  /*#__PURE__*/ static #redactFailClosed(
+    redactor: (log: Record<string, unknown>) => Record<string, unknown>,
+    raw: Record<string, unknown>,
+  ): Record<string, unknown> {
     try {
-      return this.#redactor(raw);
+      return redactor(raw);
     } catch {
-      // Fail-closed: a broken redactor must neither crash the logging path nor
-      // leak the unredacted payload (message/details/stack/cause are dropped).
-      // Keep only the non-sensitive structural fields needed for triage.
       const safe: Record<string, unknown> = {
         message: "[log redaction failed]",
       };
@@ -570,6 +595,22 @@ export class BaseError<T extends string> extends Error {
         }
       }
       return safe;
+    }
+  }
+
+  /**
+   * The sticky redactor of `value`, when `value` is a BaseError of this realm.
+   * The private field is the brand: a cross-realm instance and a Proxy fail
+   * it, and so does a value whose prototype check throws, so each of them
+   * reads as an error without a policy and is logged like a foreign error.
+   */
+  /*#__PURE__*/ static #redactorOf(
+    value: unknown,
+  ): ((log: Record<string, unknown>) => Record<string, unknown>) | undefined {
+    try {
+      return value instanceof BaseError ? value.#redactor : undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -811,6 +852,11 @@ export class BaseError<T extends string> extends Error {
    * Total per node: each foreign read is guarded, and a value that still
    * defeats serialization (a Proxy whose traps throw) becomes a marker, so one
    * hostile node costs its own entry in the log and nothing else.
+   *
+   * A node that is a BaseError of this realm with a sticky redaction policy
+   * is masked by that policy, subtree included, before it is returned (see
+   * {@link BaseError.#redactorOf}). A throwing policy collapses that node to
+   * the triage envelope and nothing above it.
    */
   /*#__PURE__*/ #serializeCause(
     cause: unknown,
@@ -876,7 +922,15 @@ export class BaseError<T extends string> extends Error {
         serialized.cause = this.#serializeCause(nested, seen, depth + 1);
       }
 
-      return serialized;
+      // The cause's own sticky policy runs last, over the node and the subtree
+      // serialized above it, so it covers the cause's descendants exactly as
+      // it does when the cause logs itself. Bottom-up by construction: every
+      // deeper node applied its own policy first. The enclosing error's
+      // redactor walks the result afterwards.
+      const redactor = BaseError.#redactorOf(cause);
+      return redactor === undefined
+        ? serialized
+        : BaseError.#redactFailClosed(redactor, serialized);
     }
 
     if (typeof cause === "object" && cause !== null) {
