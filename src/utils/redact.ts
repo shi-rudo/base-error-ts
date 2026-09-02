@@ -8,7 +8,11 @@ import type { RedactMask } from "../errors/BaseError.js";
  * Safe by construction:
  * - a value too short to safely reveal (`length <= keepStart + keepEnd`) is
  *   masked **entirely**, never partially exposed;
- * - non-string values are masked entirely.
+ * - non-string values are masked entirely;
+ * - an invalid `keepStart` or `keepEnd` (negative, `NaN`, infinite, or not an
+ *   integer) makes the mask mask **every** value entirely. The mask runs on
+ *   the logging path, so a wrong option degrades to a full mask instead of a
+ *   throw or a partial reveal.
  *
  * @param options - `keepStart` (default 0), `keepEnd` (default 4), `fill`
  *   (default `"…"`, also used as the full mask for short/non-string values).
@@ -28,6 +32,12 @@ export function partialMask(options?: {
   const keepEnd = options?.keepEnd ?? 4;
   const fill = options?.fill ?? "…";
 
+  // A negative count inverts both the too-short guard and the slice
+  // arithmetic, which reveals the whole value. Fail closed instead.
+  if (!isRevealCount(keepStart) || !isRevealCount(keepEnd)) {
+    return () => fill;
+  }
+
   return (value) => {
     // Non-strings, and strings too short to safely reveal, are masked entirely.
     if (typeof value !== "string" || value.length <= keepStart + keepEnd) {
@@ -39,4 +49,8 @@ export function partialMask(options?: {
     const end = value.slice(value.length - keepEnd);
     return start + fill + end;
   };
+}
+
+function isRevealCount(count: number): boolean {
+  return Number.isSafeInteger(count) && count >= 0;
 }
