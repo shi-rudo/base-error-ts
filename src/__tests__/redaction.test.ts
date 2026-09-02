@@ -920,3 +920,110 @@ describe("redactAllow treats a container under an envelope name as data", () => 
     expect(members[1]?.message).toBe("member two");
   });
 });
+
+describe("the redaction walker drops function-valued leaves", () => {
+  const withConfig = (config: unknown) =>
+    new StructuredError({
+      code: "X",
+      category: "C",
+      retryable: false,
+      message: "m",
+      details: { password: "hunter2", config },
+    });
+
+  it("deny-list: an own toJSON under details cannot re-materialize a masked key", () => {
+    const err = withConfig({
+      toJSON() {
+        return { password: "hunter2-via-toJSON" };
+      },
+    }).redact(["password"]);
+
+    const log = err.toLogObject();
+    const config = (log.details as Record<string, unknown>).config as Record<
+      string,
+      unknown
+    >;
+    expect(typeof config.toJSON).toBe("undefined");
+    expect(JSON.stringify(err)).not.toContain("hunter2");
+    expect(JSON.stringify(log.details)).toBe(
+      '{"password":"[REDACTED]","config":{}}',
+    );
+  });
+
+  it("allow-list: an own toJSON under details is dropped, not kept and not masked", () => {
+    const err = withConfig({
+      toJSON() {
+        return { password: "hunter2-via-toJSON" };
+      },
+    }).redactAllow(["toJSON"]);
+
+    const log = err.toLogObject();
+    const config = (log.details as Record<string, unknown>).config as Record<
+      string,
+      unknown
+    >;
+    expect(typeof config.toJSON).toBe("undefined");
+    expect(JSON.stringify(err)).not.toContain("hunter2");
+  });
+
+  it("drops a toJSON that sits directly on details", () => {
+    const err = new StructuredError({
+      code: "X",
+      category: "C",
+      retryable: false,
+      message: "m",
+      details: {
+        password: "hunter2",
+        toJSON() {
+          return { password: "hunter2-via-toJSON" };
+        },
+      },
+    }).redact(["password"]);
+
+    expect(JSON.stringify(err)).not.toContain("hunter2");
+    expect(JSON.stringify(err.toLogObject().details)).toBe(
+      '{"password":"[REDACTED]"}',
+    );
+  });
+
+  it("drops a toJSON inside the details of a native Error cause", () => {
+    const native = new Error("db") as Error & { details: unknown };
+    native.details = {
+      password: "hunter2",
+      config: {
+        toJSON() {
+          return { password: "hunter2-via-toJSON" };
+        },
+      },
+    };
+    const err = new StructuredError({
+      code: "X",
+      category: "C",
+      retryable: false,
+      message: "m",
+      cause: native,
+    }).redact(["password"]);
+
+    expect(JSON.stringify(err)).not.toContain("hunter2");
+  });
+
+  it("writes a function item of an array as null, as JSON.stringify does", () => {
+    const err = withConfig([() => "secret", "kept"]).redact(["password"]);
+
+    const config = (err.toLogObject().details as Record<string, unknown>)
+      .config as unknown[];
+    expect(config).toEqual([null, "kept"]);
+  });
+
+  it("does not copy a prototype toJSON of a class instance into the clone", () => {
+    class Config {
+      password = "hunter2";
+      toJSON() {
+        return { password: "hunter2-via-prototype" };
+      }
+    }
+    const err = withConfig(new Config()).redact(["password"]);
+
+    expect(JSON.stringify(err)).not.toContain("hunter2");
+  });
+});
