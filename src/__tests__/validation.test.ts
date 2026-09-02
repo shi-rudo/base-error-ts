@@ -81,7 +81,7 @@ describe("ValidationError", () => {
       ]);
     });
 
-    it("never leaks raw validator extras (e.g. the rejected value)", () => {
+    it("drops raw validator extras (e.g. a received field that carries the rejected value)", () => {
       const v = new ValidationError("x");
       // Simulate a Zod-native issue carrying the rejected input.
       v.addIssue({
@@ -93,6 +93,17 @@ describe("ValidationError", () => {
       const pub = v.publicIssues();
       expect(pub[0]).not.toHaveProperty("received");
       expect(JSON.stringify(pub)).not.toContain("hunter2");
+    });
+
+    it("passes the message through unchanged, even when a validator embedded the rejected value in it", () => {
+      const v = new ValidationError("x").addIssue({
+        message: 'Invalid email: Received "hunter2"',
+        path: ["email"],
+      });
+
+      const pub = v.publicIssues();
+
+      expect(pub[0]?.message).toBe('Invalid email: Received "hunter2"');
     });
 
     it("normalizes object path segments to { key } (segment extras never cross)", () => {
