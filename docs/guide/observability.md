@@ -223,12 +223,15 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 ### Notes
 
 - **Log object only, not every string render**: redaction rewrites
-  `toLogObject()` / `toJSON()`. A deny-listed `"message"` is also honored by
-  `toString()`, but `err.stack` (whose header carries the raw message) and
-  Node's `console.log(err)` inspection (which prints the stack) stay
-  unredacted. When redaction matters, log errors through a structured
-  serializer that hits `toJSON` (`logger.error({ err })`), never via string
-  interpolation.
+  `toLogObject()` / `toJSON()`. A deny-listed `"message"` is also masked in
+  the `stack` field of every node in the log object: a header that repeats
+  the node's own `name: message` keeps the masked message and its frames,
+  and a stack that does not start with that header is masked as a whole.
+  `toString()` honors it too. The `err.stack` property (whose header carries
+  the raw message) and Node's `console.log(err)` inspection (which prints
+  that property) stay unredacted. When redaction matters, log errors through
+  a structured serializer that hits `toJSON` (`logger.error({ err })`), never
+  via string interpolation.
 - **Log path only**: the client path (the [public-error pipeline](./public-error)) emits
   only an explicit allowlist, so it is already safe by default.
 - **Defense-in-depth at the source**, not a replacement for logger-level
