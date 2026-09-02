@@ -1042,13 +1042,13 @@ export class BaseError<T extends string> extends Error {
    * an object under `stack`), so both branches carry the same guarantees.
    *
    * A primitive passes as-is, except a bigint, which has no JSON form and is
-   * written as its decimal string. A function or symbol has no JSON form
-   * either and reads as absent. An object is copied through the native JSON
-   * round-trip: it keeps structured data, honors `toJSON`, drops what JSON
-   * drops, and shares no reference with the source. A value the round-trip
-   * cannot take (a cycle, a nested bigint, a throwing `toJSON`, a graph past
-   * the node budget) degrades to the circular-object marker. Total: nothing
-   * in here throws.
+   * written as its decimal string, at every depth. A function or symbol has
+   * no JSON form either and reads as absent. An object is copied through the
+   * native JSON round-trip: it keeps structured data, honors `toJSON`, drops
+   * what JSON drops, and shares no reference with the source. A value the
+   * round-trip cannot take (a cycle, a throwing `toJSON`, a graph past the
+   * node budget) degrades to the circular-object marker. Total: nothing in
+   * here throws.
    */
   /*#__PURE__*/ #serializeData(value: unknown): unknown {
     if (typeof value === "object" && value !== null) {
@@ -1064,7 +1064,7 @@ export class BaseError<T extends string> extends Error {
           if (++nodes > BaseError.#MAX_JSON_NODES) {
             throw new Error("payload exceeds serialization bounds");
           }
-          return item;
+          return typeof item === "bigint" ? item.toString() : item;
         });
         if (json === undefined) {
           // A top-level toJSON returning undefined has no JSON form.
@@ -1072,8 +1072,8 @@ export class BaseError<T extends string> extends Error {
         }
         return JSON.parse(json);
       } catch {
-        // If JSON.stringify fails (circular references, BigInt, a size
-        // blowup, ...), create a more useful representation
+        // If JSON.stringify fails (circular references, a throwing toJSON, a
+        // size blowup, ...), create a more useful representation
         return this.#serializeCircularObject(value);
       }
     }

@@ -27,14 +27,18 @@ function causeNode(error: BaseError<string>): Record<string, unknown> {
 type Extended = Error & Record<string, unknown>;
 
 describe("a native cause with a non-JSON extension field", () => {
-  it("degrades details with a nested bigint to the circular marker instead of making JSON.stringify throw", () => {
+  it("writes a nested bigint in details as its decimal string instead of making JSON.stringify throw", () => {
     const cause = new Error("db") as Extended;
-    cause.details = { big: 10n };
+    cause.details = { big: 10n, list: [1n, { deep: 2n }] };
 
     const error = wrap(cause);
 
     expect(() => JSON.stringify(error)).not.toThrow();
-    expect(causeNode(error).details).toBe("[Circular Object with keys: [big]]");
+    expect(causeNode(error).details).toEqual({
+      big: "10",
+      list: ["1", { deep: "2" }],
+    });
+    expect(JSON.stringify(error)).toContain('"big":"10"');
   });
 
   it("writes a bigint code as its decimal string", () => {
@@ -218,6 +222,6 @@ describe("a well-formed cause serializes as before", () => {
     expect(() => JSON.stringify(error)).not.toThrow();
     const members = causeNode(error).errors as Record<string, unknown>[];
     expect(members[0]?.code).toBe("1");
-    expect(members[0]?.details).toBe("[Circular Object with keys: [big]]");
+    expect(members[0]?.details).toEqual({ big: "1" });
   });
 });
