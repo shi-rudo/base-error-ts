@@ -795,3 +795,128 @@ describe("redactAllow keeps the serializer's own cause markers readable", () => 
     expect((log.cause as Record<string, unknown>).cause).toBe("[REDACTED]");
   });
 });
+
+describe("redactAllow treats a container under an envelope name as data", () => {
+  const wrap = (cause: unknown) =>
+    new StructuredError({
+      code: "O",
+      category: "X",
+      retryable: false,
+      message: "m",
+      cause,
+    });
+
+  it("masks the leaves of an object that sits under a cause's stack or code key", () => {
+    const log = wrap({
+      name: "E",
+      message: "m",
+      stack: { message: "Bearer SECRET-TOKEN", foo: "x" },
+      code: { message: "also-secret" },
+    })
+      .redactAllow([])
+      .toLogObject();
+
+    const cause = log.cause as Record<string, unknown>;
+    expect(cause.name).toBe("E");
+    expect(cause.message).toBe("m");
+    expect(cause.stack).toEqual({ message: "[REDACTED]", foo: "[REDACTED]" });
+    expect(cause.code).toEqual({ message: "[REDACTED]" });
+  });
+
+  it("masks a native Error whose stack and code were reassigned to objects", () => {
+    const native = new Error("db") as Error & { code: unknown };
+    Object.defineProperty(native, "stack", {
+      value: { message: "Bearer SECRET-TOKEN" },
+      configurable: true,
+      writable: true,
+    });
+    native.code = { name: "SECRET-NAME" };
+
+    const log = wrap(native).redactAllow([]).toLogObject();
+
+    const cause = log.cause as Record<string, unknown>;
+    expect(cause.message).toBe("db");
+    expect(cause.stack).toEqual({ message: "[REDACTED]" });
+    expect(cause.code).toEqual({ name: "[REDACTED]" });
+  });
+
+  it("masks envelope-named leaves at every depth below an envelope-named container", () => {
+    const log = wrap({
+      name: "E",
+      message: "m",
+      code: { name: { message: "SECRET-DEEP", retryable: "SECRET-TOO" } },
+    })
+      .redactAllow([])
+      .toLogObject();
+
+    const code = (log.cause as Record<string, unknown>).code as Record<
+      string,
+      unknown
+    >;
+    expect(code.name).toEqual({
+      message: "[REDACTED]",
+      retryable: "[REDACTED]",
+    });
+  });
+
+  it("masks a container that a subclass emits under a root envelope name", () => {
+    class CodeObjectError extends BaseError<"CodeObjectError"> {
+      protected override buildLogObject(): Record<string, unknown> {
+        return {
+          ...super.buildLogObject(),
+          code: { message: "SECRET-AT-ROOT" },
+          stack: { message: "SECRET-STACK" },
+        };
+      }
+    }
+
+    const log = new CodeObjectError("m").redactAllow([]).toLogObject();
+
+    expect(log.message).toBe("m");
+    expect(log.code).toEqual({ message: "[REDACTED]" });
+    expect(log.stack).toEqual({ message: "[REDACTED]" });
+  });
+
+  it("keeps the string envelope of every node on the cause spine readable", () => {
+    const deepest = new StructuredError({
+      code: "DEEP",
+      category: "C",
+      retryable: true,
+      message: "deepest message",
+    });
+    const middle = new StructuredError({
+      code: "MID",
+      category: "C",
+      retryable: false,
+      message: "middle message",
+      cause: deepest,
+    });
+    const aggregate = new AggregateError(
+      [new Error("member one"), new Error("member two")],
+      "fan-out",
+    );
+    const log = new StructuredError({
+      code: "O",
+      category: "X",
+      retryable: false,
+      message: "outer",
+      cause: middle,
+    })
+      .redactAllow([])
+      .toLogObject();
+    const aggregateLog = wrap(aggregate).redactAllow([]).toLogObject();
+
+    const cause = log.cause as Record<string, unknown>;
+    const nested = cause.cause as Record<string, unknown>;
+    expect(cause.code).toBe("MID");
+    expect(cause.message).toBe("middle message");
+    expect(typeof cause.stack).toBe("string");
+    expect(nested.code).toBe("DEEP");
+    expect(nested.message).toBe("deepest message");
+    expect(nested.retryable).toBe(true);
+    const members = (aggregateLog.cause as Record<string, unknown>)
+      .errors as Array<Record<string, unknown>>;
+    expect(members[0]?.message).toBe("member one");
+    expect(members[1]?.message).toBe("member two");
+  });
+});
