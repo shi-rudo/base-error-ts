@@ -78,16 +78,17 @@ class PaymentDeclinedError extends BaseError<"PaymentDeclinedError"> {
 ## 5. Redaction covers the log object, not `err.stack` or string interpolation
 
 `redact` / `redactAllow` / `redactWith` rewrite `toLogObject()` / `toJSON()`.
-A deny-listed `"message"` is also masked in `toString()`, but two common sinks
-stay raw:
+A deny-listed `"message"` is also masked in the `stack` field of every node
+in the log object (the header keeps the masked message, the frames stay) and
+in `toString()`, but two common sinks stay raw:
 
 ```ts
 err.redact(["message", "apiKey"]);
 
-JSON.stringify(err); // ✓ redacted
+JSON.stringify(err); // ✓ redacted, stack headers included
 `${err}`; // ✓ message masked (toString)
-err.stack; // ✗ stack header still carries the raw message
-console.log(err); // ✗ Node inspection prints the stack → raw message
+err.stack; // ✗ the property keeps the raw message in its header
+console.log(err); // ✗ Node inspection prints that property → raw message
 ```
 
 When redaction matters, route errors through a structured serializer that hits
