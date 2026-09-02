@@ -345,6 +345,12 @@ export class BaseError<T extends string> extends Error {
    * The transition is by key name only, not duck-typing, so a cause that
    * merely resembles a structured error cannot reclassify its data as envelope.
    * The deny-list ignores `region`.
+   *
+   * A function-valued leaf is never log data and is not passed to `decide`:
+   * in an object it is dropped, in an array it becomes `null`, exactly as
+   * `JSON.stringify` writes it. This keeps an own `toJSON` out of the clone in
+   * both modes; copied as a leaf, the consumer's `JSON.stringify` would call
+   * it and re-materialize a masked key.
    */
   /*#__PURE__*/ static #redactWalk(
     value: unknown,
@@ -373,6 +379,7 @@ export class BaseError<T extends string> extends Error {
       // cannot marker-truncate a shallow `details` nested beneath it.
       const itemDepth = region === "cause" ? depth : depth + 1;
       return value.map((item) => {
+        if (typeof item === "function") return null;
         if (Array.isArray(item) || BaseError.#isWalkable(item)) {
           return BaseError.#redactWalk(
             item,
@@ -402,6 +409,7 @@ export class BaseError<T extends string> extends Error {
       // stage. (OWASP Prototype Pollution Prevention.)
       const out = Object.create(null) as Record<string, unknown>;
       for (const [key, val] of Object.entries(value)) {
+        if (typeof val === "function") continue;
         if (BaseError.#isStructuralMarker(val, region)) {
           out[key] = val;
           continue;
