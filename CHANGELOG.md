@@ -6,6 +6,8 @@
 
 - **`publicIssues` survives a hostile issue.** An issue whose `code` getter throws is projected without the code instead of throwing out of the whitelist. Every remaining raw foreign read in library source moved to the guarded reader, and a lint rule now bans the two read shapes that syntax can catch (a property probe with `in`, a member access on an inline cast), so the next raw read fails the linter instead of review.
 
+- **A cause's sticky redaction policy holds when another error logs it.** `redact`, `redactAllow`, `redactWith` and the catalog-level `redaction` policy promise to travel with the error, but the cause serializer read a cause's `message` and `details` raw, so an error that masked itself leaked in full as the `cause` of another error while `toString()` masked it. A same-realm `BaseError` on the cause spine (a nested cause and an aggregate member alike) is now masked by its own policy over its node and everything beneath it, bottom-up, before the enclosing error's redactor runs. A cause whose redactor throws collapses to the `[log redaction failed]` triage envelope on its own, and the rest of the log survives. An error from another realm or behind a Proxy carries no reachable policy and logs as a foreign error, as before.
+
 ### Documentation
 
 - **`publicIssues()` passes the validator's `message` through, and the docs say so.** The whitelist drops validator extras such as a `received` field, but `message` is whitelisted and crosses unchanged. The default messages of Valibot and ArkType embed the rejected value, and so does Zod 3 for `enum`; Zod 4 does not. The validation guide, the pitfalls page, and the JSDoc name the pass-through and show the safe projection (`pointer` and `code` only, or `mapIssue`). A test pins the pass-through.
