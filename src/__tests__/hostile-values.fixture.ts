@@ -34,3 +34,14 @@ export function hostileProxy(
   }
   return new Proxy({}, handler);
 }
+
+/**
+ * A Proxy that was revoked before use. Every operation on it throws, the
+ * prototype walk of `instanceof` included, so it pins the guards that must
+ * answer `false` instead of throwing on a value they cannot inspect.
+ */
+export function revokedProxy(): object {
+  const { proxy, revoke } = Proxy.revocable({}, {});
+  revoke();
+  return proxy;
+}

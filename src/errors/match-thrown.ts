@@ -1,3 +1,4 @@
+import { isInstanceOf } from "./guarded-read.js";
 import type { ErrorClass, TypeGuard } from "./guards.js";
 
 type MatcherCase = {
@@ -45,7 +46,7 @@ function createMatcher<TResult>(
       handler: (error: T) => R,
     ): ThrownMatcher<TResult | R> {
       const nextCase: MatcherCase = {
-        test: (candidate) => candidate instanceof constructor,
+        test: (candidate) => isInstanceOf(candidate, constructor),
         run: (candidate) => handler(candidate as T),
       };
 
@@ -59,7 +60,7 @@ function createMatcher<TResult>(
       const snapshot = [...constructors];
       const nextCase: MatcherCase = {
         test: (candidate) =>
-          snapshot.some((constructor) => candidate instanceof constructor),
+          snapshot.some((constructor) => isInstanceOf(candidate, constructor)),
         run: (candidate) => handler(candidate as InstanceType<C[number]>),
       };
 

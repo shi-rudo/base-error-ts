@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 
 import { defineErrorClassSet } from "../index.js";
 
@@ -130,5 +131,34 @@ describe("defineErrorClassSet", () => {
         database: () => "database",
       }),
     ).toBe("file");
+  });
+});
+
+describe("defineErrorClassSet().match against a value that cannot be inspected", () => {
+  const handlers = {
+    file: () => "file",
+    database: () => "database",
+  };
+
+  it("reports a revoked Proxy as outside the set instead of throwing the Proxy error", () => {
+    const set = defineErrorClassSet({
+      file: FileError,
+      database: DatabaseError,
+    });
+
+    expect(() => set.match(revokedProxy(), handlers)).toThrow(
+      "value is outside the declared error class set",
+    );
+  });
+
+  it("reports a Proxy whose getPrototypeOf trap throws as outside the set", () => {
+    const set = defineErrorClassSet({
+      file: FileError,
+      database: DatabaseError,
+    });
+
+    expect(() => set.match(hostileProxy(["getPrototypeOf"]), handlers)).toThrow(
+      "value is outside the declared error class set",
+    );
   });
 });

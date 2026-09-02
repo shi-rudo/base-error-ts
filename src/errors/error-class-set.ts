@@ -1,3 +1,4 @@
+import { isInstanceOf } from "./guarded-read.js";
 import type { ErrorClass } from "./guards.js";
 
 /** A keyed set of local Error constructors. */
@@ -88,7 +89,7 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
     ): MatchResult<THandlers> {
       for (const key of keys) {
         const constructor = snapshot[key] as ErrorClass;
-        if (value instanceof constructor) {
+        if (isInstanceOf(value, constructor)) {
           const handler = handlers[key] as (
             error: InstanceType<TClasses[typeof key]>,
           ) => MatchResult<THandlers>;

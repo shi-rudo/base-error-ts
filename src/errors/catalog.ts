@@ -1,5 +1,6 @@
 import { StructuredError } from "./StructuredError.js";
 import type { RedactMask } from "./BaseError.js";
+import { isInstanceOf } from "./guarded-read.js";
 import { cloneJsonSafe } from "./json-safe.js";
 import type { JsonSafeValue } from "./json-safe.js";
 
@@ -374,7 +375,7 @@ export function defineErrors(
       return metaSnapshot[code] as CatalogMeta<ErrorSpec>;
     },
     is(value: unknown, expectedCode?: string): boolean {
-      if (!(value instanceof StructuredError)) return false;
+      if (!isInstanceOf(value, StructuredError)) return false;
 
       const actualCode = provenance.get(value);
       if (actualCode === undefined) return false;

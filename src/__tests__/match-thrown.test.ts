@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 
 import { hasErrorCode, matchThrown } from "../index.js";
 
@@ -198,5 +199,25 @@ describe("matchThrown", () => {
         throw fallbackFailure;
       }),
     ).toThrow(fallbackFailure);
+  });
+});
+
+describe("matchThrown against a value that cannot be inspected", () => {
+  it("falls through to otherwise for a revoked Proxy instead of throwing", () => {
+    const result = matchThrown(revokedProxy())
+      .with(NetworkError, () => "network")
+      .withAny([ParseError, TimeoutError], () => "parse-or-timeout")
+      .otherwise(() => "other");
+
+    expect(result).toBe("other");
+  });
+
+  it("falls through to otherwise for a Proxy whose getPrototypeOf trap throws", () => {
+    const result = matchThrown(hostileProxy(["getPrototypeOf"]))
+      .with(NetworkError, () => "network")
+      .withAny([ParseError, TimeoutError], () => "parse-or-timeout")
+      .otherwise(() => "other");
+
+    expect(result).toBe("other");
   });
 });
