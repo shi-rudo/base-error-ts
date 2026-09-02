@@ -52,7 +52,9 @@ function resolveOptions(
  * members of its aggregate. Total by design, like the linear walk: a node
  * already visited ends that branch, so a cycle or a shared branch terminates
  * instead of recursing. `budget` bounds the total node count, because
- * `maxDepth` bounds depth and not width.
+ * `maxDepth` bounds depth and not width. The members of one aggregate are
+ * read up to the remaining budget, so a wide aggregate costs at most the
+ * budget and never its width.
  */
 function* traverseCauseTree(
   error: unknown,
@@ -71,8 +73,11 @@ function* traverseCauseTree(
   if (cause !== undefined) {
     yield* traverseCauseTree(cause, depth + 1, options, seen, budget);
   }
-  for (const member of readMembers(error)) {
-    yield* traverseCauseTree(member, depth + 1, options, seen, budget);
+  const aggregate = readMembers(error, budget.nodes);
+  if (aggregate !== undefined) {
+    for (const member of aggregate.members) {
+      yield* traverseCauseTree(member, depth + 1, options, seen, budget);
+    }
   }
 }
 

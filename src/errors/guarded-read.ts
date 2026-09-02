@@ -21,13 +21,59 @@ export function readProperty(value: unknown, key: string | symbol): unknown {
 }
 
 /**
- * The members of an aggregate, read by shape rather than by
- * `instanceof AggregateError`, so a cross-realm or custom fan-out error is
- * handled too. A throwing getter yields no members.
+ * The members of an aggregate, materialized. `members` holds at most the
+ * requested number of them, and `total` is the count the aggregate reports,
+ * so a consumer can mark the members it did not take.
  */
-export function readMembers(value: unknown): readonly unknown[] {
-  const members = readProperty(value, "errors");
-  return Array.isArray(members) ? members : [];
+export type AggregateMembers = {
+  readonly members: readonly unknown[];
+  readonly total: number;
+};
+
+/**
+ * Reads the members of an aggregate by shape (an array-valued `errors`)
+ * rather than by `instanceof AggregateError`, so a cross-realm or custom
+ * fan-out error is handled too. Returns `undefined` when `errors` is not an
+ * array, which includes a throwing getter and a revoked Proxy.
+ *
+ * The result is a fresh, frozen copy of at most `limit` members, each read
+ * through a guarded index read. The foreign array is never handed on: a
+ * consumer that sliced or iterated it would run its index getters, its
+ * `length` trap and its `Symbol.species` outside any guard. A `length` that
+ * is not a non-negative safe integer reads as zero members, and a member whose
+ * read throws reads as `undefined`.
+ */
+export function readMembers(
+  value: unknown,
+  limit: number,
+): AggregateMembers | undefined {
+  const errors = readProperty(value, "errors");
+  if (!isArrayValue(errors)) return undefined;
+
+  const total = toMemberCount(readProperty(errors, "length"));
+  const count = Math.min(total, Math.max(0, limit));
+  const members: unknown[] = [];
+  for (let index = 0; index < count; index++) {
+    members.push(readProperty(errors, String(index)));
+  }
+  return { members: Object.freeze(members), total };
+}
+
+/** `Array.isArray` itself throws on a revoked Proxy; such a value is no array. */
+function isArrayValue(value: unknown): boolean {
+  try {
+    return Array.isArray(value);
+  } catch {
+    return false;
+  }
+}
+
+function toMemberCount(length: unknown): number {
+  return typeof length === "number" &&
+    Number.isSafeInteger(length) &&
+    length >= 0
+    ? length
+    : 0;
 }
 
 /**
