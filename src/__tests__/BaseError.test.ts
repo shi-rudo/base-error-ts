@@ -961,10 +961,13 @@ describe("BaseError", () => {
         expect(cause).toEqual({ map: {}, set: {} });
       });
 
-      it("falls back to the circular marker for a payload JSON cannot represent (BigInt)", () => {
-        const cause = causeOf({ big: 10n, id: "x" });
-        expect(typeof cause).toBe("string");
-        expect(cause).toContain("Circular");
+      it("writes a nested bigint as its decimal string and keeps the rest of the payload", () => {
+        const cause = causeOf({ big: 10n, id: "x", list: [1n, { deep: 2n }] });
+        expect(cause).toEqual({
+          big: "10",
+          id: "x",
+          list: ["1", { deep: "2" }],
+        });
       });
 
       it("degrades a shared-reference (DAG) payload to the fallback instead of expanding it", () => {
