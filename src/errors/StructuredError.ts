@@ -2,7 +2,11 @@ import { BaseError } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
-import { readProperty } from "./guarded-read.js";
+import {
+  readMembers,
+  readProperty,
+  type AggregateMembers,
+} from "./guarded-read.js";
 
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
@@ -237,10 +241,10 @@ export class StructuredError<
     // sets its own `errors`). The log serializer reads them by shape, so the
     // wire keeps them; restore them the way a native aggregate holds them,
     // non-enumerable, which also makes the round-trip stable across repeats.
-    const rawMembers = readProperty(obj, "errors");
-    if (Array.isArray(rawMembers)) {
+    const aggregate = readMembers(obj, StructuredError.#MEMBERS_READ);
+    if (aggregate !== undefined) {
       Object.defineProperty(error, "errors", {
-        value: StructuredError.#reconstructMembers(rawMembers, depth, budget),
+        value: StructuredError.#reconstructMembers(aggregate, depth, budget),
         configurable: true,
         writable: true,
         enumerable: false,
@@ -292,6 +296,13 @@ export class StructuredError<
   static readonly #MAX_MEMBERS = 100;
 
   /**
+   * Members read from a payload: one past the width cap, so the element that
+   * follows the last reconstructed member is in hand when the tail is the
+   * serializer's own count marker.
+   */
+  static readonly #MEMBERS_READ = StructuredError.#MAX_MEMBERS + 1;
+
+  /**
    * Rebuilds an aggregate's members. Each member goes back through
    * {@link StructuredError.#reconstructCause}, so a nested aggregate, a
    * structured branch and the serializer's width marker (a plain string) all
@@ -299,14 +310,15 @@ export class StructuredError<
    * cap or when the node budget runs out, whichever comes first.
    */
   static #reconstructMembers(
-    members: readonly unknown[],
+    aggregate: AggregateMembers,
     depth: number,
     budget: { nodes: number },
   ): unknown[] {
+    const { members, total } = aggregate;
     const reconstructed: unknown[] = [];
     let taken = 0;
     while (
-      taken < members.length &&
+      taken < total &&
       taken < StructuredError.#MAX_MEMBERS &&
       budget.nodes > 0
     ) {
@@ -316,17 +328,17 @@ export class StructuredError<
       taken++;
     }
 
-    const rest = members.slice(taken);
-    if (rest.length > 0) {
+    const rest = total - taken;
+    if (rest > 0) {
       // A payload this library produced is already capped, and its tail is the
       // serializer's own count marker. Carry that string through verbatim
       // rather than replacing it with "[1 more …]", which would understate the
       // original truncation on every round-trip.
-      const tail = rest[0];
+      const tail = members[taken];
       reconstructed.push(
-        rest.length === 1 && typeof tail === "string"
+        rest === 1 && typeof tail === "string"
           ? tail
-          : moreAggregatedErrorsMarker(rest.length),
+          : moreAggregatedErrorsMarker(rest),
       );
     }
     return reconstructed;
@@ -365,11 +377,11 @@ export class StructuredError<
     // the wire. `structuredClone` drops them (verified on Node, Bun, Deno and
     // workerd, where it also degrades the class to a plain `Error`), which makes
     // this round-trip the only lossless way across a worker or queue boundary.
-    const members = readProperty(obj, "errors");
+    const members = readMembers(obj, StructuredError.#MEMBERS_READ);
     const messageField = readProperty(obj, "message");
     const nameField = readProperty(obj, "name");
     const stackField = readProperty(obj, "stack");
-    if (Array.isArray(members)) {
+    if (members !== undefined) {
       const aggregate = new AggregateError(
         StructuredError.#reconstructMembers(members, depth, budget),
         typeof messageField === "string" ? messageField : "",

@@ -1,4 +1,8 @@
-import { readMembers, readProperty } from "./guarded-read.js";
+import {
+  readMembers,
+  readProperty,
+  type AggregateMembers,
+} from "./guarded-read.js";
 import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
   MAX_CAUSE_DEPTH_MARKER,
@@ -546,9 +550,9 @@ export class BaseError<T extends string> extends Error {
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
     // the same bounded, cycle-safe serialization as an aggregate cause.
-    const members = readMembers(this);
-    if (members.length > 0) {
-      json.errors = this.#serializeAggregate(members, new Set([this]), 1);
+    const aggregate = readMembers(this, BaseError.#MAX_AGGREGATE_ERRORS);
+    if (aggregate !== undefined && aggregate.total > 0) {
+      json.errors = this.#serializeAggregate(aggregate, new Set([this]), 1);
     }
 
     return json;
@@ -701,12 +705,12 @@ export class BaseError<T extends string> extends Error {
       }
       seen.add(current);
 
-      const members = readMembers(current);
-      const suffix =
-        members.length > 0 ? ` (+${members.length} aggregated)` : "";
+      const aggregate = readMembers(current, BaseError.#MAX_AGGREGATE_ERRORS);
+      const total = aggregate === undefined ? 0 : aggregate.total;
+      const suffix = total > 0 ? ` (+${total} aggregated)` : "";
       lines.push(`${prefix}${BaseError.#renderNode(current)}${suffix}`);
 
-      const shown = members.slice(0, BaseError.#MAX_AGGREGATE_ERRORS);
+      const shown = aggregate === undefined ? [] : aggregate.members;
       for (const member of shown) {
         const rendered = BaseError.#renderChain(
           member,
@@ -723,9 +727,9 @@ export class BaseError<T extends string> extends Error {
           lines.push(index === 0 ? `${indent}  - ${line.trimStart()}` : line);
         }
       }
-      if (members.length > shown.length) {
+      if (total > shown.length) {
         lines.push(
-          `${indent}  ${moreAggregatedErrorsMarker(members.length - shown.length)}`,
+          `${indent}  ${moreAggregatedErrorsMarker(total - shown.length)}`,
         );
       }
 
@@ -1001,9 +1005,13 @@ export class BaseError<T extends string> extends Error {
       // by `instanceof AggregateError`, so cross-realm and custom fan-out
       // errors serialize too. Without this the branch failures that produced
       // the error never reach the log at all.
-      const members = readMembers(cause);
-      if (members.length > 0) {
-        serialized.errors = this.#serializeAggregate(members, seen, depth + 1);
+      const aggregate = readMembers(cause, BaseError.#MAX_AGGREGATE_ERRORS);
+      if (aggregate !== undefined && aggregate.total > 0) {
+        serialized.errors = this.#serializeAggregate(
+          aggregate,
+          seen,
+          depth + 1,
+        );
       }
 
       // Recursively serialize nested causes
@@ -1093,21 +1101,22 @@ export class BaseError<T extends string> extends Error {
   static readonly #MAX_AGGREGATE_ERRORS = 100;
 
   /**
-   * Serializes an aggregate's members, capped in width. Members share the
-   * enclosing `seen` set, so an error reachable from more than one branch is
-   * rendered at its first occurrence and marked afterwards, and the walk
-   * terminates on a self-referencing aggregate.
+   * Serializes an aggregate's members. The reader already capped them at
+   * {@link BaseError.#MAX_AGGREGATE_ERRORS}; the count it reports marks the
+   * remainder. Members share the enclosing `seen` set, so an error reachable
+   * from more than one branch is rendered at its first occurrence and marked
+   * afterwards, and the walk terminates on a self-referencing aggregate.
    */
   /*#__PURE__*/ #serializeAggregate(
-    errors: readonly unknown[],
+    aggregate: AggregateMembers,
     seen: Set<unknown>,
     depth: number,
   ): unknown[] {
-    const serialized: unknown[] = errors
-      .slice(0, BaseError.#MAX_AGGREGATE_ERRORS)
-      .map((error) => this.#serializeCause(error, seen, depth));
+    const serialized: unknown[] = aggregate.members.map((error) =>
+      this.#serializeCause(error, seen, depth),
+    );
 
-    const dropped = errors.length - serialized.length;
+    const dropped = aggregate.total - serialized.length;
     if (dropped > 0) {
       serialized.push(moreAggregatedErrorsMarker(dropped));
     }

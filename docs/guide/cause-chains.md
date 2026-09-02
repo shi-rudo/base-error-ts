@@ -80,8 +80,10 @@ Every helper that takes a `maxDepth` number also takes an options object:
 With `aggregates: true` the walk is depth-first: a node, then its `cause`, then
 its members. `maxNodes` exists because depth bounds a chain but not the width of
 a tree; past the budget the walk stops, so a wide aggregate degrades to a
-partial answer instead of unbounded work. Cycles and shared branches end at the
-repeated node, as in the linear walk.
+partial answer instead of unbounded work. The members of one aggregate are
+read up to the remaining budget, so a wide aggregate costs at most the budget
+and never its width. Cycles and shared branches end at the repeated node, as in
+the linear walk.
 
 `getRootCause` takes no `aggregates` option on purpose: a tree has no single
 deepest node, so "the root cause" of an aggregate is not defined. Use
