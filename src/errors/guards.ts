@@ -3,7 +3,7 @@
  */
 
 import { BaseError } from "./BaseError.js";
-import { readProperty } from "./guarded-read.js";
+import { isInstanceOf, readProperty } from "./guarded-read.js";
 import { StructuredError } from "./StructuredError.js";
 
 /** Portable fields shared by native and structurally recognized errors. */
@@ -70,7 +70,7 @@ export function isErrorOf<T extends Error>(
   predicate?: (error: T) => boolean,
 ): TypeGuard<T> {
   return (value: unknown): value is T =>
-    value instanceof constructor &&
+    isInstanceOf(value, constructor) &&
     (predicate === undefined || predicate(value));
 }
 
@@ -79,7 +79,7 @@ export function isAnyErrorOf<const C extends readonly ErrorClass[]>(
   value: unknown,
   constructors: C,
 ): value is InstanceType<C[number]> {
-  return constructors.some((constructor) => value instanceof constructor);
+  return constructors.some((constructor) => isInstanceOf(value, constructor));
 }
 
 /** Checks that a value satisfies every guard and narrows to their intersection. */
@@ -108,7 +108,7 @@ export function isAllOf<
  * ```
  */
 export function isBaseError(value: unknown): value is BaseError<string> {
-  return value instanceof BaseError;
+  return isInstanceOf(value, BaseError);
 }
 
 /**

@@ -29,3 +29,25 @@ export function readMembers(value: unknown): readonly unknown[] {
   const members = readProperty(value, "errors");
   return Array.isArray(members) ? members : [];
 }
+
+/**
+ * `instanceof` against a foreign value. The built-in check walks the
+ * prototype chain of the value, so a revoked Proxy or a throwing
+ * `getPrototypeOf` trap throws out of a bare `instanceof`. Such a value is not
+ * an instance. A constructor with its own `Symbol.hasInstance` is the caller's
+ * code, not a foreign input: its throw propagates, as a bug in that code must.
+ */
+export function isInstanceOf<T>(
+  value: unknown,
+  constructor: abstract new (...args: never[]) => T,
+): value is T {
+  const hasInstance: unknown = Reflect.get(constructor, Symbol.hasInstance);
+  if (hasInstance !== Function.prototype[Symbol.hasInstance]) {
+    return value instanceof constructor;
+  }
+  try {
+    return value instanceof constructor;
+  } catch {
+    return false;
+  }
+}

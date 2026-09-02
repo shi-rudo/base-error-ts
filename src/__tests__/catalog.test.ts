@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 import {
   detailsType,
   defineErrors,
@@ -567,5 +568,16 @@ describe("defineErrors", () => {
     const marker = detailsType<{ value: string }>();
     expect(marker).toEqual({});
     expect(Object.isFrozen(marker)).toBe(true);
+  });
+});
+
+describe("Catalog.is against a value that cannot be inspected", () => {
+  it("returns false for a revoked Proxy instead of throwing", () => {
+    expect(AppErrors.is(revokedProxy())).toBe(false);
+    expect(AppErrors.is(revokedProxy(), "USER_NOT_FOUND")).toBe(false);
+  });
+
+  it("returns false for a Proxy whose getPrototypeOf trap throws", () => {
+    expect(AppErrors.is(hostileProxy(["getPrototypeOf"]))).toBe(false);
   });
 });

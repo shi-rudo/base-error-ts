@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { hostileProxy } from "./hostile-values.fixture.js";
+import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 
 import {
   hasErrorCode,
   isAnyErrorOf,
   isAllOf,
+  isBaseError,
   isError,
   isErrorOf,
   type TypeGuard,
@@ -222,5 +223,37 @@ describe("isAllOf", () => {
     expect(() =>
       isAllOf({ message: "failed" }, [hasMessage, throwingGuard]),
     ).toThrow("guard failed");
+  });
+});
+
+describe("class guards against a value that cannot be inspected", () => {
+  class CustomError extends Error {}
+
+  it("isErrorOf returns false for a revoked Proxy instead of throwing", () => {
+    expect(isErrorOf(CustomError)(revokedProxy())).toBe(false);
+  });
+
+  it("isErrorOf returns false for a Proxy whose getPrototypeOf trap throws", () => {
+    expect(isErrorOf(CustomError)(hostileProxy(["getPrototypeOf"]))).toBe(
+      false,
+    );
+  });
+
+  it("isAnyErrorOf returns false for a revoked Proxy instead of throwing", () => {
+    expect(isAnyErrorOf(revokedProxy(), [CustomError, TypeError])).toBe(false);
+  });
+
+  it("isAnyErrorOf returns false for a Proxy whose getPrototypeOf trap throws", () => {
+    expect(
+      isAnyErrorOf(hostileProxy(["getPrototypeOf"]), [CustomError, TypeError]),
+    ).toBe(false);
+  });
+
+  it("isBaseError returns false for a revoked Proxy instead of throwing", () => {
+    expect(isBaseError(revokedProxy())).toBe(false);
+  });
+
+  it("isBaseError returns false for a Proxy whose getPrototypeOf trap throws", () => {
+    expect(isBaseError(hostileProxy(["getPrototypeOf"]))).toBe(false);
   });
 });
