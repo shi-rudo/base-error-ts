@@ -193,6 +193,19 @@ describe("ValidationError", () => {
       expect(issues[0]?.message).toBe("bad value");
       expect(issues[0]?.code).toBeUndefined();
     });
+
+    it("projects an issue with a null path segment instead of throwing", () => {
+      const error = new ValidationError("invalid", {
+        issues: [
+          { message: "bad value", path: ["user", null, "email"] } as never,
+        ],
+      });
+
+      const issues = error.publicIssues();
+
+      expect(issues[0]?.path).toEqual(["user", null, "email"]);
+      expect(issues[0]?.pointer).toBe("user.null.email");
+    });
   });
 
   describe("serialization", () => {

@@ -148,7 +148,9 @@ export class ValidationError<
     path: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>,
   ): string {
     return path
-      .map((segment) => (typeof segment === "object" ? segment.key : segment))
+      .map((segment) =>
+        typeof segment === "object" && segment !== null ? segment.key : segment,
+      )
       .map((key) => String(key))
       .join(".");
   }
