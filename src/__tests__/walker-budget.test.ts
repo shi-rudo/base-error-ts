@@ -70,16 +70,22 @@ describe("walker node budgets (shared-reference blowup)", () => {
       category: "C",
       retryable: false,
       message: "dag details",
-      details: { nested: makeDag(18), ssn: "secret" },
-    }).redact(["ssn"]);
+      details: { ssn: "secret", nested: makeDag(18), after: "secret" },
+    }).redact(["ssn", "after"]);
 
     const log = err.toLogObject();
 
-    // Not fail-closed: the envelope and the shallow masking still stand.
+    // Not fail-closed: the envelope and the masking before the blowup stand.
     expect(log.code).toBe("DAG");
-    expect((log.details as Record<string, unknown>).ssn).toBe("[REDACTED]");
-    // The blowup is cut off by a marker rather than walked to completion.
-    expect(JSON.stringify(log)).toContain("[Max redaction size exceeded]");
+    expect(log.message).toBe("dag details");
+    const details = log.details as Record<string, unknown>;
+    expect(details.ssn).toBe("[REDACTED]");
+    // The blowup is cut off by a marker rather than walked to completion, and
+    // what follows it in the data tree is the marker, never the raw value.
+    expect(JSON.stringify(details.nested)).toContain(
+      "[Max redaction size exceeded]",
+    );
+    expect(details.after).toBe("[Max redaction size exceeded]");
   });
 });
 
@@ -205,5 +211,40 @@ describe("walker bounds agree across surfaces", () => {
     expect(logged).toBe(MAX_CAUSE_DEPTH);
     expect(deepestTraversed).toBe(chain[MAX_CAUSE_DEPTH - 1]);
     expect(deepestLogged?.message).toBe(`hop-${MAX_CAUSE_DEPTH - 1}`);
+  });
+});
+
+describe("walker node budget counts every value", () => {
+  const SIZE_MARKER = "[Max redaction size exceeded]";
+  const ids = Array.from({ length: 120_000 }, (_, index) => index);
+
+  class WideError extends StructuredError<"WIDE", "TEST", { ids: number[] }> {
+    constructor() {
+      super({
+        code: "WIDE",
+        category: "TEST",
+        retryable: false,
+        message: "wide",
+        details: { ids },
+      });
+    }
+  }
+
+  it("ends a data tree of more than 100 000 values at the size marker under a redactor", () => {
+    const error = new WideError().redact(["password"]);
+
+    const log = error.toLogObject();
+
+    const logged = (log.details as { ids: unknown[] }).ids;
+    expect(logged.length).toBeLessThanOrEqual(100_001);
+    expect(logged[logged.length - 1]).toBe(SIZE_MARKER);
+    expect(logged[0]).toBe(0);
+    expect(log.message).toBe("wide");
+  });
+
+  it("keeps the raw details untouched without a redactor", () => {
+    const log = new WideError().toLogObject();
+
+    expect((log.details as { ids: unknown[] }).ids).toHaveLength(120_000);
   });
 });

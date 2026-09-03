@@ -47,7 +47,9 @@ export const MAX_DATA_DEPTH = 100;
 /**
  * Total-node budget for one walk over a data tree: a redaction walk, the JSON
  * round-trip of one data value in the log object, and one `cloneJsonSafe`
- * call. The depth cap bounds depth, not width, and shared (DAG) references
+ * call. The unit is one visited value, a container or a leaf, in all three
+ * walkers; the redaction walker charges the values of its data regions only,
+ * because the root and cause envelopes are bounded by the spine caps. The depth cap bounds depth, not width, and shared (DAG) references
  * are cloned once per reference, so a small input can legally expand
  * exponentially (`{a, b}` doubling per level). Past the budget the walk
  * degrades to its marker or its rejection instead of running the blowup to

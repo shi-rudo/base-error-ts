@@ -47,6 +47,11 @@ export type RedactMask = string | ((value: unknown, key: string) => unknown);
  */
 type RedactRegion = "root" | "cause" | "data";
 
+/** Markers the redaction walker writes where a bound cut its walk. */
+const REDACTION_DEPTH_MARKER = "[Max redaction depth exceeded]";
+const REDACTION_CYCLE_MARKER = "[Circular reference]";
+const REDACTION_SIZE_MARKER = "[Max redaction size exceeded]";
+
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
@@ -366,11 +371,16 @@ export class BaseError<T extends string> extends Error {
    * cannot marker-truncate a shallow `details` on a deep cause, and a spine
    * that outruns the serializer's cap (a plain-object cause keeps its full
    * nesting through the JSON round-trip, and a subclass can put anything on
-   * the spine) ends in a marker. The node budget bounds total work, which is
-   * also the width bound: every container costs a node. `state.seen` holds
-   * the containers on the current path, so a cycle is one marker at its
-   * first repeat; a shared reference without a cycle is still cloned once per
-   * reference and is bounded by the node budget.
+   * the spine) ends in a marker. The node budget ({@link MAX_DATA_NODES})
+   * counts every value the walk visits in a data region, a container or a
+   * leaf, so it bounds total work and width alike; the root and cause
+   * envelopes are bounded by the spine caps and are never cut by size. When
+   * the budget runs out, the data container being walked ends with one size
+   * marker in place of the rest, in key order, and every data container not
+   * yet entered is the marker. `state.seen` holds the containers on the
+   * current path, so a cycle is one marker at its first repeat; a shared
+   * reference without a cycle is still cloned once per reference and is
+   * bounded by the node budget.
    */
   /*#__PURE__*/ static #redactWalk(
     value: unknown,
@@ -390,13 +400,18 @@ export class BaseError<T extends string> extends Error {
     // Past a cap, replace the container with a marker rather than recursing.
     // Leaves are unaffected (they never recurse), so shallow data is intact.
     if (depth >= MAX_DATA_DEPTH || spine > MAX_CAUSE_DEPTH) {
-      return "[Max redaction depth exceeded]";
+      return REDACTION_DEPTH_MARKER;
     }
     if (state.seen.has(value)) {
-      return "[Circular reference]";
+      return REDACTION_CYCLE_MARKER;
     }
-    if (++state.nodes > MAX_DATA_NODES) {
-      return "[Max redaction size exceeded]";
+    // The node budget is a data-tree budget: the root and cause envelopes are
+    // bounded by the spine caps and are never cut by size.
+    if (region === "data") {
+      if (state.nodes >= MAX_DATA_NODES) {
+        return REDACTION_SIZE_MARKER;
+      }
+      state.nodes++;
     }
     state.seen.add(value);
     try {
@@ -407,18 +422,33 @@ export class BaseError<T extends string> extends Error {
         // beneath it; each member is one hop on the spine instead.
         const itemDepth = region === "cause" ? depth : depth + 1;
         const itemSpine = region === "cause" ? spine + 1 : spine;
-        return value.map((item) => {
-          if (typeof item === "function") return null;
+        // Built index by index into a fresh plain array, so the walk can stop
+        // at the budget with one marker in place of the rest.
+        const items: unknown[] = [];
+        for (let index = 0; index < value.length; index++) {
+          if (region === "data" && state.nodes >= MAX_DATA_NODES) {
+            items.push(REDACTION_SIZE_MARKER);
+            break;
+          }
+          const item: unknown = value[index];
           if (Array.isArray(item) || BaseError.#isWalkable(item)) {
-            return BaseError.#redactWalk(
-              item,
-              decide,
-              region,
-              itemDepth,
-              state,
-              key,
-              itemSpine,
+            items.push(
+              BaseError.#redactWalk(
+                item,
+                decide,
+                region,
+                itemDepth,
+                state,
+                key,
+                itemSpine,
+              ),
             );
+            continue;
+          }
+          if (region === "data") state.nodes++;
+          if (typeof item === "function") {
+            items.push(null);
+            continue;
           }
           // A leaf inside an array has no key of its own, so it is judged under
           // the key of the array that holds it, in every region. Without this an
@@ -426,10 +456,14 @@ export class BaseError<T extends string> extends Error {
           // it promises: an aggregate's members are arbitrary values (a
           // `Promise.allSettled` reason need not be an `Error`), and `errors` is
           // not an envelope key, so a string member is data like any other.
-          if (BaseError.#isStructuralMarker(item, region)) return item;
+          if (BaseError.#isStructuralMarker(item, region)) {
+            items.push(item);
+            continue;
+          }
           const decision = decide(key, item, region);
-          return decision === BaseError.#RECURSE ? item : decision;
-        });
+          items.push(decision === BaseError.#RECURSE ? item : decision);
+        }
+        return items;
       }
       // Null-prototype target so an own `__proto__`/`constructor` key from
       // untrusted details is copied as ordinary data (and masked/recursed like
@@ -438,6 +472,10 @@ export class BaseError<T extends string> extends Error {
       // stage. (OWASP Prototype Pollution Prevention.)
       const out = Object.create(null) as Record<string, unknown>;
       for (const [key, val] of Object.entries(value)) {
+        if (region === "data" && state.nodes >= MAX_DATA_NODES) {
+          out[key] = REDACTION_SIZE_MARKER;
+          break;
+        }
         if (typeof val === "function") continue;
         if (BaseError.#isStructuralMarker(val, region)) {
           out[key] = val;
@@ -473,9 +511,11 @@ export class BaseError<T extends string> extends Error {
               childSpine,
             );
           } else {
+            if (region === "data") state.nodes++;
             out[key] = val;
           }
         } else {
+          if (region === "data") state.nodes++;
           out[key] = decision;
         }
       }
