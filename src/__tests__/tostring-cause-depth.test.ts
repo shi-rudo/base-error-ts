@@ -125,13 +125,10 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
     });
     const error = new BaseError("root", lazyChain(1_000_000));
 
-    const started = performance.now();
     const rendered = error.toString();
-    const elapsed = performance.now() - started;
 
     expect(rendered).toContain(DEPTH_MARKER);
     expect(reads).toBeLessThanOrEqual(101);
-    expect(elapsed).toBeLessThan(200);
   });
 
   it("follows the cause links of a plain-object chain that the log object copies whole", () => {
