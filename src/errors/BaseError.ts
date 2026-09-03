@@ -794,11 +794,13 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * One node as a single line, honoring a deny-listed `message`. A string
-   * render runs in catch paths and must not throw: a foreign `name`/`message`
-   * that throws falls back to the `Error.prototype` defaults, and a value with
-   * no string form at all (a null-prototype object, a throwing
-   * `Symbol.toPrimitive`) renders as a marker.
+   * One node as a single line, honoring a deny-listed `message`. A native
+   * error and an error-shaped plain object (string `name` and `message`)
+   * render as `name: message`. A string render runs in catch paths and must
+   * not throw: a foreign `name`/`message` that throws falls back to the
+   * `Error.prototype` defaults, and a value with no string form at all (a
+   * null-prototype object, a throwing `Symbol.toPrimitive`) renders as a
+   * marker.
    */
   /*#__PURE__*/ static #renderNode(node: unknown): string {
     try {
@@ -809,6 +811,14 @@ export class BaseError<T extends string> extends Error {
         const name = readProperty(node, "name") ?? "Error";
         const message = readProperty(node, "message") ?? "";
         return `${String(name)}: ${String(message)}`;
+      }
+      // A plain object shaped like an error (a revived or cloned error at a
+      // worker boundary) reads as its name and message, not as
+      // "[object Object]".
+      const name = readProperty(node, "name");
+      const message = readProperty(node, "message");
+      if (typeof name === "string" && typeof message === "string") {
+        return `${name}: ${message}`;
       }
       return String(node);
     } catch {
