@@ -35,10 +35,21 @@ export function isPlainObject(
 const MAX_CLONE_NODES = 100_000;
 
 /**
+ * Deepest container nesting one {@link cloneJsonSafe} call descends into. The
+ * clone recurses once per level, so without a cap a deeply nested input
+ * overflows the host stack, which is far smaller on an edge isolate than on
+ * Node, and surfaces as a raw `RangeError` instead of the rejection the
+ * callers handle. A container past the cap is rejected like any other value
+ * that is not JSON-safe. Matches the depth cap of the other walkers.
+ */
+const MAX_CLONE_DEPTH = 100;
+
+/**
  * Deep-clones `value` into a frozen, JSON-safe structure, or throws if any part
  * is not JSON-safe: a non-finite number (`NaN`/`Infinity`), a function, a
  * symbol, a `Date`/`Map`/`Set` or other exotic object, a symbol-keyed object, a
- * sparse array, a circular reference, or a value expanding past
+ * sparse array, a circular reference, a container nested deeper than
+ * {@link MAX_CLONE_DEPTH} levels, or a value expanding past
  * {@link MAX_CLONE_NODES} total nodes (a shared-reference blowup). The returned
  * clone is deeply frozen and decoupled from the source, so it is safe to place
  * on a wire object that may be shared or mutated afterward.
@@ -52,6 +63,7 @@ export function cloneJsonSafe(
 ): JsonSafeValue {
   return cloneInto(
     value,
+    0,
     new Set(),
     { nodes: 0 },
     options?.errorMessage ?? "value is not JSON-safe",
@@ -60,6 +72,7 @@ export function cloneJsonSafe(
 
 function cloneInto(
   value: unknown,
+  depth: number,
   seen: Set<object>,
   state: { nodes: number },
   errorMessage: string,
@@ -81,6 +94,9 @@ function cloneInto(
   if (typeof value !== "object" || seen.has(value)) {
     throw new Error(errorMessage);
   }
+  if (depth >= MAX_CLONE_DEPTH) {
+    throw new Error(errorMessage);
+  }
 
   seen.add(value);
   try {
@@ -91,7 +107,9 @@ function cloneInto(
         }
       }
       return Object.freeze(
-        value.map((item) => cloneInto(item, seen, state, errorMessage)),
+        value.map((item) =>
+          cloneInto(item, depth + 1, seen, state, errorMessage),
+        ),
       ) as readonly JsonSafeValue[];
     }
 
@@ -103,7 +121,7 @@ function cloneInto(
     }
     const clone = Object.create(null) as Record<string, JsonSafeValue>;
     for (const [key, item] of Object.entries(value)) {
-      clone[key] = cloneInto(item, seen, state, errorMessage);
+      clone[key] = cloneInto(item, depth + 1, seen, state, errorMessage);
     }
     return Object.freeze(clone);
   } finally {

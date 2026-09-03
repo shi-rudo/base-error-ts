@@ -76,3 +76,81 @@ describe("walker node budgets (shared-reference blowup)", () => {
     expect(JSON.stringify(log)).toContain("[Max redaction size exceeded]");
   });
 });
+
+/** `levels` containers nested one inside the other, built without recursion. */
+const nestArrays = (levels: number): unknown => {
+  let node: unknown = 1;
+  for (let i = 0; i < levels; i++) node = [node];
+  return node;
+};
+
+const nestObjects = (levels: number): unknown => {
+  let node: unknown = 1;
+  for (let i = 0; i < levels; i++) node = { deeper: node };
+  return node;
+};
+
+describe("walker depth cap (deep nesting)", () => {
+  it("cloneJsonSafe rejects a 2000-deep array with the JSON-safe error, not a RangeError", () => {
+    expect(() => cloneJsonSafe(nestArrays(2000))).toThrow(/not JSON-safe/);
+  });
+
+  it("cloneJsonSafe rejects a 100000-deep object without touching the host stack", () => {
+    expect(() => cloneJsonSafe(nestObjects(100_000))).toThrow(/not JSON-safe/);
+  });
+
+  it("cloneJsonSafe clones 100 nested levels in full and freezes every level", () => {
+    const clone = cloneJsonSafe(nestArrays(100));
+
+    let node: unknown = clone;
+    let levels = 0;
+    while (Array.isArray(node)) {
+      expect(Object.isFrozen(node)).toBe(true);
+      node = node[0];
+      levels++;
+    }
+    expect(levels).toBe(100);
+    expect(node).toBe(1);
+  });
+
+  it("cloneJsonSafe rejects the 101st nested level", () => {
+    expect(() => cloneJsonSafe(nestArrays(101))).toThrow(/not JSON-safe/);
+  });
+
+  it("defineErrors rejects 2000-deep array metadata with its own JSON-safe message", () => {
+    const deep = nestArrays(2000) as never;
+    expect(() =>
+      defineErrors({
+        X: { category: "C", retryable: false, metadata: { deep } },
+      }),
+    ).toThrow(/metadata must be JSON-safe/);
+  });
+
+  it("defineErrors rejects 2000-deep object metadata with its own JSON-safe message", () => {
+    const deep = nestObjects(2000) as never;
+    expect(() =>
+      defineErrors({
+        X: { category: "C", retryable: false, metadata: { deep } },
+      }),
+    ).toThrow(/metadata must be JSON-safe/);
+  });
+
+  it("toProblem omits 2000-deep details instead of failing the response", () => {
+    const catalog = new PublicErrorCatalog({
+      fallback: { publicCode: "internal_error", status: 500 },
+    }).registerByCode("deep", {
+      publicCode: "deep_pub",
+      status: 400,
+      projectDetails: (error: unknown): unknown =>
+        (error as { details?: unknown }).details,
+    });
+    const view = project(catalog, {
+      code: "deep",
+      details: { deep: nestObjects(2000) },
+    });
+
+    const result = toProblem(catalog, view);
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toContain("details");
+  });
+});
