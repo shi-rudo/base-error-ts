@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { StructuredError, defineErrors } from "../index.js";
+import {
+  BaseError,
+  StructuredError,
+  defineErrors,
+  getRootCause,
+} from "../index.js";
+import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
 import { cloneJsonSafe } from "../errors/json-safe.js";
 import { PublicErrorCatalog } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
@@ -152,5 +158,41 @@ describe("walker depth cap (deep nesting)", () => {
     const result = toProblem(catalog, view);
     expect("details" in result.body).toBe(false);
     expect(result.outcome.omitted).toContain("details");
+  });
+});
+
+describe("walker bounds agree across surfaces", () => {
+  /** A linear chain of `length` errors; index 0 is the outermost. */
+  const chainOf = (length: number): Error[] => {
+    const chain: Error[] = [];
+    let cause: Error | undefined;
+    for (let index = length - 1; index >= 0; index--) {
+      const error = new Error(`hop-${index}`);
+      if (cause !== undefined) {
+        Object.defineProperty(error, "cause", { value: cause });
+      }
+      chain.unshift(error);
+      cause = error;
+    }
+    return chain;
+  };
+
+  it("getRootCause by default stops at the hop where the log object cuts the chain", () => {
+    const chain = chainOf(MAX_CAUSE_DEPTH + 50);
+    const root = new BaseError("root", chain[0]);
+
+    const deepestTraversed = getRootCause(root);
+    let deepestLogged: Record<string, unknown> | undefined;
+    let node = root.toLogObject().cause as Record<string, unknown> | string;
+    let logged = 0;
+    while (typeof node === "object") {
+      deepestLogged = node;
+      logged++;
+      node = node.cause as Record<string, unknown> | string;
+    }
+
+    expect(logged).toBe(MAX_CAUSE_DEPTH);
+    expect(deepestTraversed).toBe(chain[MAX_CAUSE_DEPTH - 1]);
+    expect(deepestLogged?.message).toBe(`hop-${MAX_CAUSE_DEPTH - 1}`);
   });
 });

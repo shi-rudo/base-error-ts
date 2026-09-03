@@ -5,6 +5,8 @@
  * JSON-safety guarantee lives at exactly one place.
  */
 
+import { MAX_DATA_DEPTH, MAX_DATA_NODES } from "./walker-bounds.js";
+
 /** The subset of values that round-trips through JSON without loss. */
 export type JsonSafeValue =
   | null
@@ -26,31 +28,12 @@ export function isPlainObject(
 }
 
 /**
- * Total-node budget for one {@link cloneJsonSafe} call. Cycles are rejected,
- * but shared (DAG) references are cloned once per reference, so a small input
- * can legally expand exponentially (`{a, b}` doubling per level). The budget
- * turns that CPU-exhaustion shape into the ordinary "not JSON-safe" failure
- * the callers already handle, and sits far above any sane wire payload.
- */
-const MAX_CLONE_NODES = 100_000;
-
-/**
- * Deepest container nesting one {@link cloneJsonSafe} call descends into. The
- * clone recurses once per level, so without a cap a deeply nested input
- * overflows the host stack, which is far smaller on an edge isolate than on
- * Node, and surfaces as a raw `RangeError` instead of the rejection the
- * callers handle. A container past the cap is rejected like any other value
- * that is not JSON-safe. Matches the depth cap of the other walkers.
- */
-const MAX_CLONE_DEPTH = 100;
-
-/**
  * Deep-clones `value` into a frozen, JSON-safe structure, or throws if any part
  * is not JSON-safe: a non-finite number (`NaN`/`Infinity`), a function, a
  * symbol, a `Date`/`Map`/`Set` or other exotic object, a symbol-keyed object, a
  * sparse array, a circular reference, a container nested deeper than
- * {@link MAX_CLONE_DEPTH} levels, or a value expanding past
- * {@link MAX_CLONE_NODES} total nodes (a shared-reference blowup). The returned
+ * {@link MAX_DATA_DEPTH} levels, or a value expanding past
+ * {@link MAX_DATA_NODES} total nodes (a shared-reference blowup). The returned
  * clone is deeply frozen and decoupled from the source, so it is safe to place
  * on a wire object that may be shared or mutated afterward.
  *
@@ -77,7 +60,7 @@ function cloneInto(
   state: { nodes: number },
   errorMessage: string,
 ): JsonSafeValue {
-  if (++state.nodes > MAX_CLONE_NODES) {
+  if (++state.nodes > MAX_DATA_NODES) {
     throw new Error(errorMessage);
   }
   if (
@@ -94,7 +77,7 @@ function cloneInto(
   if (typeof value !== "object" || seen.has(value)) {
     throw new Error(errorMessage);
   }
-  if (depth >= MAX_CLONE_DEPTH) {
+  if (depth >= MAX_DATA_DEPTH) {
     throw new Error(errorMessage);
   }
 

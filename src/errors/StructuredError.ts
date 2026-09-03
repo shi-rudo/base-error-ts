@@ -7,6 +7,11 @@ import {
   readProperty,
   type AggregateMembers,
 } from "./guarded-read.js";
+import {
+  MAX_AGGREGATE_MEMBERS,
+  MAX_CAUSE_DEPTH,
+  MAX_RECONSTRUCTED_CAUSE_NODES,
+} from "./walker-bounds.js";
 
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
@@ -144,30 +149,9 @@ export class StructuredError<
    */
   public static fromJSON(json: unknown): StructuredError<string, string> {
     return StructuredError.#fromJSON(json, 0, {
-      nodes: StructuredError.#MAX_NODES,
+      nodes: MAX_RECONSTRUCTED_CAUSE_NODES,
     });
   }
-
-  static readonly #MAX_DEPTH = 100;
-
-  /**
-   * Total number of cause-graph nodes one `fromJSON` call reconstructs. The
-   * depth cap and the per-node width cap still allow `100^depth`
-   * reconstructions, and a shared reference makes such a payload tiny in
-   * memory, so the walk also carries a node budget.
-   *
-   * The serializer has no total-node cap (depth 100 and width 100 per node
-   * compound), so no finite budget covers every legal serializer output and
-   * this constant cannot come from the serializer caps. 10,000 is a deliberate
-   * ceiling: every realistic log shape round-trips losslessly, while a hostile
-   * payload is capped at ~10^4 stack captures (tens of milliseconds, not
-   * seconds). Reconstruction of deeper-nested aggregates truncates: past the
-   * budget, a `cause` drops like it does past the depth cap, and the
-   * remaining members of an aggregate collapse into the count marker. Charged
-   * at exactly one site, the top of
-   * {@link StructuredError.#reconstructCause}'s object path.
-   */
-  static readonly #MAX_NODES = 10_000;
 
   static #fromJSON(
     json: unknown,
@@ -287,20 +271,11 @@ export class StructuredError<
   }
 
   /**
-   * Largest number of aggregate members reconstructed per node. Mirrors the
-   * serializer's own width cap, so this library's log shape round-trips
-   * unchanged while a foreign or hostile payload cannot amplify: every
-   * reconstructed `Error` captures a stack, which is far more expensive than
-   * the array entry that asks for it.
-   */
-  static readonly #MAX_MEMBERS = 100;
-
-  /**
    * Members read from a payload: one past the width cap, so the element that
    * follows the last reconstructed member is in hand when the tail is the
    * serializer's own count marker.
    */
-  static readonly #MEMBERS_READ = StructuredError.#MAX_MEMBERS + 1;
+  static readonly #MEMBERS_READ = MAX_AGGREGATE_MEMBERS + 1;
 
   /**
    * Rebuilds an aggregate's members. Each member goes back through
@@ -317,11 +292,7 @@ export class StructuredError<
     const { members, total } = aggregate;
     const reconstructed: unknown[] = [];
     let taken = 0;
-    while (
-      taken < total &&
-      taken < StructuredError.#MAX_MEMBERS &&
-      budget.nodes > 0
-    ) {
+    while (taken < total && taken < MAX_AGGREGATE_MEMBERS && budget.nodes > 0) {
       reconstructed.push(
         StructuredError.#reconstructCause(members[taken], depth + 1, budget),
       );
@@ -349,13 +320,14 @@ export class StructuredError<
     depth: number,
     budget: { nodes: number },
   ): unknown {
-    if (depth >= StructuredError.#MAX_DEPTH) {
+    if (depth >= MAX_CAUSE_DEPTH) {
       return undefined;
     }
     if (typeof value !== "object" || value === null) {
       // Primitives (and null) are kept verbatim.
       return value;
     }
+    // The one site that charges {@link MAX_RECONSTRUCTED_CAUSE_NODES}.
     if (budget.nodes <= 0) {
       return undefined;
     }

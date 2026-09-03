@@ -1,4 +1,8 @@
 import { readMembers, readProperty } from "../errors/guarded-read.js";
+import {
+  DEFAULT_TRAVERSAL_NODES,
+  MAX_CAUSE_DEPTH,
+} from "../errors/walker-bounds.js";
 
 /**
  * How far and how wide a traversal goes. Every helper also accepts a plain
@@ -27,9 +31,6 @@ type ResolvedOptions = {
   maxNodes: number;
 };
 
-const DEFAULT_MAX_DEPTH = 100;
-const DEFAULT_MAX_NODES = 1000;
-
 function resolveOptions(
   options: number | CauseTraversalOptions | undefined,
 ): ResolvedOptions {
@@ -37,13 +38,13 @@ function resolveOptions(
     return {
       maxDepth: options,
       aggregates: false,
-      maxNodes: DEFAULT_MAX_NODES,
+      maxNodes: DEFAULT_TRAVERSAL_NODES,
     };
   }
   return {
-    maxDepth: options?.maxDepth ?? DEFAULT_MAX_DEPTH,
+    maxDepth: options?.maxDepth ?? MAX_CAUSE_DEPTH,
     aggregates: options?.aggregates === true,
-    maxNodes: options?.maxNodes ?? DEFAULT_MAX_NODES,
+    maxNodes: options?.maxNodes ?? DEFAULT_TRAVERSAL_NODES,
   };
 }
 
@@ -148,7 +149,10 @@ function* traverseCauseChain(
  * }
  * ```
  */
-export function getRootCause(error: unknown, maxDepth: number = 100): unknown {
+export function getRootCause(
+  error: unknown,
+  maxDepth: number = MAX_CAUSE_DEPTH,
+): unknown {
   let last: unknown = error;
   for (const current of traverseCauseChain(error, maxDepth)) {
     last = current;

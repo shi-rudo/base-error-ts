@@ -10,6 +10,12 @@ import {
   isSerializerMarker,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
+import {
+  MAX_AGGREGATE_MEMBERS,
+  MAX_CAUSE_DEPTH,
+  MAX_DATA_DEPTH,
+  MAX_DATA_NODES,
+} from "./walker-bounds.js";
 
 // This avoids polluting the global scope
 interface V8ErrorConstructor {
@@ -266,28 +272,6 @@ export class BaseError<T extends string> extends Error {
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
 
   /**
-   * Largest **data** nesting depth the redaction walker descends into. Bounded
-   * so a pathologically deep `details` tree degrades to a marker at the deep end
-   * (shallow fields survive) instead of overflowing the stack and tripping the
-   * fail-closed path, which would drop the whole log. The cap is host-stack
-   * independent, so behavior is identical on small isolate stacks (edge
-   * runtimes). The cause spine counts its hops separately, against {@link
-   * BaseError.#MAX_CAUSE_DEPTH}, so a deep chain cannot marker-truncate a
-   * shallow `details` on a deep cause, and a chain past that cap ends in the
-   * same marker instead of the host stack (see {@link BaseError.#redactWalk}).
-   */
-  static readonly #MAX_REDACT_DEPTH = 100;
-
-  /**
-   * Total-node budget for one redaction walk. The depth cap bounds depth, not
-   * width: shared (DAG) references are cloned once per reference, so a small
-   * `details` value can legally expand exponentially. Past the budget any
-   * further container degrades to a marker (like the depth cap), keeping the
-   * logging path fail-safe instead of walking a blowup to completion.
-   */
-  static readonly #MAX_REDACT_NODES = 100_000;
-
-  /**
    * Structural fields of an error envelope that survive an allow-list at the
    * **top level of a cause**. Everything else under a cause (foreign siblings
    * and anything nested beneath them, plus `details`) is treated as data, so a
@@ -374,8 +358,8 @@ export class BaseError<T extends string> extends Error {
    * it and re-materialize a masked key.
    *
    * Four bounds keep the walk total on any host stack. The data depth
-   * (`#MAX_REDACT_DEPTH`) and the cause-spine depth (`spine`, one hop per
-   * `cause` link or aggregate member, capped at `#MAX_CAUSE_DEPTH`) count
+   * ({@link MAX_DATA_DEPTH}) and the cause-spine depth (`spine`, one hop per
+   * `cause` link or aggregate member, capped at {@link MAX_CAUSE_DEPTH}) count
    * separately: a cause node starts its data budget afresh, so a deep chain
    * cannot marker-truncate a shallow `details` on a deep cause, and a spine
    * that outruns the serializer's cap (a plain-object cause keeps its full
@@ -403,16 +387,13 @@ export class BaseError<T extends string> extends Error {
     }
     // Past a cap, replace the container with a marker rather than recursing.
     // Leaves are unaffected (they never recurse), so shallow data is intact.
-    if (
-      depth >= BaseError.#MAX_REDACT_DEPTH ||
-      spine > BaseError.#MAX_CAUSE_DEPTH
-    ) {
+    if (depth >= MAX_DATA_DEPTH || spine > MAX_CAUSE_DEPTH) {
       return "[Max redaction depth exceeded]";
     }
     if (state.seen.has(value)) {
       return "[Circular reference]";
     }
-    if (++state.nodes > BaseError.#MAX_REDACT_NODES) {
+    if (++state.nodes > MAX_DATA_NODES) {
       return "[Max redaction size exceeded]";
     }
     state.seen.add(value);
@@ -581,7 +562,7 @@ export class BaseError<T extends string> extends Error {
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
     // the same bounded, cycle-safe serialization as an aggregate cause.
-    const aggregate = readMembers(this, BaseError.#MAX_AGGREGATE_ERRORS);
+    const aggregate = readMembers(this, MAX_AGGREGATE_MEMBERS);
     if (aggregate !== undefined && aggregate.total > 0) {
       json.errors = this.#serializeAggregate(aggregate, new Set([this]), 1);
     }
@@ -731,7 +712,7 @@ export class BaseError<T extends string> extends Error {
     // nesting with the same cap the log serializer uses, so a pathologically
     // deep tree degrades to a marker instead of overflowing the host stack
     // (which is far smaller on an edge isolate than on Node).
-    if (depth >= BaseError.#MAX_CAUSE_DEPTH) {
+    if (depth >= MAX_CAUSE_DEPTH) {
       return [`${indent}${MAX_CAUSE_DEPTH_MARKER}`];
     }
     const lines: string[] = [];
@@ -750,7 +731,7 @@ export class BaseError<T extends string> extends Error {
       }
       seen.add(current);
 
-      const aggregate = readMembers(current, BaseError.#MAX_AGGREGATE_ERRORS);
+      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
       const total = aggregate === undefined ? 0 : aggregate.total;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
       lines.push(`${prefix}${BaseError.#renderNode(current)}${suffix}`);
@@ -784,7 +765,7 @@ export class BaseError<T extends string> extends Error {
       // null cause ends the chain without one. Only the hops up to the cap
       // are read, so the length of the chain never sets the cost.
       const cause = readProperty(current, "cause");
-      if (cause != null && nextCauseDepth >= BaseError.#MAX_CAUSE_DEPTH) {
+      if (cause != null && nextCauseDepth >= MAX_CAUSE_DEPTH) {
         lines.push(`${indent}Caused by: ${MAX_CAUSE_DEPTH_MARKER}`);
         break;
       }
@@ -982,13 +963,6 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Largest cause-chain depth serialized into a log object. Matches the cap used
-   * by `StructuredError.fromJSON` and the traversal helpers, so a pathologically
-   * deep (but acyclic) chain can never overflow the stack while logging.
-   */
-  static readonly #MAX_CAUSE_DEPTH = 100;
-
-  /**
    * Intelligently serializes the cause for JSON output.
    * Preserves stack traces, StructuredError fields, and nested data. Every
    * field taken off a native error is copied as data (see #serializeData),
@@ -1027,7 +1001,7 @@ export class BaseError<T extends string> extends Error {
       return cause;
     }
 
-    if (depth >= BaseError.#MAX_CAUSE_DEPTH) {
+    if (depth >= MAX_CAUSE_DEPTH) {
       return MAX_CAUSE_DEPTH_MARKER;
     }
 
@@ -1062,7 +1036,7 @@ export class BaseError<T extends string> extends Error {
       // by `instanceof AggregateError`, so cross-realm and custom fan-out
       // errors serialize too. Without this the branch failures that produced
       // the error never reach the log at all.
-      const aggregate = readMembers(cause, BaseError.#MAX_AGGREGATE_ERRORS);
+      const aggregate = readMembers(cause, MAX_AGGREGATE_MEMBERS);
       if (aggregate !== undefined && aggregate.total > 0) {
         serialized.errors = this.#serializeAggregate(
           aggregate,
@@ -1118,7 +1092,7 @@ export class BaseError<T extends string> extends Error {
         // JS walker.
         let nodes = 0;
         const json = JSON.stringify(value, (_key, item: unknown) => {
-          if (++nodes > BaseError.#MAX_JSON_NODES) {
+          if (++nodes > MAX_DATA_NODES) {
             throw new Error("payload exceeds serialization bounds");
           }
           return typeof item === "bigint" ? item.toString() : item;
@@ -1142,24 +1116,8 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Total-node budget for one data value in the log object (a plain-object
-   * cause, a native cause's `details`), enforced by a counting replacer so a
-   * shared-reference (DAG) blowup degrades to the fallback marker instead of
-   * exhausting CPU. Matches the redaction and wire-clone budgets.
-   */
-  static readonly #MAX_JSON_NODES = 100_000;
-
-  /**
-   * Largest number of members serialized per aggregate node. The cause budget
-   * bounds the spine's depth, not an aggregate's width: one `Promise.any` over
-   * a large pool rejects with a member per branch, and a log line is not the
-   * place for thousands of them. The remainder collapses to a count marker.
-   */
-  static readonly #MAX_AGGREGATE_ERRORS = 100;
-
-  /**
    * Serializes an aggregate's members. The reader already capped them at
-   * {@link BaseError.#MAX_AGGREGATE_ERRORS}; the count it reports marks the
+   * {@link MAX_AGGREGATE_MEMBERS}; the count it reports marks the
    * remainder. Members share the enclosing `seen` set, so an error reachable
    * from more than one branch is rendered at its first occurrence and marked
    * afterwards, and the walk terminates on a self-referencing aggregate.
