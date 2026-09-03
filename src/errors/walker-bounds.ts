@@ -18,7 +18,9 @@
  * helpers all cut at this hop. One value for every surface, so a chain is cut
  * at the same node in the log, in `toString()`, after a round-trip, and in
  * `getRootCause`, and a pathologically deep (but acyclic) chain can never
- * overflow the stack while logging.
+ * overflow the stack while logging. The public JSDoc of the traversal
+ * options in `cause-chain.ts` repeats this number as the consumer's
+ * contract; change both together.
  */
 export const MAX_CAUSE_DEPTH = 100;
 
@@ -73,6 +75,8 @@ export const MAX_RECONSTRUCTED_CAUSE_NODES = 10_000;
 /**
  * Default of the `maxNodes` option of the tree traversal (`aggregates: true`).
  * The caller can raise it. The default keeps a retry decision over a wide
- * fan-out cheap by construction.
+ * fan-out cheap by construction. The public JSDoc of the traversal options in
+ * `cause-chain.ts` repeats this number as the consumer's contract; change
+ * both together.
  */
 export const DEFAULT_TRAVERSAL_NODES = 1000;
