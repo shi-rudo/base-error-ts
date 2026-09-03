@@ -358,9 +358,11 @@ export class BaseError<T extends string> extends Error {
    * it and re-materialize a masked key.
    *
    * Four bounds keep the walk total on any host stack. The data depth
-   * ({@link MAX_DATA_DEPTH}) and the cause-spine depth (`spine`, one hop per
-   * `cause` link or aggregate member, capped at {@link MAX_CAUSE_DEPTH}) count
-   * separately: a cause node starts its data budget afresh, so a deep chain
+   * ({@link MAX_DATA_DEPTH}) and the cause-spine depth (`spine`, capped at
+   * {@link MAX_CAUSE_DEPTH}) count separately. On the spine an object is one
+   * hop, a list is free and each of its container elements is one hop, so a
+   * `cause` object, a member of `errors`, and each level of a nested list
+   * cost the same. A cause node starts its data budget afresh, so a deep chain
    * cannot marker-truncate a shallow `details` on a deep cause, and a spine
    * that outruns the serializer's cap (a plain-object cause keeps its full
    * nesting through the JSON round-trip, and a subclass can put anything on
@@ -448,15 +450,19 @@ export class BaseError<T extends string> extends Error {
         const decision = decide(key, val, region);
         if (decision === BaseError.#RECURSE) {
           if (Array.isArray(val) || BaseError.#isWalkable(val)) {
-            const childRegion = BaseError.#childRegion(region, key);
+            const childRegion = BaseError.#childRegion(region, key, val);
             // The cause chain is its own spine, so descending it must not
             // consume the data-depth budget; otherwise a deep chain would
-            // marker-truncate a shallow `details` on a deep cause. A `cause`
-            // link is one hop on the spine instead. The `errors` array is not
-            // a hop: its members are (see the array branch).
+            // marker-truncate a shallow `details` on a deep cause. An object
+            // on the spine is one hop instead. A list on the spine is free:
+            // each of its container elements is the hop (see the array
+            // branch), so a `cause` that holds a list costs the same as a
+            // `cause` that holds the object.
             const childDepth = childRegion === "cause" ? depth : depth + 1;
             const childSpine =
-              childRegion === "cause" && key === "cause" ? spine + 1 : spine;
+              childRegion === "cause" && !Array.isArray(val)
+                ? spine + 1
+                : spine;
             out[key] = BaseError.#redactWalk(
               val,
               decide,
@@ -498,8 +504,9 @@ export class BaseError<T extends string> extends Error {
   /**
    * Region a child **container** enters (a leaf never transitions; its
    * keep/mask decision is made in the region it lives in). Data is sticky for
-   * the whole subtree. `details` → data. `cause` and `errors` → cause: they
-   * are the only containers on the cause spine. Every other container drops
+   * the whole subtree. `details` → data. `cause`, and `errors` when it holds
+   * a list → cause: they are the only containers on the cause spine. Every
+   * other container, an object under `errors` included, drops
    * to data, at the root as well as inside a cause. That covers a foreign key
    * (a field a subclass added via `buildLogObject`, a sibling a plain-object
    * cause carries) and also an **envelope-named** key: the envelope fields
@@ -510,16 +517,19 @@ export class BaseError<T extends string> extends Error {
   /*#__PURE__*/ static #childRegion(
     region: RedactRegion,
     key: string,
+    value: unknown,
   ): RedactRegion {
     if (region === "data") return "data";
     if (key === "details") return "data";
     if (key === "cause") return "cause";
     // An aggregate's members are further cause nodes, so they keep the same
     // structural envelope a `cause` gets, at the root as well as inside a
-    // cause. `errors` is deliberately **not** added to #ROOT_ENVELOPE_KEYS:
-    // only a container transitions region, so a scalar named `errors` is still
-    // a data leaf and stays masked under an allow-list.
-    if (key === "errors") return "cause";
+    // cause. Only a list transitions: the serializer writes `errors` as a
+    // list, so an object under that name is foreign data, and it is bounded
+    // by the data depth like any other foreign subtree. `errors` is
+    // deliberately **not** added to #ROOT_ENVELOPE_KEYS: a scalar named
+    // `errors` is still a data leaf and stays masked under an allow-list.
+    if (key === "errors") return Array.isArray(value) ? "cause" : "data";
     return "data";
   }
 
