@@ -97,6 +97,17 @@ const nestObjects = (levels: number): unknown => {
 };
 
 describe("walker depth cap (deep nesting)", () => {
+  it("names the depth as the reason when it rejects a nested value", () => {
+    const deep = nestObjects(101) as never;
+    expect(() =>
+      defineErrors({
+        X: { category: "C", retryable: false, metadata: { deep } },
+      }),
+    ).toThrow(
+      "defineErrors: metadata must be JSON-safe (nested deeper than 100 levels)",
+    );
+  });
+
   it("cloneJsonSafe rejects a 2000-deep array with the JSON-safe error, not a RangeError", () => {
     expect(() => cloneJsonSafe(nestArrays(2000))).toThrow(/not JSON-safe/);
   });
