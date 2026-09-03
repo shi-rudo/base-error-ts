@@ -26,6 +26,15 @@ function walkLogSpine(start: unknown): { nodes: number; terminal: unknown } {
   return { nodes, terminal: node };
 }
 
+/** A chain of `length` plain objects shaped like errors, linked by `cause`. */
+function plainChainOf(length: number): Record<string, unknown> {
+  let chain: Record<string, unknown> = { name: "Error", message: "bottom" };
+  for (let level = 1; level < length; level++) {
+    chain = { name: "Error", message: `level ${level}`, cause: chain };
+  }
+  return chain;
+}
+
 function causeLines(lines: readonly string[]): string[] {
   return lines.filter((line) => line.trimStart().startsWith("Caused by: "));
 }
@@ -123,6 +132,19 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
     expect(rendered).toContain(DEPTH_MARKER);
     expect(reads).toBeLessThanOrEqual(101);
     expect(elapsed).toBeLessThan(200);
+  });
+
+  it("follows the cause links of a plain-object chain that the log object copies whole", () => {
+    const error = new BaseError("root", plainChainOf(300));
+
+    const lines = error.toString().split("\n");
+    const spine = walkLogSpine(error.toLogObject().cause);
+
+    expect(lines).toHaveLength(102);
+    expect(lines[lines.length - 1]).toBe(`Caused by: ${DEPTH_MARKER}`);
+    expect(spine.nodes).toBe(300);
+    expect(spine.terminal).toBeUndefined();
+    expect(JSON.stringify(error.toLogObject())).not.toContain(DEPTH_MARKER);
   });
 
   it("renders a short chain unchanged", () => {
