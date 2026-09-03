@@ -663,12 +663,16 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Readable one-liner plus full nested cause chain. Honors a deny-listed
-   * `"message"` (see {@link redact}) per BaseError in the chain; other
-   * redaction shapes rewrite only the log object.
+   * Readable one-liner plus the nested cause chain, bounded exactly like the
+   * log object: the same cause nodes are rendered, and past the cap the chain
+   * ends with the same depth marker. Honors a deny-listed `"message"` (see
+   * {@link redact}) per BaseError in the chain; other redaction shapes
+   * rewrite only the log object.
    */
   public override toString(): string {
-    return BaseError.#renderChain(this, new Set<unknown>(), "", 0).join("\n");
+    return BaseError.#renderChain(this, new Set<unknown>(), "", 0, 0).join(
+      "\n",
+    );
   }
 
   /**
@@ -677,22 +681,32 @@ export class BaseError<T extends string> extends Error {
    * chain, indented one level deeper. The `seen` set is shared across the whole
    * tree, so a cycle or a repeated branch ends with a marker instead of
    * recursing.
+   *
+   * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
+   * at which its `cause` lands. The two differ only at the root: the log
+   * serializer starts the root's `cause` at depth 0 and the root's members at
+   * depth 1, and every cause node puts both one level below itself. Both
+   * counters mirror {@link BaseError.#serializeCauseNode}, so `toString()`
+   * shows the same nodes as `toLogObject()` and cuts at the same marker.
    */
   /*#__PURE__*/ static #renderChain(
     start: unknown,
     seen: Set<unknown>,
     indent: string,
     depth: number,
+    causeDepth: number,
   ): string[] {
     // Aggregates recurse, and a string render must never throw: bound the
     // nesting with the same cap the log serializer uses, so a pathologically
     // deep tree degrades to a marker instead of overflowing the host stack
     // (which is far smaller on an edge isolate than on Node).
-    if (depth > BaseError.#MAX_CAUSE_DEPTH) {
+    if (depth >= BaseError.#MAX_CAUSE_DEPTH) {
       return [`${indent}${MAX_CAUSE_DEPTH_MARKER}`];
     }
     const lines: string[] = [];
     let current: unknown = start;
+    let nodeDepth = depth;
+    let nextCauseDepth = causeDepth;
     let first = true;
 
     while (current != null) {
@@ -716,7 +730,8 @@ export class BaseError<T extends string> extends Error {
           member,
           seen,
           `${indent}    `,
-          depth + 1,
+          nodeDepth + 1,
+          nodeDepth + 2,
         );
         // The head of a member is bulleted at the parent's indent; its own
         // chain keeps the deeper indent, so the tree stays readable. Appended
@@ -733,7 +748,18 @@ export class BaseError<T extends string> extends Error {
         );
       }
 
-      current = readProperty(current, "cause");
+      // The linear spine is bounded the way the serializer bounds it: a cause
+      // that would land past the cap is the depth marker, and a missing or
+      // null cause ends the chain without one. Only the hops up to the cap
+      // are read, so the length of the chain never sets the cost.
+      const cause = readProperty(current, "cause");
+      if (cause != null && nextCauseDepth >= BaseError.#MAX_CAUSE_DEPTH) {
+        lines.push(`${indent}Caused by: ${MAX_CAUSE_DEPTH_MARKER}`);
+        break;
+      }
+      current = cause;
+      nodeDepth = nextCauseDepth;
+      nextCauseDepth++;
     }
 
     return lines;

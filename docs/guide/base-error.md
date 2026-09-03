@@ -64,7 +64,7 @@ PII redaction scrubs the **log** path (see
 | --------------- | ------------- | -------------------------------------------------- |
 | `toLogObject()` | Observability | name, message, stack, full cause chain, timestamps |
 | `toJSON()`      | Observability | alias of `toLogObject()`                           |
-| `toString()`    | N/A           | one-liner plus the full nested cause chain         |
+| `toString()`    | N/A           | one-liner plus the nested cause chain, same depth cap as the log object |
 
 `toLogObject()` / `toJSON()` are **internal, full-fidelity log output**. They are
 not safe to send to clients: they carry the technical message, stack and cause
