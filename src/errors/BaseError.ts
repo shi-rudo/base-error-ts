@@ -271,9 +271,10 @@ export class BaseError<T extends string> extends Error {
    * (shallow fields survive) instead of overflowing the stack and tripping the
    * fail-closed path, which would drop the whole log. The cap is host-stack
    * independent, so behavior is identical on small isolate stacks (edge
-   * runtimes). The cause chain is its own separately bounded spine ({@link
-   * BaseError.#MAX_CAUSE_DEPTH}) and is **exempt** from this budget, so a deep
-   * chain cannot marker-truncate a shallow `details` on a deep cause.
+   * runtimes). The cause spine counts its hops separately, against {@link
+   * BaseError.#MAX_CAUSE_DEPTH}, so a deep chain cannot marker-truncate a
+   * shallow `details` on a deep cause, and a chain past that cap ends in the
+   * same marker instead of the host stack (see {@link BaseError.#redactWalk}).
    */
   static readonly #MAX_REDACT_DEPTH = 100;
 
@@ -371,57 +372,82 @@ export class BaseError<T extends string> extends Error {
    * `JSON.stringify` writes it. This keeps an own `toJSON` out of the clone in
    * both modes; copied as a leaf, the consumer's `JSON.stringify` would call
    * it and re-materialize a masked key.
+   *
+   * Four bounds keep the walk total on any host stack. The data depth
+   * (`#MAX_REDACT_DEPTH`) and the cause-spine depth (`spine`, one hop per
+   * `cause` link or aggregate member, capped at `#MAX_CAUSE_DEPTH`) count
+   * separately: a cause node starts its data budget afresh, so a deep chain
+   * cannot marker-truncate a shallow `details` on a deep cause, and a spine
+   * that outruns the serializer's cap (a plain-object cause keeps its full
+   * nesting through the JSON round-trip, and a subclass can put anything on
+   * the spine) ends in a marker. The node budget bounds total work, which is
+   * also the width bound: every container costs a node. `state.seen` holds
+   * the containers on the current path, so a cycle is one marker at its
+   * first repeat; a shared reference without a cycle is still cloned once per
+   * reference and is bounded by the node budget.
    */
   /*#__PURE__*/ static #redactWalk(
     value: unknown,
     decide: (key: string, value: unknown, region: RedactRegion) => unknown,
     region: RedactRegion,
     depth = 0,
-    state: { nodes: number } = { nodes: 0 },
+    state: { nodes: number; readonly seen: Set<object> } = {
+      nodes: 0,
+      seen: new Set<object>(),
+    },
     key = "",
+    spine = 0,
   ): unknown {
-    // Past a cap, replace any container with a marker rather than recursing.
+    if (!Array.isArray(value) && !BaseError.#isWalkable(value)) {
+      return value;
+    }
+    // Past a cap, replace the container with a marker rather than recursing.
     // Leaves are unaffected (they never recurse), so shallow data is intact.
-    // The node budget bounds total work (shared references expand per
-    // reference); the depth cap bounds the stack.
-    if (Array.isArray(value) || BaseError.#isWalkable(value)) {
-      if (depth >= BaseError.#MAX_REDACT_DEPTH) {
-        return "[Max redaction depth exceeded]";
-      }
-      if (++state.nodes > BaseError.#MAX_REDACT_NODES) {
-        return "[Max redaction size exceeded]";
-      }
+    if (
+      depth >= BaseError.#MAX_REDACT_DEPTH ||
+      spine > BaseError.#MAX_CAUSE_DEPTH
+    ) {
+      return "[Max redaction depth exceeded]";
     }
-    if (Array.isArray(value)) {
-      // Aggregate members sit on the cause spine (see #childRegion), bounded
-      // separately by #MAX_CAUSE_DEPTH at serialization time. Like the rest of
-      // that spine they stay out of the data-depth budget, so a deep aggregate
-      // cannot marker-truncate a shallow `details` nested beneath it.
-      const itemDepth = region === "cause" ? depth : depth + 1;
-      return value.map((item) => {
-        if (typeof item === "function") return null;
-        if (Array.isArray(item) || BaseError.#isWalkable(item)) {
-          return BaseError.#redactWalk(
-            item,
-            decide,
-            region,
-            itemDepth,
-            state,
-            key,
-          );
-        }
-        // A leaf inside an array has no key of its own, so it is judged under
-        // the key of the array that holds it, in every region. Without this an
-        // allow-list keeps every scalar element, which is the opposite of what
-        // it promises: an aggregate's members are arbitrary values (a
-        // `Promise.allSettled` reason need not be an `Error`), and `errors` is
-        // not an envelope key, so a string member is data like any other.
-        if (BaseError.#isStructuralMarker(item, region)) return item;
-        const decision = decide(key, item, region);
-        return decision === BaseError.#RECURSE ? item : decision;
-      });
+    if (state.seen.has(value)) {
+      return "[Circular reference]";
     }
-    if (BaseError.#isWalkable(value)) {
+    if (++state.nodes > BaseError.#MAX_REDACT_NODES) {
+      return "[Max redaction size exceeded]";
+    }
+    state.seen.add(value);
+    try {
+      if (Array.isArray(value)) {
+        // Aggregate members sit on the cause spine (see #childRegion). Like
+        // the rest of that spine they stay out of the data-depth budget, so a
+        // deep aggregate cannot marker-truncate a shallow `details` nested
+        // beneath it; each member is one hop on the spine instead.
+        const itemDepth = region === "cause" ? depth : depth + 1;
+        const itemSpine = region === "cause" ? spine + 1 : spine;
+        return value.map((item) => {
+          if (typeof item === "function") return null;
+          if (Array.isArray(item) || BaseError.#isWalkable(item)) {
+            return BaseError.#redactWalk(
+              item,
+              decide,
+              region,
+              itemDepth,
+              state,
+              key,
+              itemSpine,
+            );
+          }
+          // A leaf inside an array has no key of its own, so it is judged under
+          // the key of the array that holds it, in every region. Without this an
+          // allow-list keeps every scalar element, which is the opposite of what
+          // it promises: an aggregate's members are arbitrary values (a
+          // `Promise.allSettled` reason need not be an `Error`), and `errors` is
+          // not an envelope key, so a string member is data like any other.
+          if (BaseError.#isStructuralMarker(item, region)) return item;
+          const decision = decide(key, item, region);
+          return decision === BaseError.#RECURSE ? item : decision;
+        });
+      }
       // Null-prototype target so an own `__proto__`/`constructor` key from
       // untrusted details is copied as ordinary data (and masked/recursed like
       // any other key) instead of routing through a prototype setter. Matches
@@ -442,11 +468,14 @@ export class BaseError<T extends string> extends Error {
         if (decision === BaseError.#RECURSE) {
           if (Array.isArray(val) || BaseError.#isWalkable(val)) {
             const childRegion = BaseError.#childRegion(region, key);
-            // The cause chain is its own bounded spine (see #serializeCause), so
-            // descending it must not consume the data-depth budget; otherwise a
-            // deep chain would marker-truncate a shallow `details` on a deep
-            // cause. The cap stays for genuinely deep data trees.
+            // The cause chain is its own spine, so descending it must not
+            // consume the data-depth budget; otherwise a deep chain would
+            // marker-truncate a shallow `details` on a deep cause. A `cause`
+            // link is one hop on the spine instead. The `errors` array is not
+            // a hop: its members are (see the array branch).
             const childDepth = childRegion === "cause" ? depth : depth + 1;
+            const childSpine =
+              childRegion === "cause" && key === "cause" ? spine + 1 : spine;
             out[key] = BaseError.#redactWalk(
               val,
               decide,
@@ -454,6 +483,7 @@ export class BaseError<T extends string> extends Error {
               childDepth,
               state,
               key,
+              childSpine,
             );
           } else {
             out[key] = val;
@@ -463,8 +493,9 @@ export class BaseError<T extends string> extends Error {
         }
       }
       return out;
+    } finally {
+      state.seen.delete(value);
     }
-    return value;
   }
 
   /**
