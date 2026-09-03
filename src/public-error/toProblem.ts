@@ -145,8 +145,9 @@ export type ProblemDetailsResult<
  * localized, so the structure-only path is a first-class, RFC-valid response.
  *
  * This is the wire boundary: `details` and `fields` are deep-cloned into a
- * frozen, JSON-safe structure (a `Date`, `BigInt`, circular reference, or other
- * non-serializable value drops that member and records it in `outcome.omitted`
+ * frozen, JSON-safe structure (a `Date`, `BigInt`, circular reference, a value
+ * nested deeper than 100 levels, or other non-serializable value drops that
+ * member and records it in `outcome.omitted`
  * rather than throwing or leaking a value the next serializer would choke on).
  */
 export function toProblem<

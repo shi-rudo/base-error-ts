@@ -68,7 +68,7 @@ between classification and trusted local provenance.
 
 ## Static metadata
 
-`metadata` is inferred per code and accepts JSON-safe data. `meta(code)` returns
+`metadata` is inferred per code and accepts JSON-safe data nested at most 100 levels deep (deeper metadata is rejected with "nested deeper than 100 levels"). `meta(code)` returns
 an immutable snapshot containing `category`, `retryable`, and the optional
 metadata:
 

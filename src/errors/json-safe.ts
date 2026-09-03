@@ -78,7 +78,12 @@ function cloneInto(
     throw new Error(errorMessage);
   }
   if (depth >= MAX_DATA_DEPTH) {
-    throw new Error(errorMessage);
+    // The value can pass JSON.stringify, so the caller's message alone would
+    // send the reader to the library source. Name the one reason that is not
+    // visible on the value.
+    throw new Error(
+      `${errorMessage} (nested deeper than ${MAX_DATA_DEPTH} levels)`,
+    );
   }
 
   seen.add(value);
