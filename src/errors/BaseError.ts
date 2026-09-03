@@ -685,11 +685,14 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Readable one-liner plus the nested cause chain, bounded exactly like the
-   * log object: the same cause nodes are rendered, and past the cap the chain
-   * ends with the same depth marker. Honors a deny-listed `"message"` (see
-   * {@link redact}) per BaseError in the chain; other redaction shapes
-   * rewrite only the log object.
+   * Readable one-liner plus the nested cause chain. For a chain of error
+   * objects it is bounded exactly like the log object: the same cause nodes
+   * are rendered, and past the cap the chain ends with the same depth marker.
+   * A plain-object cause is one data value in the log object, copied whole
+   * with no cause cap inside it, while this render follows its `cause` links
+   * like any other and ends them at the cap. Honors a deny-listed
+   * `"message"` (see {@link redact}) per BaseError in the chain; other
+   * redaction shapes rewrite only the log object.
    */
   public override toString(): string {
     return BaseError.#renderChain(this, new Set<unknown>(), "", 0, 0).join(
@@ -708,8 +711,11 @@ export class BaseError<T extends string> extends Error {
    * at which its `cause` lands. The two differ only at the root: the log
    * serializer starts the root's `cause` at depth 0 and the root's members at
    * depth 1, and every cause node puts both one level below itself. Both
-   * counters mirror {@link BaseError.#serializeCauseNode}, so `toString()`
-   * shows the same nodes as `toLogObject()` and cuts at the same marker.
+   * counters mirror {@link BaseError.#serializeCauseNode}, so for a chain of
+   * error objects `toString()` shows the same nodes as `toLogObject()` and
+   * cuts at the same marker. A plain-object cause is where the two part: the
+   * serializer copies it as one data value ({@link BaseError.#serializeData},
+   * no cause cap inside), and this render follows its `cause` links.
    */
   /*#__PURE__*/ static #renderChain(
     start: unknown,
