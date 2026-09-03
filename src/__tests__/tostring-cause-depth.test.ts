@@ -147,6 +147,14 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
     expect(JSON.stringify(error.toLogObject())).not.toContain(DEPTH_MARKER);
   });
 
+  it("renders an error-shaped plain object by its name and message", () => {
+    const error = new BaseError("root", plainChainOf(2));
+
+    expect(error.toString()).toBe(
+      "[BaseError] root\nCaused by: Error: level 1\nCaused by: Error: bottom",
+    );
+  });
+
   it("renders a short chain unchanged", () => {
     const error = new BaseError("root", chainOf(2));
 
