@@ -198,9 +198,11 @@ of the array that holds it: `details.tokens: ["a", "b"]` is masked element by
 element unless `"tokens"` is allowed. The walk is depth-capped at 100: nesting beyond that collapses to a
 `[Max redaction depth exceeded]` marker (so it stays fail-safe and never
 overflows the stack, including on small edge-runtime stacks) rather than leaking.
-The cause spine has its own cap of 100 hops (a `cause` link or an aggregate
-member each count one), separate from the data depth, so a deep chain does not
-truncate a shallow `details` on a deep cause. A cycle in the data (an object
+The cause spine has its own cap of 100 hops (a `cause` object or an aggregate
+member each count one; a list on the spine is free, its members pay), separate
+from the data depth, so a deep chain does not truncate a shallow `details` on a
+deep cause. An `errors` value that is not a list is data, bounded by the data
+depth. A cycle in the data (an object
 that reaches itself) is written as `[Circular reference]` at its first repeat.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
 structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`);
