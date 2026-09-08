@@ -9,12 +9,14 @@ import {
   UNSERIALIZABLE_CAUSE_MARKER,
   isSerializerMarker,
   moreAggregatedErrorsMarker,
+  moreOwnLogFieldsMarker,
 } from "./serializer-markers.js";
 import {
   MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
   MAX_DATA_NODES,
+  MAX_OWN_LOG_FIELDS,
 } from "./walker-bounds.js";
 
 // This avoids polluting the global scope
@@ -230,7 +232,7 @@ export class BaseError<T extends string> extends Error {
    * `code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`)
    * and a cause's top-level structural envelope keys (`name`/`message`/`stack`/
    * `code`/`category`/`retryable`). Any other top-level field (e.g. one a
-   * subclass adds via `buildLogObject`) is data: its leaves are masked unless
+   * subclass adds via `buildOwnLogFields`) is data: its leaves are masked unless
    * allow-listed. A cause's foreign fields (anything outside that fixed set,
    * and everything nested beneath them) are treated as data, so a plain object
    * that merely *looks* like a structured error cannot smuggle siblings (or
@@ -296,7 +298,7 @@ export class BaseError<T extends string> extends Error {
   /**
    * The library's own **top-level** structural fields, the only root leaves an
    * allow-list keeps. Everything else at the top level (a field a subclass
-   * adds via `buildLogObject`) is data, so a subclass-added field leaks nothing
+   * adds via `buildOwnLogFields`) is data, so a subclass-added field leaks nothing
    * through `redactAllow` by default. Which region a root **container** enters
    * is decided by {@link BaseError.#childRegion}, not by this set. Private for
    * the same reason as {@link BaseError.#ENVELOPE_KEYS}.
@@ -548,7 +550,7 @@ export class BaseError<T extends string> extends Error {
    * a list → cause: they are the only containers on the cause spine. Every
    * other container, an object under `errors` included, drops
    * to data, at the root as well as inside a cause. That covers a foreign key
-   * (a field a subclass added via `buildLogObject`, a sibling a plain-object
+   * (a field a subclass added via `buildOwnLogFields`, a sibling a plain-object
    * cause carries) and also an **envelope-named** key: the envelope fields
    * (`name`/`message`/`stack`/`code`/`category`/`retryable`) are primitives,
    * so a container found under one of those names is not the envelope. It is
@@ -591,9 +593,15 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Assembles the raw log object (no redaction). Subclasses override this to
-   * add their own fields; the public {@link toLogObject} applies redaction to
-   * the complete assembled object.
+   * Assembles the raw log object (no redaction). The public {@link toLogObject}
+   * applies redaction to the complete assembled object.
+   *
+   * @deprecated as an override point. Override {@link buildOwnLogFields}
+   * instead. This method composes the envelope and starts the bounded cause
+   * walk, so an override of it is reachable at the root only: the serializer
+   * cannot run it on a cause without restarting that walk, and the fields it
+   * adds are therefore lost one level down. It stays overridable for the
+   * errors that reshape the envelope itself, and it keeps working.
    */
   protected buildLogObject(): Record<string, unknown> {
     const { name, message, timestamp, timestampIso, stack } = this;
@@ -601,6 +609,11 @@ export class BaseError<T extends string> extends Error {
     const cause = ownProperties.cause;
 
     const json: Record<string, unknown> = {
+      // The library's own envelope is written after the subclass fields, so a
+      // hook cannot forge `name`, `stack` or the bounded links. The same rule
+      // holds at a cause node (see #serializeCauseNode), so one contract
+      // covers both positions.
+      ...BaseError.#nodeOwnFields(this, (item) => item),
       name,
       message, // The original technical message
       timestamp,
@@ -646,6 +659,109 @@ export class BaseError<T extends string> extends Error {
       return raw;
     }
     return BaseError.#redactFailClosed(this.#redactor, raw);
+  }
+
+  /**
+   * The fields this error contributes to its own log object, beyond the
+   * envelope this class writes. Override this to add fields; return a fresh
+   * record and nothing else.
+   *
+   * This is the hook the serializer can reach on a **cause**, so fields added
+   * here survive at every depth of every chain that wraps this error, while
+   * fields added by overriding {@link buildLogObject} appear at the root only.
+   * That is the reason the narrow hook exists.
+   *
+   * The contract, because the caller is a logging path that must not throw and
+   * must stay bounded:
+   *
+   * - it takes no arguments, so an error cannot describe itself differently
+   *   depending on where it sits in a chain;
+   * - it must not walk a cause chain and must not log another error;
+   * - the library's own envelope keys win, so a returned `name`, `message`,
+   *   `stack`, `cause` or `errors` is dropped rather than obeyed;
+   * - a throw costs these fields and never the node;
+   * - on a cause node every value is copied as data (see {@link
+   *   BaseError.#serializeData}), so the log shares no reference with the error.
+   *
+   * Everything returned here is logged wherever this error is logged. Treat it
+   * as the place to put identifiers, not payloads.
+   */
+  protected buildOwnLogFields(): Record<string, unknown> {
+    return {};
+  }
+
+  /**
+   * Bridge to {@link buildOwnLogFields} through a private member, so reaching
+   * it is itself the realm brand: a cross-realm instance fails `instanceof`,
+   * and a Proxy fails the private access. Both then read as an error without
+   * own fields, exactly as {@link BaseError.#redactorOf} treats a policy.
+   */
+  /*#__PURE__*/ #ownLogFields(): Record<string, unknown> {
+    return this.buildOwnLogFields();
+  }
+
+  /**
+   * The own log fields of `value`, when `value` is a BaseError of this realm
+   * that yields a plain record. A throwing hook, a foreign error and a Proxy
+   * all read as absent, so a broken or unreachable hook costs these fields and
+   * nothing else.
+   */
+  /*#__PURE__*/ static #ownLogFieldsOf(
+    value: unknown,
+  ): Record<string, unknown> | undefined {
+    try {
+      const fields =
+        value instanceof BaseError ? value.#ownLogFields() : undefined;
+      return BaseError.#isWalkable(fields) ? fields : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * Keys a cause node's own fields may not write: the library writes them
+   * itself, and two of them carry the bounded links.
+   */
+  static readonly #RESERVED_NODE_KEYS: ReadonlySet<string> = new Set([
+    "name",
+    "message",
+    "stack",
+    "cause",
+    "errors",
+    "ownLogFields",
+  ]);
+
+  /**
+   * The own fields a node carries: the hook's record with the library's own
+   * keys removed and the width cap applied, each value copied by `copy`. One
+   * helper for the root and for a cause, so both positions cut at the same
+   * width and name the remainder the same way.
+   */
+  /*#__PURE__*/ static #nodeOwnFields(
+    value: unknown,
+    copy: (item: unknown) => unknown,
+  ): Record<string, unknown> {
+    const fields = BaseError.#ownLogFieldsOf(value);
+    if (fields === undefined) {
+      return {};
+    }
+    const out: Record<string, unknown> = {};
+    let taken = 0;
+    let dropped = 0;
+    for (const [key, item] of Object.entries(fields)) {
+      if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
+      if (taken >= MAX_OWN_LOG_FIELDS) {
+        dropped++;
+        continue;
+      }
+      const data = copy(item);
+      if (data !== undefined) out[key] = data;
+      taken++;
+    }
+    if (dropped > 0) {
+      out.ownLogFields = moreOwnLogFieldsMarker(dropped);
+    }
+    return out;
   }
 
   /**
@@ -974,7 +1090,7 @@ export class BaseError<T extends string> extends Error {
    * Masks a deny-listed message where a `stack` repeats it: in the header of
    * the root, of every `cause`, and of every aggregate member. Walks the raw
    * log object and its masked clone in lockstep and writes into the clone
-   * only, because a subclass's `buildLogObject` can hand in shared objects.
+   * only, because a subclass's own log fields can hand in shared objects.
    * The clone is the bound: the redaction walk has already cut its depth and
    * size with markers, and this pass stops where the clone holds a marker
    * instead of a node.
@@ -1125,12 +1241,23 @@ export class BaseError<T extends string> extends Error {
         stack: this.#serializeData(readProperty(cause, "stack")),
       };
 
-      // Preserve StructuredError fields if present (duck-typing)
-      // This avoids circular dependency between BaseError and StructuredError
+      // Preserve StructuredError fields if present (duck-typing). This is the
+      // only route for a foreign cause: a plain `Error` carrying these fields,
+      // a cross-realm instance and a Proxy have no reachable hook to ask.
       for (const key of ["code", "category", "retryable", "details"]) {
         const value = this.#serializeData(readProperty(cause, key));
         if (value !== undefined) serialized[key] = value;
       }
+
+      // A cause of this realm says what it is. A fixed roster can never know
+      // the fields a subclass declares, which is why they used to be lost one
+      // level down while surviving at the root. The library's own keys win,
+      // so a hook cannot forge an envelope field or the bounded links, and
+      // every value is copied as data like the rest of the node.
+      Object.assign(
+        serialized,
+        BaseError.#nodeOwnFields(cause, (item) => this.#serializeData(item)),
+      );
 
       // An aggregate's members (`AggregateError.errors`, and any error-like
       // value carrying the same shape) are own but **non-enumerable** on every

@@ -72,5 +72,59 @@ chain. For client-facing text, use the [public-error pipeline](./public-error),
 which projects an explicit allowlist (a public code, a resolved localized
 message, and any deliberately projected details).
 
+## Adding your own log fields
+
+Override `buildOwnLogFields()` to put a subclass's own fields into the log
+object. Return a fresh record holding those fields and nothing else.
+
+```ts
+class ConcurrencyConflictError extends StructuredError<
+  "CONCURRENCY_CONFLICT",
+  "CONFLICT"
+> {
+  constructor(
+    public readonly expectedVersion: number,
+    public readonly actualVersion: number,
+  ) {
+    super({ code: "CONCURRENCY_CONFLICT", category: "CONFLICT", retryable: true, message: "stale version" });
+  }
+
+  protected override buildOwnLogFields(): Record<string, unknown> {
+    return { expectedVersion: this.expectedVersion, actualVersion: this.actualVersion };
+  }
+}
+```
+
+Fields declared here survive at **every depth of every chain that wraps this
+error**, so an adapter that wraps the error in its own type does not lose them.
+That is the reason this hook exists, and it is the difference from overriding
+`buildLogObject()`, whose fields appear at the root only.
+
+The rules the hook lives under, because a log path must not throw and must stay
+bounded:
+
+| Rule | Effect |
+| --- | --- |
+| Takes no arguments | An error describes itself the same way wherever it sits in a chain |
+| Must not walk a chain or log another error | The enclosing bounds hold by construction |
+| The library's own keys win | A returned `name`, `message`, `stack`, `cause`, `errors` or `ownLogFields` is dropped |
+| At most 100 fields | The remainder is named by `ownLogFields: "[N more log fields]"` |
+| A throw costs the fields | The node keeps its envelope and its cause chain |
+| Values are copied as data on a cause | The log shares no reference with the error |
+
+Everything returned here is logged wherever this error is logged. It is the
+place for identifiers, not for payloads. A redaction policy still applies:
+under `redactAllow` these fields are data and are masked unless listed.
+
+Two limits worth knowing. An error from another realm, or one behind a Proxy,
+carries no reachable hook and is logged like any foreign error. And
+`StructuredError.fromJSON` does not restore these fields; it reconstructs the
+envelope it whitelists, so a round trip keeps `code`, `category`, `retryable`
+and `details` and drops the rest.
+
+Overriding `buildLogObject()` still works and is still the way to reshape the
+envelope itself. It is deprecated as the place to add fields, because the
+serializer cannot run it on a cause without restarting the bounded cause walk.
+
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.

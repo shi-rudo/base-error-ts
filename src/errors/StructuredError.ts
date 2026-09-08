@@ -413,15 +413,14 @@ export class StructuredError<
   }
 
   /**
-   * Extends BaseError's raw log object with code, category, retryable, and
-   * details. Redaction (if configured) is applied by the inherited
-   * {@link toLogObject} to the complete assembled object.
+   * Contributes code, category, retryable and details. Declared through the
+   * narrow hook rather than by overriding `buildLogObject`, so these fields
+   * survive when another error logs this one as its cause. Redaction, if
+   * configured, is applied by the inherited {@link toLogObject} to the
+   * complete assembled object.
    */
-  protected override buildLogObject(): Record<string, unknown> {
-    const baseJson = super.buildLogObject();
-
+  protected override buildOwnLogFields(): Record<string, unknown> {
     return {
-      ...baseJson,
       code: this.code,
       category: this.category,
       retryable: this.retryable,

@@ -37,6 +37,17 @@ export const MAX_CAUSE_DEPTH = 100;
 export const MAX_AGGREGATE_MEMBERS = 100;
 
 /**
+ * Largest number of own fields one serialized node carries, at the root and on
+ * a cause alike. The envelope is written by this library and is fixed, but a
+ * subclass contributes its own fields through `buildOwnLogFields`, so the key
+ * count of a node is consumer-controlled and is the one width a walker cannot
+ * otherwise bound: the redaction node budget is charged in the data region
+ * only, so a node's own leaves cost it nothing. Past the cap the remainder is
+ * named by a marker rather than dropped in silence.
+ */
+export const MAX_OWN_LOG_FIELDS = 100;
+
+/**
  * Deepest nesting a walker descends into a data tree: a `details` subtree in
  * the redaction walker, and a value handed to `cloneJsonSafe`. Each walker
  * recurses once per level, so without the cap a deeply nested input overflows

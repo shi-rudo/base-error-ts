@@ -20,6 +20,11 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
+/** The tail of a node's own fields cut at the width cap. */
+export function moreOwnLogFieldsMarker(dropped: number): string {
+  return `[${dropped} more log fields]`;
+}
+
 function escapeForRegExp(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -34,7 +39,7 @@ const SERIALIZER_MARKER = new RegExp(
     .join("|")}|${escapeForRegExp(moreAggregatedErrorsMarker(0)).replace(
     "0",
     "\\d+",
-  )})$`,
+  )}|${escapeForRegExp(moreOwnLogFieldsMarker(0)).replace("0", "\\d+")})$`,
 );
 
 /**
