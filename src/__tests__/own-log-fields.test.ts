@@ -189,12 +189,11 @@ describe("a cause's own log fields", () => {
     }
   }
 
-  it("counts a hook's fields against a width cap and marks the remainder", () => {
+  it("cuts a hook's fields at the width cap", () => {
     const cause = causeOf(new BaseError("outer", new WideHook("inner")));
 
     expect(cause.f0).toBe(0);
     expect(cause.f99).toBe(99);
-    expect(cause.f100).toBeUndefined();
     expect(cause.f100).toBeUndefined();
   });
 
@@ -202,7 +201,6 @@ describe("a cause's own log fields", () => {
     const log = new WideHook("inner").toLogObject();
 
     expect(log.f99).toBe(99);
-    expect(log.f100).toBeUndefined();
     expect(log.f100).toBeUndefined();
   });
 
@@ -355,7 +353,7 @@ describe("the hook against the fields the library owns", () => {
     expect(() => JSON.stringify(new CycleRoot("m"))).not.toThrow();
   });
 
-  it("marks the loss at the root when the hook throws", () => {
+  it("keeps the envelope at the root when the hook throws", () => {
     class ThrowingRoot extends BaseError<"ThrowingRoot"> {
       protected override buildOwnLogFields(): Record<string, unknown> {
         throw new Error("hook threw");
@@ -537,7 +535,7 @@ describe("the log object against a hostile or malformed hook record", () => {
     expect(json).not.toContain("[Unserializable cause]");
   });
 
-  it("names a failed override even when the hook already made a statement", () => {
+  it("keeps the hook's fields when a failed override meets the width cap", () => {
     const log = new WideAndOverrideThrows("m").toLogObject();
     expect(log.f100).toBeUndefined();
     expect(log.f0).toBe(0);
@@ -546,10 +544,9 @@ describe("the log object against a hostile or malformed hook record", () => {
   it("spends the width cap only on fields that reach the log object", () => {
     const log = new FunctionFields("m").toLogObject();
     expect(log.real).toBe("KEEP-ME");
-    expect(log.real).toBe("KEEP-ME");
   });
 
-  it("names the loss when a hook returns something that is not a record", () => {
+  it("keeps the envelope when a hook returns something that is not a record", () => {
     expect(new NotARecord("m").toLogObject().message).toBe("m");
   });
 
@@ -635,7 +632,7 @@ describe("the hook against the library's own words and order", () => {
     expect(keys.indexOf("code")).toBeLessThan(keys.indexOf("jobId"));
   });
 
-  it("still names a failed hook when the redactor fails on top of it", () => {
+  it("stays fail-closed when the hook and the redactor both fail", () => {
     const err = new HookAndRedactorThrow("m").redactWith(() => {
       throw new Error("redactor threw");
     });
@@ -717,5 +714,64 @@ describe("the log object against a malformed subclass override", () => {
       throw new Error("redactor threw");
     });
     expect(() => err.toLogObject()).not.toThrow();
+  });
+});
+
+describe("the log object against a malformed or oversized contribution", () => {
+  class FrozenWithHostileGetter extends BaseError<"FrozenWithHostileGetter"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      const base = super.buildLogObject();
+      Object.defineProperty(base, "boom", {
+        get(): never {
+          throw new Error("getter threw");
+        },
+        enumerable: true,
+      });
+      return Object.freeze(base);
+    }
+  }
+
+  class ReturnsArray extends BaseError<"ReturnsArray"> {
+    protected override buildLogObject(): Record<string, unknown> {
+      return [] as unknown as Record<string, unknown>;
+    }
+  }
+
+  it("stays total when a frozen log object also carries a throwing getter", () => {
+    const err = new FrozenWithHostileGetter("m");
+    expect(() => err.toLogObject()).not.toThrow();
+    expect(err.toLogObject().jobId).toBe("J");
+  });
+
+  it("returns a record when an override returns an array", () => {
+    const log = new ReturnsArray("m").toLogObject();
+    expect(Array.isArray(log)).toBe(false);
+    expect(log.message).toBe("m");
+  });
+
+  it("reads a bounded number of keys however long the record is", () => {
+    let reads = 0;
+    const counting: Record<string, unknown> = {};
+    for (let index = 0; index < 5000; index++) {
+      Object.defineProperty(counting, `fn${index}`, {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return () => index;
+        },
+      });
+    }
+    class Counting extends BaseError<"Counting"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return counting;
+      }
+    }
+
+    new Counting("m").toLogObject();
+
+    expect(reads).toBeLessThanOrEqual(1000);
   });
 });

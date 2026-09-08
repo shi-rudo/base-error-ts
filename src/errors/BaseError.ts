@@ -676,11 +676,11 @@ export class BaseError<T extends string> extends Error {
    * fields added by overriding {@link buildLogObject} appear at the root only.
    * That is the reason the narrow hook exists.
    *
-   * The contract, because the caller is a logging path that must not throw and
-   * must stay bounded:
+   * The contract, because the caller is a logging path that must not throw
+   * and must stay bounded:
    *
-   * - it takes no arguments, so an error cannot describe itself differently
-   *   depending on where it sits in a chain;
+   * - it takes no arguments, so an error describes itself the same way
+   *   wherever it sits in a chain;
    * - it must not walk a cause chain and must not log another error;
    * - every key that carries a name this library writes is dropped rather
    *   than obeyed, and {@link BaseError.#RESERVED_NODE_KEYS} is the list;
@@ -688,17 +688,17 @@ export class BaseError<T extends string> extends Error {
    *   the reader stops there;
    * - a throw, a hostile getter, or a return that is not a record costs these
    *   fields and never the node;
+   * - every value is copied as data (see {@link BaseError.#serializeData}),
+   *   so the log shares no reference with the error.
    *
-   * Every one of those losses is silent. This path writes no marker of its
-   * own, unlike the cause spine, because a marker here is a key on the log
-   * object that a redaction region has to classify and that a hook could
-   * forge, and that machinery cost more than the diagnostic was worth;
-   * - every value is copied as data at the root and on a cause alike (see
-   *   {@link BaseError.#serializeData}), so the log shares no reference with
-   *   the error. That copy is a JSON round-trip: a `Date` becomes its ISO
-   *   string, a `Map` or `Set` becomes `{}`, and a bigint becomes its decimal
-   *   string. Values passed through untouched when the same fields were added
-   *   by overriding {@link buildLogObject}.
+   * That copy is a JSON round-trip. A `Date` becomes its ISO string, a `Map`
+   * becomes `{}`, and a bigint becomes its decimal string. The same values
+   * passed through untouched when the fields were added by overriding
+   * {@link buildLogObject}.
+   *
+   * Every loss here is silent. This path writes no marker of its own, because
+   * a marker is a key that a redaction region has to classify and that a hook
+   * could forge.
    *
    * Everything returned here is logged wherever this error is logged. Treat it
    * as the place to put identifiers, not payloads.
@@ -755,10 +755,36 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * The own fields a node carries: the hook's record with the library's own
-   * keys removed and the width cap applied, each value copied by `copy`. One
-   * helper for the root and for a cause, so both positions cut at the same
-   * width and name the remainder the same way.
+   * key names removed, each value copied as data, cut at the width cap. One
+   * reader for the root and for a cause, so both positions carry the same
+   * fields under the same rules.
    */
+  /**
+   * The own enumerable keys of an object, yielded one at a time.
+   *
+   * Enumerating them at all costs the size of the object: JavaScript offers no
+   * lazy walk of own keys, and `for...in` builds its enumeration cache up
+   * front just as `Object.keys` builds an array. What this buys is that the
+   * loop body, which does the reading and the copying, runs a bounded number
+   * of times. The enumeration itself is the one unbounded step, and the record
+   * is written by a subclass of this library in this realm, so its size is the
+   * consumer's own doing rather than a value a caller threw.
+   */
+  /*#__PURE__*/ static *#ownKeysOf(value: object): Generator<string> {
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) yield key;
+    }
+  }
+
+  /**
+   * Largest number of keys the own-fields reader examines. It sits above
+   * {@link MAX_OWN_LOG_FIELDS} because a reserved name and a value with no
+   * JSON form are skipped without landing, so the reader needs room to pass
+   * them, and it is bounded so that reading and copying cost the cap rather
+   * than the length of the record.
+   */
+  static readonly #MAX_OWN_LOG_FIELDS_READ = MAX_OWN_LOG_FIELDS * 10;
+
   /*#__PURE__*/ #nodeOwnFields(value: unknown): Record<string, unknown> {
     if (!BaseError.#sameRealm(value)) {
       return {};
@@ -782,10 +808,14 @@ export class BaseError<T extends string> extends Error {
       }
       const record = fields as Record<string, unknown>;
       let taken = 0;
-      // Stops at the cap rather than reading a record of any size to the end,
-      // so the cap bounds the work and not only the output.
-      for (const key of Object.keys(record)) {
+      let seen = 0;
+      // Two bounds, because they answer different questions: `taken` bounds
+      // what lands on the node, and `seen` bounds how much of the record is
+      // read to get there, so a long tail of reserved or unloggable keys
+      // cannot make the reading grow with the record.
+      for (const key of BaseError.#ownKeysOf(record)) {
         if (taken >= MAX_OWN_LOG_FIELDS) break;
+        if (++seen > BaseError.#MAX_OWN_LOG_FIELDS_READ) break;
         if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
         // Read through the guarded reader, so one throwing getter costs its
         // own key and leaves every sibling already collected in place.
@@ -821,7 +851,16 @@ export class BaseError<T extends string> extends Error {
       Object.assign(assembled, own);
       return assembled;
     } catch {
-      return { ...assembled, ...own };
+      // The target refused the write, so a fresh record carries both halves.
+      // Its keys are read one at a time through the guarded reader: a spread
+      // would run every getter on an object an override handed us, and a
+      // throwing one there is the same hazard the write just hit.
+      const merged: Record<string, unknown> = {};
+      for (const key of BaseError.#ownKeysOf(assembled)) {
+        const value = readProperty(assembled, key);
+        if (value !== undefined) merged[key] = value;
+      }
+      return Object.assign(merged, own);
     }
   }
 
@@ -833,8 +872,7 @@ export class BaseError<T extends string> extends Error {
    *
    * The fallback keeps what it can. The envelope this class builds carries
    * `name`, `message`, `stack` and the bounded cause chain, and no subclass
-   * contributed to it, so a broken override costs its own shaping and a marker
-   * names the loss. When that envelope throws as well, a field of the instance
+   * contributed to it, so a broken override costs its own shaping. When that envelope throws as well, a field of the instance
    * is hostile, and only the guarded triage envelope remains.
    */
   /*#__PURE__*/ #assembleLogObject(): Record<string, unknown> {
@@ -843,7 +881,11 @@ export class BaseError<T extends string> extends Error {
       // An override can return the wrong shape as easily as it can throw: a
       // missing `return` yields undefined, and a primitive would be handed
       // to a caller whose contract says record. Both count as a failure.
-      if (typeof built === "object" && built !== null) {
+      if (
+        typeof built === "object" &&
+        built !== null &&
+        !Array.isArray(built)
+      ) {
         return built as Record<string, unknown>;
       }
     } catch {
@@ -922,8 +964,8 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Non-sensitive structural fields preserved in the fail-closed redaction
-   * marker. Only those a given error's `buildLogObject()` actually emits are
-   * copied (guarded by `key in raw`), so `code`/`category`/`retryable` appear
+   * marker. Only the fields the log object actually
+   * carries are copied, through the guarded reader, so `code`/`category`/`retryable` appear
    * for a `StructuredError` but are simply absent for a plain `BaseError`.
    */
   static readonly #SAFE_TRIAGE_KEYS = [
@@ -1324,11 +1366,10 @@ export class BaseError<T extends string> extends Error {
         if (value !== undefined) serialized[key] = value;
       }
 
-      // A cause of this realm says what it is. A fixed roster can never know
-      // the fields a subclass declares, which is why they used to be lost one
-      // level down while surviving at the root. The library's own keys win,
-      // so a hook cannot forge an envelope field or the bounded links, and
-      // every value is copied as data like the rest of the node.
+      // A cause of this realm says what it is, through the one hook a fixed
+      // roster cannot replace. The library's own key names win, so a hook
+      // cannot forge an envelope field or a bounded link, and every value is
+      // copied as data like the rest of the node.
       Object.assign(serialized, this.#nodeOwnFields(cause));
 
       // An aggregate's members (`AggregateError.errors`, and any error-like

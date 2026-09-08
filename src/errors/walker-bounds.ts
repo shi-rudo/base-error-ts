@@ -42,8 +42,7 @@ export const MAX_AGGREGATE_MEMBERS = 100;
  * subclass contributes its own fields through `buildOwnLogFields`, so the key
  * count of a node is consumer-controlled and is the one width a walker cannot
  * otherwise bound: the redaction node budget is charged in the data region
- * only, so a node's own leaves cost it nothing. Past the cap the remainder is
- * named by a marker rather than dropped in silence.
+ * only, so a node's own leaves cost it nothing. Past the cap the reader stops, and the cut is silent: a marker here would be a key on the log object that a redaction region has to classify and that a subclass could forge.
  */
 export const MAX_OWN_LOG_FIELDS = 100;
 

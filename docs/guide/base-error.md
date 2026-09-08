@@ -110,7 +110,7 @@ bounded:
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
 | Must not walk a chain or log another error | The enclosing bounds hold by construction |
-| The library's own keys win | A returned key that carries a name this library writes is dropped. That list is `name`, `message`, `stack`, `code`, `category`, `retryable`, `timestamp`, `timestampIso`, `details`, `cause` and `errors`. Its declaration, `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts`, owns the list. Name a field something else if it collides |
+| The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
 | A throw, a hostile getter, or a return that is not a record costs the fields | The node keeps its envelope and its cause chain |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
