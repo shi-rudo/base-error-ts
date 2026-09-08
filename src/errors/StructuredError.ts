@@ -420,6 +420,9 @@ export class StructuredError<
    * by the serializer, so they survive one level down as well. Redaction, if
    * configured, is applied by the inherited {@link toLogObject} to the
    * complete assembled object.
+   *
+   * @deprecated Override {@link buildOwnLogFields} to contribute data fields.
+   * Reshape the completed log in the consumer's logging adapter instead.
    */
   protected override buildLogObject(): Record<string, unknown> {
     const baseJson = super.buildLogObject();

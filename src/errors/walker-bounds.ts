@@ -57,12 +57,16 @@ export const MAX_OWN_LOG_FIELDS = 100;
 export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 
 /**
- * Deepest nesting a walker descends into a data tree: a `details` subtree in
- * the redaction walker, and a value handed to `cloneJsonSafe`. Each walker
- * recurses once per level, so without the cap a deeply nested input overflows
- * the host stack. Past the cap the redaction walker writes a marker at the
- * deep end, so the shallow fields survive, and the clone rejects the value
- * like any other value that is not JSON-safe.
+ * Custom log records get the same own-key inspection allowance as the
+ * own-fields hook. The fixed envelope is read separately from this allowance.
+ */
+export const MAX_LOG_OBJECT_KEYS_READ: number = MAX_OWN_LOG_FIELDS_READ;
+
+/**
+ * Deepest nesting in a data tree. The redaction walker writes a marker at
+ * the cap, and `cloneJsonSafe` rejects the value. The log data serializer
+ * keeps an empty container at the cap, without reading its children.
+ * Cause depth counts separately, so a deep cause retains its shallow data.
  */
 export const MAX_DATA_DEPTH = 100;
 

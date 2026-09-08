@@ -81,6 +81,8 @@ them: a `StructuredError` subclass keeps `code`, `category`, `retryable` and
 `details` whatever this hook returns.
 
 ```ts
+import { StructuredError, type OwnLogFields } from "@shirudo/base-error";
+
 class ConcurrencyConflictError extends StructuredError<
   "CONCURRENCY_CONFLICT",
   "CONFLICT"
@@ -92,11 +94,28 @@ class ConcurrencyConflictError extends StructuredError<
     super({ code: "CONCURRENCY_CONFLICT", category: "CONFLICT", retryable: true, message: "stale version" });
   }
 
-  protected override buildOwnLogFields(): Record<string, unknown> {
+  protected override buildOwnLogFields(): OwnLogFields {
     return { expectedVersion: this.expectedVersion, actualVersion: this.actualVersion };
   }
 }
 ```
+
+`OwnLogFields` is the recommended return type. It describes a readonly record
+whose values are strings, numbers, booleans, `null`, readonly arrays, or nested
+records. Convert dates, collections,
+and bigints explicitly. Omit absent fields or use `null`. Do not return
+getters, callbacks, or objects with custom serialization methods.
+
+The type rejects common non-data values, including functions, dates, and errors.
+It cannot prove that numbers are finite, records have plain prototypes, or
+values contain no getters or cycles. Runtime guards still apply. The base hook
+keeps its `Record<string, unknown>` signature so existing overrides remain compatible.
+
+The hook supplies data; the library assembles the envelope, traverses causes,
+and applies redaction. The consumer's logging adapter selects the log level,
+transport, sampling, and storage. The hook must finish synchronously and must
+not perform I/O. The serializer can catch a thrown exception, but it cannot
+interrupt consumer code or bound the work inside a getter or callback.
 
 Fields declared here survive at **every depth of every chain that wraps this
 error**, so an adapter that wraps the error in its own type does not lose them.
@@ -109,11 +128,12 @@ bounded:
 | Rule | Effect |
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
-| Must not walk a chain or log another error | The enclosing bounds hold by construction. An error returned as a field value is dropped, because logging it would re-enter the log build |
+| Must not walk a chain or log another error | An error returned directly as a field value is dropped. A nested `BaseError` becomes `{}` during the data copy |
 | The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
 | A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws costs its own key only |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
+| Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Other fields keep their own budgets |
 
 Every one of those losses is **silent**. This path writes no marker of its own,
 unlike the cause spine, where the serializer names a cut. A marker here would
@@ -132,9 +152,39 @@ carries no reachable hook and is logged like any foreign error. And
 envelope it whitelists, so a round trip keeps `code`, `category`, `retryable`
 and `details` and drops the rest.
 
-Overriding `buildLogObject()` still works and is still the way to reshape the
-envelope itself. It is not the place to add fields, because the serializer
-cannot run it on a cause without restarting the bounded cause walk.
+### Migrating from `buildLogObject()`
+
+`buildLogObject()` is deprecated. Existing overrides and `super.buildLogObject()`
+calls remain supported during migration. This release does not remove the hook.
+Both uses can show a deprecation diagnostic in your editor.
+
+Move additional fields into `buildOwnLogFields()`. Return only those fields;
+do not spread `super.buildLogObject()` into the result. For an own-fields
+inheritance chain, spread `super.buildOwnLogFields()` if the parent contributes
+fields. A `StructuredError` subclass does not need to repeat `code`, `category`,
+`retryable`, or `details`.
+
+If an override changes envelope names or layout, move that transformation into
+the consumer's logging adapter. Transform the result of `error.toLogObject()`
+after redaction. Do not read raw error properties back into the transformed log.
+No replacement envelope hook is provided.
+
+The two hooks have different value semantics. `buildOwnLogFields()` copies its
+values through the bounded data serializer. A date becomes an ISO string,
+a bigint becomes a decimal string, and a map becomes `{}`. The deprecated hook
+passes nested values through. Convert values explicitly when migrating to
+`OwnLogFields`; for example, use `date.toISOString()` and `bigint.toString()`.
+
+For the deprecated hook, the library copies the returned record without invoking
+its setters. It reads the fixed envelope first, then inspects at most 1000 own
+keys for other fields.
+Symbols and non-enumerable keys consume this limit. Key enumeration itself is
+eager, because JavaScript has no lazy own-key operation. A custom record with
+no readable fields falls back to the triage envelope.
+
+During a data value's `toJSON`, a nested `toLogObject()` call returns `{}`.
+This prevents recursive logging from restarting the walker. Cause depth and
+data depth count separately in the data copy, as they do in redaction.
 
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.

@@ -1,5 +1,48 @@
 # Migration Guide
 
+## Unreleased: log field hooks
+
+`buildLogObject()` is deprecated on `BaseError` and `StructuredError`.
+Existing overrides and `super.buildLogObject()` calls remain supported.
+The hook is not removed in this release.
+
+Move additional fields to `buildOwnLogFields()`:
+
+```ts
+// Before
+protected override buildLogObject(): Record<string, unknown> {
+  return { ...super.buildLogObject(), requestId: this.requestId };
+}
+
+// After: import type { OwnLogFields } from "@shirudo/base-error";
+protected override buildOwnLogFields(): OwnLogFields {
+  return { requestId: this.requestId };
+}
+```
+
+`OwnLogFields` checks for data values at compile time. It describes a readonly
+record whose values are JSON primitives, readonly arrays, or nested records.
+JSON primitives include `null`. Convert dates and bigints to
+strings explicitly. Convert collections to arrays or plain records. Omit
+absent fields or use `null`. Do not return getters or serialization callbacks.
+The type does not prove runtime safety; the library still applies its guards.
+The base hook retains `Record<string, unknown>` for source compatibility.
+
+The library owns the envelope and cause traversal. New fields survive when
+the error becomes a cause and receive the same redaction as other consumer data.
+`StructuredError` keeps `code`, `category`, `retryable`, and `details` separately.
+Do not move those fields into the hook. If a parent contributes own fields,
+compose them with `super.buildOwnLogFields()`.
+
+An envelope override has no direct replacement hook. Move log layout changes
+to the consumer's logging adapter, after `toLogObject()` applies redaction.
+Do not restore fields from the raw error after redaction.
+
+The narrow hook copies values; the deprecated hook passes nested values through.
+Review conversions when migrating. See the
+[log field contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/base-error.md#adding-your-own-log-fields)
+for limits and fallback behavior.
+
 ## v7 to v8
 
 v8 removes the `@shirudo/base-error/presentation` and

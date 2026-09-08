@@ -20,6 +20,44 @@ export function readProperty(value: unknown, key: string | symbol): unknown {
   }
 }
 
+/** Reads an own property. An inherited or unreadable property reads as absent. */
+export function readOwnProperty(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null) return undefined;
+  try {
+    return Object.prototype.hasOwnProperty.call(value, key)
+      ? readProperty(value, key)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reads at most `limit` own descriptors and yields the enumerable string keys.
+ * Symbols and non-enumerable keys consume the limit. Key enumeration itself
+ * remains eager, because JavaScript has no lazy own-key operation.
+ */
+export function* readOwnEnumerableKeys(
+  value: object,
+  limit: number,
+): Generator<string> {
+  let keys: (string | symbol)[];
+  try {
+    keys = Reflect.ownKeys(value);
+  } catch {
+    return;
+  }
+  for (let index = 0; index < keys.length && index < limit; index++) {
+    const key = keys[index];
+    if (typeof key !== "string") continue;
+    try {
+      if (Object.getOwnPropertyDescriptor(value, key)?.enumerable) yield key;
+    } catch {
+      // An unreadable descriptor costs its key only.
+    }
+  }
+}
+
 /**
  * The members of an aggregate, materialized. `members` holds at most the
  * requested number of them, and `total` is the count the aggregate reports,

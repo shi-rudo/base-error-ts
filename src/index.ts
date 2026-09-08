@@ -2,7 +2,11 @@
 // Error Classes
 // ────────────────────────────────────────────────────────────────
 export { BaseError } from "./errors/BaseError.js";
-export type { BaseErrorOptions, RedactMask } from "./errors/BaseError.js";
+export type {
+  BaseErrorOptions,
+  OwnLogFields,
+  RedactMask,
+} from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
 export { matchError } from "./errors/match.js";
