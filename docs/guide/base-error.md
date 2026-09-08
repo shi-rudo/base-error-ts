@@ -75,7 +75,10 @@ message, and any deliberately projected details).
 ## Adding your own log fields
 
 Override `buildOwnLogFields()` to put a subclass's own fields into the log
-object. Return a fresh record holding those fields and nothing else.
+object. Return a fresh record holding those fields and nothing else. The fields
+a base class declares are composed separately, so this hook never has to repeat
+them: a `StructuredError` subclass keeps `code`, `category`, `retryable` and
+`details` whatever this hook returns.
 
 ```ts
 class ConcurrencyConflictError extends StructuredError<
@@ -107,10 +110,10 @@ bounded:
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
 | Must not walk a chain or log another error | The enclosing bounds hold by construction |
-| The library's own keys win | A returned `name`, `message`, `stack`, `cause`, `errors` or `ownLogFields` is dropped |
+| The library's own keys win | A returned key that carries a library name (`name`, `message`, `stack`, `code`, `category`, `retryable`, `timestamp`, `timestampIso`, `details`, `cause`, `errors`, `ownLogFields`) is dropped |
 | At most 100 fields | The remainder is named by `ownLogFields: "[N more log fields]"` |
 | A throw costs the fields | The node keeps its envelope and its cause chain |
-| Values are copied as data on a cause | The log shares no reference with the error |
+| Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
 
 Everything returned here is logged wherever this error is logged. It is the
 place for identifiers, not for payloads. A redaction policy still applies:

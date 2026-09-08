@@ -413,14 +413,19 @@ export class StructuredError<
   }
 
   /**
-   * Contributes code, category, retryable and details. Declared through the
-   * narrow hook rather than by overriding `buildLogObject`, so these fields
-   * survive when another error logs this one as its cause. Redaction, if
+   * Extends BaseError's raw log object with code, category, retryable, and
+   * details. These are the fields of this class, not a subclass contribution,
+   * so they are composed here and cannot be removed by a subclass that
+   * overrides `buildOwnLogFields`. On a cause they are read from the instance
+   * by the serializer, so they survive one level down as well. Redaction, if
    * configured, is applied by the inherited {@link toLogObject} to the
    * complete assembled object.
    */
-  protected override buildOwnLogFields(): Record<string, unknown> {
+  protected override buildLogObject(): Record<string, unknown> {
+    const baseJson = super.buildLogObject();
+
     return {
+      ...baseJson,
       code: this.code,
       category: this.category,
       retryable: this.retryable,

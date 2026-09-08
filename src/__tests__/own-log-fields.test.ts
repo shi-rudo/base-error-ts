@@ -265,3 +265,141 @@ describe("a cause's own log fields across a fromJSON round trip", () => {
     expect(cause.code).toBe("CONCURRENCY_CONFLICT");
   });
 });
+
+describe("the hook against the fields the library owns", () => {
+  class SubclassOfStructured extends StructuredError<
+    "CONFLICT",
+    "CONFLICT",
+    Record<string, unknown>
+  > {
+    constructor() {
+      super({
+        code: "CONFLICT",
+        category: "CONFLICT",
+        retryable: true,
+        message: "stale version",
+      });
+    }
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { expectedVersion: 3 };
+    }
+  }
+
+  class EnvelopeNamed extends BaseError<"EnvelopeNamed"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return {
+        category: "SECRET-CATEGORY",
+        retryable: "SECRET-RETRYABLE",
+        details: "SECRET-DETAILS",
+        timestamp: "SECRET-TIMESTAMP",
+        ordinary: "ordinary value",
+      };
+    }
+  }
+
+  it("keeps the structural fields a StructuredError subclass did not declare", () => {
+    const log = new SubclassOfStructured().toLogObject();
+
+    expect(log.code).toBe("CONFLICT");
+    expect(log.category).toBe("CONFLICT");
+    expect(log.retryable).toBe(true);
+    expect(log.expectedVersion).toBe(3);
+  });
+
+  it("reconstructs such a subclass by its code after a round trip", () => {
+    const wire = JSON.parse(
+      JSON.stringify(new SubclassOfStructured()),
+    ) as Record<string, unknown>;
+
+    expect(StructuredError.fromJSON(wire).code).toBe("CONFLICT");
+  });
+
+  it("masks a hook field that carries an envelope name under an allow list", () => {
+    const json = JSON.stringify(
+      new EnvelopeNamed("m").redactAllow([]).toLogObject(),
+    );
+
+    expect(json).not.toContain("SECRET-CATEGORY");
+    expect(json).not.toContain("SECRET-RETRYABLE");
+    expect(json).not.toContain("SECRET-DETAILS");
+    expect(json).not.toContain("SECRET-TIMESTAMP");
+  });
+
+  it("drops a hook field that carries an envelope name, keeping the library's", () => {
+    const log = new EnvelopeNamed("m").toLogObject();
+
+    expect(log.category).toBeUndefined();
+    expect(log.timestamp).toBeTypeOf("number");
+    expect(log.ordinary).toBe("ordinary value");
+  });
+
+  it("keeps a plain StructuredError's root key order", () => {
+    const log = new StructuredError({
+      code: "X",
+      category: "C",
+      retryable: false,
+      message: "m",
+    }).toLogObject();
+
+    expect(Object.keys(log)[0]).toBe("name");
+  });
+
+  it("keeps JSON.stringify total when a hook returns a bigint at the root", () => {
+    class BigIntRoot extends BaseError<"BigIntRoot"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { size: 10n };
+      }
+    }
+
+    expect(() => JSON.stringify(new BigIntRoot("m"))).not.toThrow();
+    expect(new BigIntRoot("m").toLogObject().size).toBe("10");
+  });
+
+  it("keeps JSON.stringify total when a hook returns a cycle at the root", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    class CycleRoot extends BaseError<"CycleRoot"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { graph: cyclic };
+      }
+    }
+
+    expect(() => JSON.stringify(new CycleRoot("m"))).not.toThrow();
+  });
+
+  it("marks the loss at the root when the hook throws", () => {
+    class ThrowingRoot extends BaseError<"ThrowingRoot"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        throw new Error("hook threw");
+      }
+    }
+
+    expect(new ThrowingRoot("m").toLogObject().ownLogFields).toBe(
+      "[Own log fields unavailable]",
+    );
+  });
+
+  it("marks no loss for a cause behind a Proxy, which has no hook to lose", () => {
+    const inner = new ConcurrencyConflictError(3, 5);
+    const outer = new BaseError("outer", new Proxy(inner, {}));
+
+    expect(causeOf(outer).ownLogFields).toBeUndefined();
+  });
+
+  it("shares one node budget across a node's own fields", () => {
+    const wide = (): Record<string, unknown> => {
+      const graph: Record<string, unknown> = {};
+      for (let index = 0; index < 60_000; index++) graph[`k${index}`] = index;
+      return graph;
+    };
+    class TwoBigFields extends BaseError<"TwoBigFields"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { first: wide(), second: wide() };
+      }
+    }
+    const log = new TwoBigFields("m").toLogObject();
+
+    expect(typeof log.second).toBe("string");
+    expect(log.second).toContain("Circular");
+  });
+});

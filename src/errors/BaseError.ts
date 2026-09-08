@@ -613,7 +613,9 @@ export class BaseError<T extends string> extends Error {
       // hook cannot forge `name`, `stack` or the bounded links. The same rule
       // holds at a cause node (see #serializeCauseNode), so one contract
       // covers both positions.
-      ...BaseError.#nodeOwnFields(this, (item) => item),
+      ...BaseError.#nodeOwnFields(this, (item, budget) =>
+        this.#serializeData(item, budget),
+      ),
       name,
       message, // The original technical message
       timestamp,
@@ -706,15 +708,16 @@ export class BaseError<T extends string> extends Error {
    * all read as absent, so a broken or unreachable hook costs these fields and
    * nothing else.
    */
-  /*#__PURE__*/ static #ownLogFieldsOf(
-    value: unknown,
-  ): Record<string, unknown> | undefined {
+  /*#__PURE__*/ static #isOwnRealm(value: unknown): value is BaseError<string> {
     try {
-      const fields =
-        value instanceof BaseError ? value.#ownLogFields() : undefined;
-      return BaseError.#isWalkable(fields) ? fields : undefined;
+      if (!(value instanceof BaseError)) return false;
+      // A Proxy passes `instanceof` and fails the private access, so this is
+      // the brand, and it is read apart from the hook: an unreachable error
+      // has no fields to lose, while a throwing hook does.
+      void value.#redactor;
+      return true;
     } catch {
-      return undefined;
+      return false;
     }
   }
 
@@ -723,10 +726,11 @@ export class BaseError<T extends string> extends Error {
    * itself, and two of them carry the bounded links.
    */
   static readonly #RESERVED_NODE_KEYS: ReadonlySet<string> = new Set([
-    "name",
-    "message",
-    "stack",
-    "cause",
+    // Every name this library writes itself. The allow-list keeps a leaf by
+    // key name, not by provenance, so a hook field named `category` or
+    // `details` would survive `redactAllow` unmasked. Reserving the whole set
+    // keeps an unknown key data, which is what fail-closed means here.
+    ...BaseError.#ROOT_ENVELOPE_KEYS,
     "errors",
     "ownLogFields",
   ]);
@@ -739,12 +743,25 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ static #nodeOwnFields(
     value: unknown,
-    copy: (item: unknown) => unknown,
+    copy: (item: unknown, budget: { nodes: number }) => unknown,
   ): Record<string, unknown> {
-    const fields = BaseError.#ownLogFieldsOf(value);
-    if (fields === undefined) {
+    if (!BaseError.#isOwnRealm(value)) {
       return {};
     }
+    let fields: unknown;
+    try {
+      fields = value.#ownLogFields();
+    } catch {
+      // The hook is consumer code. Name the loss the same way the wide hook's
+      // guard does, so it is visible on the path this library recommends.
+      return { ownLogFields: "[Own log fields unavailable]" };
+    }
+    if (!BaseError.#isWalkable(fields)) {
+      return {};
+    }
+    // One budget for the whole node, not one per field: the width cap bounds
+    // how many fields a node carries, and this bounds the work they cost.
+    const budget = { nodes: 0 };
     const out: Record<string, unknown> = {};
     let taken = 0;
     let dropped = 0;
@@ -754,7 +771,7 @@ export class BaseError<T extends string> extends Error {
         dropped++;
         continue;
       }
-      const data = copy(item);
+      const data = copy(item, budget);
       if (data !== undefined) out[key] = data;
       taken++;
     }
@@ -1256,7 +1273,9 @@ export class BaseError<T extends string> extends Error {
       // every value is copied as data like the rest of the node.
       Object.assign(
         serialized,
-        BaseError.#nodeOwnFields(cause, (item) => this.#serializeData(item)),
+        BaseError.#nodeOwnFields(cause, (item, budget) =>
+          this.#serializeData(item, budget),
+        ),
       );
 
       // An aggregate's members (`AggregateError.errors`, and any error-like
@@ -1311,7 +1330,10 @@ export class BaseError<T extends string> extends Error {
    * node budget) degrades to the circular-object marker. Total: nothing in
    * here throws.
    */
-  /*#__PURE__*/ #serializeData(value: unknown): unknown {
+  /*#__PURE__*/ #serializeData(
+    value: unknown,
+    budget: { nodes: number } = { nodes: 0 },
+  ): unknown {
     if (typeof value === "object" && value !== null) {
       try {
         // The counting replacer bounds the total node count: JSON.stringify
@@ -1320,9 +1342,8 @@ export class BaseError<T extends string> extends Error {
         // degrades to the fallback marker. Kept as the native stringify/parse
         // round-trip on purpose: it measures ~40% faster than an equivalent
         // JS walker.
-        let nodes = 0;
         const json = JSON.stringify(value, (_key, item: unknown) => {
-          if (++nodes > MAX_DATA_NODES) {
+          if (++budget.nodes > MAX_DATA_NODES) {
             throw new Error("payload exceeds serialization bounds");
           }
           return typeof item === "bigint" ? item.toString() : item;
