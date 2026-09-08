@@ -47,6 +47,16 @@ export const MAX_AGGREGATE_MEMBERS = 100;
 export const MAX_OWN_LOG_FIELDS = 100;
 
 /**
+ * Largest number of keys the own-fields reader examines to fill one node. It
+ * sits above {@link MAX_OWN_LOG_FIELDS} because a reserved name and a value
+ * with no JSON form are skipped without landing, so the reader needs room to
+ * pass them. Reading and copying then cost the cap rather than the length of
+ * the record. Enumerating the keys still costs the record's size, because
+ * JavaScript has no lazy walk of own keys.
+ */
+export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
+
+/**
  * Deepest nesting a walker descends into a data tree: a `details` subtree in
  * the redaction walker, and a value handed to `cloneJsonSafe`. Each walker
  * recurses once per level, so without the cap a deeply nested input overflows

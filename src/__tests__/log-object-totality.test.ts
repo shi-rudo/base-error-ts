@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { BaseError, StructuredError } from "../index.js";
 
-/** A subclass whose own log fields cannot be produced. */
+/** A subclass whose log-object override cannot produce an envelope. */
 class ThrowingOverride extends BaseError<"ThrowingOverride"> {
   protected override buildLogObject(): Record<string, unknown> {
-    throw new Error("own log fields threw");
+    throw new Error("log object override threw");
   }
 }
 
@@ -30,7 +30,7 @@ class WellBehaved extends BaseError<"WellBehaved"> {
   }
 }
 
-describe("toLogObject() against a throwing subclass override", () => {
+describe("toLogObject() against a throwing log-object override", () => {
   it("returns a log object instead of throwing out of the logging path", () => {
     const error = new ThrowingOverride("write failed");
 

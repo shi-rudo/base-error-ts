@@ -17,6 +17,7 @@ import {
   MAX_DATA_DEPTH,
   MAX_DATA_NODES,
   MAX_OWN_LOG_FIELDS,
+  MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
 
 // This avoids polluting the global scope
@@ -686,8 +687,8 @@ export class BaseError<T extends string> extends Error {
    *   than obeyed, and {@link BaseError.#RESERVED_NODE_KEYS} is the list;
    * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
    *   the reader stops there;
-   * - a throw, a hostile getter, or a return that is not a record costs these
-   *   fields and never the node;
+   * - a throw, or a return that is not a record, costs these fields and never
+   *   the node. A getter that throws costs its own key only;
    * - every value is copied as data (see {@link BaseError.#serializeData}),
    *   so the log shares no reference with the error.
    *
@@ -728,8 +729,7 @@ export class BaseError<T extends string> extends Error {
     if (!isInstanceOf(value, BaseError)) return false;
     try {
       // A Proxy passes `instanceof` and fails the private access, so the
-      // private read is the brand. Probed apart from any call it guards, so
-      // an unreachable error is never reported as one whose code failed.
+      // private read is the brand.
       void value.#redactor;
       return true;
     } catch {
@@ -742,10 +742,11 @@ export class BaseError<T extends string> extends Error {
    * itself, and two of them carry the bounded links.
    */
   static readonly #RESERVED_NODE_KEYS: ReadonlySet<string> = new Set([
-    // Every name this library writes itself. The allow-list keeps a leaf by
-    // key name, not by provenance, so a hook field named `category` or
-    // `details` would survive `redactAllow` unmasked. Reserving the whole set
-    // keeps an unknown key data, which is what fail-closed means here.
+    // Every envelope name. The allow-list keeps a leaf by key name and not by
+    // provenance, so a hook field called `category` or `details` would survive
+    // `redactAllow` unmasked. Reserving the whole set keeps an unknown key
+    // data, which is what fail-closed means here. Some of these names the
+    // cause serializer never writes; they are reserved for that reason alone.
     ...BaseError.#ROOT_ENVELOPE_KEYS,
     "errors",
     // A name the runtime owns. Writing it into a plain object routes through
@@ -753,12 +754,6 @@ export class BaseError<T extends string> extends Error {
     "__proto__",
   ]);
 
-  /**
-   * The own fields a node carries: the hook's record with the library's own
-   * key names removed, each value copied as data, cut at the width cap. One
-   * reader for the root and for a cause, so both positions carry the same
-   * fields under the same rules.
-   */
   /**
    * The own enumerable keys of an object, yielded one at a time.
    *
@@ -777,14 +772,11 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Largest number of keys the own-fields reader examines. It sits above
-   * {@link MAX_OWN_LOG_FIELDS} because a reserved name and a value with no
-   * JSON form are skipped without landing, so the reader needs room to pass
-   * them, and it is bounded so that reading and copying cost the cap rather
-   * than the length of the record.
+   * The own fields a node carries: the hook's record with the library's own
+   * key names removed, each value copied as data, cut at the width cap. One
+   * reader for the root and for a cause, so both positions carry the same
+   * fields under the same rules.
    */
-  static readonly #MAX_OWN_LOG_FIELDS_READ = MAX_OWN_LOG_FIELDS * 10;
-
   /*#__PURE__*/ #nodeOwnFields(value: unknown): Record<string, unknown> {
     if (!BaseError.#sameRealm(value)) {
       return {};
@@ -815,17 +807,24 @@ export class BaseError<T extends string> extends Error {
       // cannot make the reading grow with the record.
       for (const key of BaseError.#ownKeysOf(record)) {
         if (taken >= MAX_OWN_LOG_FIELDS) break;
-        if (++seen > BaseError.#MAX_OWN_LOG_FIELDS_READ) break;
+        if (++seen > MAX_OWN_LOG_FIELDS_READ) break;
         if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
         // Read through the guarded reader, so one throwing getter costs its
         // own key and leaves every sibling already collected in place.
-        const data = this.#serializeData(readProperty(record, key));
+        const item = readProperty(record, key);
+        // An error here re-enters the log build through `toJSON`, with no
+        // depth and no seen set, so `{ self: this }` grows without bound. The
+        // contract already forbids it; this is where it is enforced.
+        if (BaseError.#sameRealm(item) || BaseError.#isNativeError(item)) {
+          continue;
+        }
+        const data = this.#serializeData(item);
         if (data === undefined) continue;
         out[key] = data;
         taken++;
       }
     } catch {
-      return out;
+      // A throw mid-enumeration keeps whatever was already collected.
     }
     return out;
   }
@@ -851,17 +850,24 @@ export class BaseError<T extends string> extends Error {
       Object.assign(assembled, own);
       return assembled;
     } catch {
-      // The target refused the write, so a fresh record carries both halves.
-      // Its keys are read one at a time through the guarded reader: a spread
-      // would run every getter on an object an override handed us, and a
-      // throwing one there is the same hazard the write just hit.
-      const merged: Record<string, unknown> = {};
+      // The target refused the write. Fall through and copy instead.
+    }
+    try {
+      // A fresh record carries both halves. Its keys are read one at a time
+      // through the guarded reader, and enumerating them is guarded too: the
+      // object came from an override, so its traps and its getters can throw
+      // exactly as the write just did. Null-prototype, so an own `__proto__`
+      // lands as data instead of routing through a prototype setter.
+      const merged = Object.create(null) as Record<string, unknown>;
       for (const key of BaseError.#ownKeysOf(assembled)) {
         const value = readProperty(assembled, key);
         if (value !== undefined) merged[key] = value;
       }
       return Object.assign(merged, own);
+    } catch {
+      // Nothing about that object can be read. Only what this class knows.
     }
+    return Object.assign(this.#triageLogObject(), own);
   }
 
   /**
@@ -881,12 +887,11 @@ export class BaseError<T extends string> extends Error {
       // An override can return the wrong shape as easily as it can throw: a
       // missing `return` yields undefined, and a primitive would be handed
       // to a caller whose contract says record. Both count as a failure.
-      if (
-        typeof built === "object" &&
-        built !== null &&
-        !Array.isArray(built)
-      ) {
-        return built as Record<string, unknown>;
+      // A record, not merely an object: a `Date`, a `Map` and an array all
+      // pass a `typeof` test and carry nothing this library can read, so
+      // accepting one would erase the error rather than log it.
+      if (BaseError.#isWalkable(built)) {
+        return built;
       }
     } catch {
       // The override failed. Fall through to the envelope it could not reach.
@@ -906,6 +911,16 @@ export class BaseError<T extends string> extends Error {
     } catch {
       // A field of the instance itself throws. Read the rest defensively.
     }
+    return this.#triageLogObject();
+  }
+
+  /**
+   * The last envelope: what this class can read off the instance itself when
+   * everything an override touched has failed. Every read is guarded and every
+   * value is copied as data, so this cannot throw and cannot hand a consumer's
+   * `JSON.stringify` a value it refuses.
+   */
+  /*#__PURE__*/ #triageLogObject(): Record<string, unknown> {
     const triage: Record<string, unknown> = { message: "[log build failed]" };
     for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
       const value = this.#serializeData(readProperty(this, key));

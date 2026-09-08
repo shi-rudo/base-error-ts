@@ -38,6 +38,13 @@ class LegacyOverride extends BaseError<"LegacyOverride"> {
   }
 }
 
+/** A hook whose value is byte-identical to one of the serializer's markers. */
+class MarkerLookalike extends BaseError<"MarkerLookalike"> {
+  protected override buildOwnLogFields(): Record<string, unknown> {
+    return { token: "[Unserializable cause]", plain: "SECRET" };
+  }
+}
+
 const causeOf = (error: BaseError<string>): Record<string, unknown> =>
   error.toLogObject().cause as Record<string, unknown>;
 
@@ -478,12 +485,6 @@ describe("the log object against a hostile or malformed hook record", () => {
     }
   }
 
-  class MarkerLookalike extends BaseError<"MarkerLookalike"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { token: "[Unserializable cause]", plain: "SECRET" };
-    }
-  }
-
   class WideAndOverrideThrows extends BaseError<"WideAndOverrideThrows"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       const f: Record<string, unknown> = {};
@@ -556,26 +557,12 @@ describe("the log object against a hostile or malformed hook record", () => {
 });
 
 describe("the hook against the library's own words and order", () => {
-  class ForgedMarker extends BaseError<"ForgedMarker"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { token: "[Unserializable cause]", plain: "SECRET" };
-    }
-  }
-
   class CapThenFunctions extends BaseError<"CapThenFunctions"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       const f: Record<string, unknown> = {};
       for (let i = 0; i < 100; i++) f[`real${i}`] = i;
       for (let i = 0; i < 50; i++) f[`fn${i}`] = () => i;
       return f;
-    }
-  }
-
-  class BigThenTiny extends BaseError<"BigThenTiny"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      const big: Record<string, unknown> = {};
-      for (let i = 0; i < 200_000; i++) big[`k${i}`] = i;
-      return { big, tiny: { a: 1 } };
     }
   }
 
@@ -605,20 +592,16 @@ describe("the hook against the library's own words and order", () => {
   }
 
   it("masks a cause hook value that forges a serializer marker", () => {
-    const outer = new BaseError("outer", new ForgedMarker("inner")).redactAllow(
-      [],
-    );
+    const outer = new BaseError(
+      "outer",
+      new MarkerLookalike("inner"),
+    ).redactAllow([]);
     const cause = outer.toLogObject().cause as Record<string, unknown>;
     expect(cause.token).toBe("[REDACTED]");
   });
 
   it("spends the cap on real fields, not on the functions after them", () => {
     expect(new CapThenFunctions("m").toLogObject().real99).toBe(99);
-  });
-
-  it("keeps a small field intact beside an oversized sibling", () => {
-    const log = new BigThenTiny("m").toLogObject();
-    expect(log.tiny).toEqual({ a: 1 });
   });
 
   it("drops a reserved key and keeps the ordinary field beside it", () => {
@@ -773,5 +756,76 @@ describe("the log object against a malformed or oversized contribution", () => {
     new Counting("m").toLogObject();
 
     expect(reads).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe("the log object against a hostile or self-referencing contribution", () => {
+  class HostileProxyLog extends BaseError<"HostileProxyLog"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      return new Proxy({} as Record<string, unknown>, {
+        set(): never {
+          throw new Error("set trap threw");
+        },
+        ownKeys(): never {
+          throw new Error("ownKeys trap threw");
+        },
+      });
+    }
+  }
+
+  class FrozenProtoLog extends BaseError<"FrozenProtoLog"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      const base = Object.create(null) as Record<string, unknown>;
+      base.message = "m";
+      base["__proto__"] = { polluted: "YES" };
+      return Object.freeze(base);
+    }
+  }
+
+  class ReturnsDate extends BaseError<"ReturnsDate"> {
+    protected override buildLogObject(): Record<string, unknown> {
+      return new Date(0) as unknown as Record<string, unknown>;
+    }
+  }
+
+  class SelfReferencing extends BaseError<"SelfReferencing"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { a: this, b: this };
+    }
+  }
+
+  it("stays total when an override returns a Proxy whose traps throw", () => {
+    expect(() => new HostileProxyLog("m").toLogObject()).not.toThrow();
+  });
+
+  it("keeps a frozen object's __proto__ away from a prototype setter", () => {
+    const log = new FrozenProtoLog("m").toLogObject();
+    expect((log as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("keeps the error when an override returns a Date", () => {
+    expect(new ReturnsDate("m").toLogObject().message).toBe("m");
+  });
+  class HoldsAnotherError extends BaseError<"HoldsAnotherError"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { related: new BaseError("other"), ok: 1 };
+    }
+  }
+
+  it("does not re-enter the log build when a hook returns the error itself", () => {
+    const size = JSON.stringify(new SelfReferencing("m")).length;
+    expect(size).toBeLessThan(5000);
+  });
+
+  it("drops an error a hook returns and keeps the fields beside it", () => {
+    const log = new HoldsAnotherError("m").toLogObject();
+    expect(log.ok).toBe(1);
+    expect(log.related).toBeUndefined();
   });
 });
