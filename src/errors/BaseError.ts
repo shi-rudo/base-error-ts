@@ -641,11 +641,48 @@ export class BaseError<T extends string> extends Error {
    * an allow-listed, message-free public view.
    */
   public toLogObject(): Record<string, unknown> {
-    const raw = this.buildLogObject();
+    const raw = this.#buildLogObjectTotal();
     if (!this.#redactor) {
       return raw;
     }
     return BaseError.#redactFailClosed(this.#redactor, raw);
+  }
+
+  /**
+   * Assembles the log object under the totality contract of this path.
+   * {@link buildLogObject} is the documented extension point, so a subclass
+   * override runs here, and that override is code this library did not write.
+   * It runs inside `catch`, where a new exception destroys the error that the
+   * caller set out to log.
+   *
+   * The fallback keeps what it can. The envelope this class builds carries
+   * `name`, `message`, `stack` and the bounded cause chain, and no subclass
+   * contributed to it, so a broken override costs its own fields and a marker
+   * names the loss instead of hiding it. When that envelope throws as well, a
+   * field of the instance is hostile, and only the guarded triage envelope
+   * remains.
+   */
+  /*#__PURE__*/ #buildLogObjectTotal(): Record<string, unknown> {
+    try {
+      return this.buildLogObject();
+    } catch {
+      // The override failed. Fall through to the envelope it could not reach.
+    }
+    try {
+      const base = BaseError.prototype.buildLogObject.call(this);
+      base.ownLogFields = "[Own log fields unavailable]";
+      return base;
+    } catch {
+      // A field of the instance itself throws. Read the rest defensively.
+    }
+    const triage: Record<string, unknown> = { message: "[log build failed]" };
+    for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
+      const value = readProperty(this, key);
+      if (value !== undefined) {
+        triage[key] = value;
+      }
+    }
+    return triage;
   }
 
   /**
