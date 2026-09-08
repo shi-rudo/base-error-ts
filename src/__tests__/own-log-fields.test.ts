@@ -650,3 +650,80 @@ describe("the hook against the library's own words and order", () => {
     expect(err.toLogObject().ownLogFields).toBe("[Own log fields unavailable]");
   });
 });
+
+describe("the log object against a malformed subclass override", () => {
+  class ReturnsNothing extends BaseError<"ReturnsNothing"> {
+    protected override buildLogObject(): Record<string, unknown> {
+      return undefined as unknown as Record<string, unknown>;
+    }
+  }
+
+  class ReturnsFrozen extends BaseError<"ReturnsFrozen"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      return Object.freeze({ ...super.buildLogObject() });
+    }
+  }
+
+  class ReturnsString extends BaseError<"ReturnsString"> {
+    protected override buildLogObject(): Record<string, unknown> {
+      return "nope" as unknown as Record<string, unknown>;
+    }
+  }
+
+  class OneHostileKey extends BaseError<"OneHostileKey"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return {
+        a: 1,
+        get boom(): never {
+          throw new Error("getter threw");
+        },
+        b: 2,
+      };
+    }
+  }
+
+  class HostileMarkerKey extends BaseError<"HostileMarkerKey"> {
+    protected override buildLogObject(): Record<string, unknown> {
+      const base = super.buildLogObject();
+      Object.defineProperty(base, "logObjectOverride", {
+        get(): never {
+          throw new Error("marker getter threw");
+        },
+        enumerable: true,
+      });
+      return base;
+    }
+  }
+
+  it("stays total when an override returns nothing", () => {
+    expect(() => new ReturnsNothing("m").toLogObject()).not.toThrow();
+  });
+
+  it("stays total and keeps the hook fields when an override returns a frozen object", () => {
+    const err = new ReturnsFrozen("m");
+    expect(() => err.toLogObject()).not.toThrow();
+    expect(err.toLogObject().jobId).toBe("J");
+  });
+
+  it("returns a record when an override returns a primitive", () => {
+    const log = new ReturnsString("m").toLogObject();
+    expect(typeof log).toBe("object");
+    expect(log.message).toBe("m");
+  });
+
+  it("costs one hostile key its own entry and keeps its siblings", () => {
+    const log = new OneHostileKey("m").toLogObject();
+    expect(log.a).toBe(1);
+    expect(log.b).toBe(2);
+  });
+
+  it("stays total when a marker getter throws on the fail-closed path", () => {
+    const err = new HostileMarkerKey("m").redactWith(() => {
+      throw new Error("redactor threw");
+    });
+    expect(() => err.toLogObject()).not.toThrow();
+  });
+});

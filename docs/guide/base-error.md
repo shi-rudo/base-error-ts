@@ -110,9 +110,9 @@ bounded:
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
 | Must not walk a chain or log another error | The enclosing bounds hold by construction |
-| The library's own keys win | A returned key that carries a name this library writes is dropped. The declaration of `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts` owns that list |
-| At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The remainder is named by `ownLogFields: "[More log fields]"`, without a count, because the reader stops at the cap. Under `redactAllow` that marker is data at the root and is masked; on a cause it stays readable |
-| A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain, and `ownLogFields` names the loss |
+| The library's own keys win | A returned key that carries a name this library writes is dropped, silently and without a marker. That list is the envelope names, `code`, `category`, `retryable`, `details`, `timestamp`, `timestampIso`, `name`, `message`, `stack`, `cause` and `errors`, plus the keys the serializer writes its own markers to. Its declaration, `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts`, owns the list. Name a field something else if it collides |
+| At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The cut is named by `ownLogFields: "[More log fields]"`. It carries no count and means the cap was reached, not that a known number of fields was lost, because the reader stops at the cap instead of reading a record of any size to the end. Under `redactAllow` that marker is data at the root and is masked; on a cause it stays readable |
+| A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain, and `ownLogFields` names the loss. One throwing getter inside the record costs only its own key |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
 
 Everything returned here is logged wherever this error is logged. It is the

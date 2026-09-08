@@ -696,8 +696,8 @@ export class BaseError<T extends string> extends Error {
    * - it must not walk a cause chain and must not log another error;
    * - every key that carries a name this library writes is dropped rather
    *   than obeyed, and {@link BaseError.#RESERVED_NODE_KEYS} is the list;
-   * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields and
-   *   names the remainder, and they share one node budget;
+   * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
+   *   past that the reader stops and names the cut without a count;
    * - a throw, or a return that is not a record, costs these fields and never
    *   the node, and names the loss;
    * - every value is copied as data at the root and on a cause alike (see
@@ -754,9 +754,10 @@ export class BaseError<T extends string> extends Error {
     // `details` would survive `redactAllow` unmasked. Reserving the whole set
     // keeps an unknown key data, which is what fail-closed means here.
     ...BaseError.#ROOT_ENVELOPE_KEYS,
-    "errors",
-    "ownLogFields",
-    "logObjectOverride",
+    // Every key the serializer writes a marker to is reserved by derivation,
+    // so the two sets cannot drift: a marker key a hook could write would let
+    // it forge a statement this library never made.
+    ...BaseError.#MARKER_KEYS,
     // A name the runtime owns. Writing it into a plain object routes through
     // a prototype setter instead of adding a field.
     "__proto__",
@@ -783,7 +784,14 @@ export class BaseError<T extends string> extends Error {
       // or its prototype throws. All of that stays inside this one try, so a
       // hostile record costs these fields and never the node.
       const fields: unknown = value.#ownLogFields();
-      if (!BaseError.#isWalkable(fields)) {
+      // A record, not "something the redaction walker would descend into":
+      // a Map or a class instance with no own enumerable keys contributes
+      // nothing, which is an empty contribution and not a failure.
+      if (
+        typeof fields !== "object" ||
+        fields === null ||
+        Array.isArray(fields)
+      ) {
         return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
       }
       let taken = 0;
@@ -796,18 +804,24 @@ export class BaseError<T extends string> extends Error {
       // which is why the marker names no count.
       for (const key of Object.keys(record)) {
         if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
+        // Read through the guarded reader, so one throwing getter costs its
+        // own key and leaves every sibling already collected in place.
+        const item = readProperty(record, key);
         if (taken >= MAX_OWN_LOG_FIELDS) {
-          if (++looked > MAX_OWN_LOG_FIELDS) {
+          // A cheap probe: these are exactly the values with no JSON form,
+          // so it answers "would anything have been logged" without paying
+          // for a round-trip whose result is thrown away.
+          if (item !== undefined && typeof item !== "function") {
             capped = true;
             break;
           }
-          if (this.#serializeData(record[key]) !== undefined) {
+          if (++looked > MAX_OWN_LOG_FIELDS) {
             capped = true;
             break;
           }
           continue;
         }
-        const data = this.#serializeData(record[key]);
+        const data = this.#serializeData(item);
         // A value with no JSON form contributes nothing, so it spends no part
         // of the cap either; otherwise a record of functions reports the one
         // real field beside them as cut.
@@ -825,27 +839,28 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Assembles the log object under the totality contract of this path.
-   * {@link buildLogObject} is the documented extension point, so a subclass
-   * override runs here, and that override is code this library did not write.
-   * It runs inside `catch`, where a new exception destroys the error that the
-   * caller set out to log.
-   *
-   * The fallback keeps what it can. The envelope this class builds carries
-   * `name`, `message`, `stack` and the bounded cause chain, and no subclass
-   * contributed to it, so a broken override costs its own fields and a marker
-   * names the loss instead of hiding it. When that envelope throws as well, a
-   * field of the instance is hostile, and only the guarded triage envelope
-   * remains.
+   * The complete log object before redaction: the envelope the subclass chain
+   * assembled, with this error's own log fields written over it. Both halves
+   * are produced under their own guard, and the write between them is guarded
+   * too, so nothing on this path throws.
    */
   /*#__PURE__*/ #buildLogObjectTotal(): Record<string, unknown> {
     const assembled = this.#assembleLogObject();
+    const own = this.#nodeOwnFields(this);
     // Applied once, on whatever the subclass chain produced, so the hook runs
     // exactly once per log object however many overrides sit above it, and
     // its fields land after every field a class declares for itself. A
     // responder still greps `code` near the front of the line.
-    Object.assign(assembled, this.#nodeOwnFields(this));
-    return assembled;
+    //
+    // Guarded, because the target came from an override: a frozen or sealed
+    // object rejects the write, and a write is the last thing on this path
+    // that could still throw. A fresh record then carries both halves.
+    try {
+      Object.assign(assembled, own);
+      return assembled;
+    } catch {
+      return { ...assembled, ...own };
+    }
   }
 
   /**
@@ -862,7 +877,13 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ #assembleLogObject(): Record<string, unknown> {
     try {
-      return this.buildLogObject();
+      const built: unknown = this.buildLogObject();
+      // An override can return the wrong shape as easily as it can throw: a
+      // missing `return` yields undefined, and a primitive would be handed
+      // to a caller whose contract says record. Both count as a failure.
+      if (typeof built === "object" && built !== null) {
+        return built as Record<string, unknown>;
+      }
     } catch {
       // The override failed. Fall through to the envelope it could not reach.
     }
@@ -917,16 +938,17 @@ export class BaseError<T extends string> extends Error {
       const safe: Record<string, unknown> = {
         message: "[log redaction failed]",
       };
+      // Guarded reads: `raw` came from a subclass override, so a getter on it
+      // can throw, and this is the one path that must never throw.
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-        if (Object.prototype.hasOwnProperty.call(raw, key)) {
-          safe[key] = raw[key];
-        }
+        const value = readProperty(raw, key);
+        if (value !== undefined) safe[key] = value;
       }
       // A failure of the hook or of a subclass override is a statement this
       // library made about its own output, not payload, and it is exactly
       // what a reader needs when a second thing has failed on top of it.
       for (const key of BaseError.#MARKER_KEYS) {
-        const value = raw[key];
+        const value = readProperty(raw, key);
         if (isSerializerMarker(value)) safe[key] = value;
       }
       return safe;
@@ -942,7 +964,12 @@ export class BaseError<T extends string> extends Error {
   /*#__PURE__*/ static #redactorOf(
     value: unknown,
   ): ((log: Record<string, unknown>) => Record<string, unknown>) | undefined {
-    return BaseError.#sameRealm(value) ? value.#redactor : undefined;
+    if (!BaseError.#sameRealm(value)) return undefined;
+    try {
+      return value.#redactor;
+    } catch {
+      return undefined;
+    }
   }
 
   /**
