@@ -179,16 +179,17 @@ describe("a cause's own log fields", () => {
     expect(JSON.stringify(outer)).not.toContain("SECRET-TOKEN");
   });
 
-  it("counts a hook's fields against a width cap and marks the remainder", () => {
-    class WideHook extends BaseError<"WideHook"> {
-      protected override buildOwnLogFields(): Record<string, unknown> {
-        const fields: Record<string, unknown> = {};
-        for (let index = 0; index < 150; index++) {
-          fields[`f${index}`] = index;
-        }
-        return fields;
+  class WideHook extends BaseError<"WideHook"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const fields: Record<string, unknown> = {};
+      for (let index = 0; index < 150; index++) {
+        fields[`f${index}`] = index;
       }
+      return fields;
     }
+  }
+
+  it("counts a hook's fields against a width cap and marks the remainder", () => {
     const cause = causeOf(new BaseError("outer", new WideHook("inner")));
 
     expect(cause.f0).toBe(0);
@@ -198,15 +199,6 @@ describe("a cause's own log fields", () => {
   });
 
   it("applies the same width cap at the root", () => {
-    class WideHook extends BaseError<"WideHook"> {
-      protected override buildOwnLogFields(): Record<string, unknown> {
-        const fields: Record<string, unknown> = {};
-        for (let index = 0; index < 150; index++) {
-          fields[`f${index}`] = index;
-        }
-        return fields;
-      }
-    }
     const log = new WideHook("inner").toLogObject();
 
     expect(log.f99).toBe(99);
@@ -468,10 +460,14 @@ describe("the log object when a subclass hook or override fails", () => {
     expect(cause.ownLogFields).toBe("[Own log fields unavailable]");
   });
 
-  it("keeps the width marker readable at the root under an allow list", () => {
+  it("masks the width marker at the root and keeps it readable on a cause", () => {
     expect(new Wide("w").redactAllow([]).toLogObject().ownLogFields).toBe(
-      "[50 more log fields]",
+      "[REDACTED]",
     );
+
+    const outer = new BaseError("outer", new Wide("inner")).redactAllow([]);
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+    expect(cause.ownLogFields).toBe("[50 more log fields]");
   });
 
   it("keeps a __proto__ key from a hook away from a prototype setter", () => {
@@ -479,5 +475,97 @@ describe("the log object when a subclass hook or override fails", () => {
     expect(Object.getPrototypeOf(log)).toBe(Object.prototype);
     expect(log.ok).toBe(1);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe("the log object against a hostile or malformed hook record", () => {
+  class HostileRecord extends BaseError<"HostileRecord"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return {
+        ok: 1,
+        get boom(): never {
+          throw new Error("getter threw");
+        },
+      };
+    }
+  }
+
+  class MarkerLookalike extends BaseError<"MarkerLookalike"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { token: "[Unserializable cause]", plain: "SECRET" };
+    }
+  }
+
+  class WideAndOverrideThrows extends BaseError<"WideAndOverrideThrows"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 150; i++) f[`f${i}`] = i;
+      return f;
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      throw new Error("override threw");
+    }
+  }
+
+  class FunctionFields extends BaseError<"FunctionFields"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 100; i++) f[`fn${i}`] = () => i;
+      f.real = "KEEP-ME";
+      return f;
+    }
+  }
+
+  class NotARecord extends BaseError<"NotARecord"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return ["a", "b"] as unknown as Record<string, unknown>;
+    }
+  }
+
+  class Ordered extends BaseError<"Ordered"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+  }
+
+  it("costs the fields, not the log, when a getter in the record throws", () => {
+    const log = new HostileRecord("m").toLogObject();
+    expect(log.message).toBe("m");
+    expect(typeof log.stack).toBe("string");
+  });
+
+  it("costs the fields, not the node, when a cause record getter throws", () => {
+    const outer = new BaseError("outer", new HostileRecord("inner"));
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+    expect(cause.message).toBe("inner");
+  });
+
+  it("masks a hook value that merely looks like a serializer marker", () => {
+    const json = JSON.stringify(
+      new MarkerLookalike("m").redactAllow([]).toLogObject(),
+    );
+    expect(json).not.toContain("[Unserializable cause]");
+  });
+
+  it("names a failed override even when the hook already made a statement", () => {
+    const log = new WideAndOverrideThrows("m").toLogObject();
+    expect(log.ownLogFields).toBe("[50 more log fields]");
+    expect(log.logObjectOverride).toBe("[Log object override failed]");
+  });
+
+  it("spends the width cap only on fields that reach the log object", () => {
+    const log = new FunctionFields("m").toLogObject();
+    expect(log.real).toBe("KEEP-ME");
+    expect(log.ownLogFields).toBeUndefined();
+  });
+
+  it("names the loss when a hook returns something that is not a record", () => {
+    expect(new NotARecord("m").toLogObject().ownLogFields).toBe(
+      "[Own log fields unavailable]",
+    );
+  });
+
+  it("keeps name first in the root log object of a subclass with a hook", () => {
+    expect(Object.keys(new Ordered("m").toLogObject())[0]).toBe("name");
   });
 });

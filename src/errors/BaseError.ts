@@ -1,4 +1,5 @@
 import {
+  isInstanceOf,
   readMembers,
   readProperty,
   type AggregateMembers,
@@ -542,7 +543,7 @@ export class BaseError<T extends string> extends Error {
     value: unknown,
     region: RedactRegion,
   ): boolean {
-    return region !== "data" && isSerializerMarker(value);
+    return region === "cause" && isSerializerMarker(value);
   }
 
   /**
@@ -611,13 +612,6 @@ export class BaseError<T extends string> extends Error {
     const cause = ownProperties.cause;
 
     const json: Record<string, unknown> = {
-      // The library's own envelope is written after the subclass fields, so a
-      // hook cannot forge `name`, `stack` or the bounded links. The same rule
-      // holds at a cause node (see #serializeCauseNode), so one contract
-      // covers both positions.
-      ...BaseError.#nodeOwnFields(this, (item, budget) =>
-        this.#serializeData(item, budget),
-      ),
       name,
       message, // The original technical message
       timestamp,
@@ -625,6 +619,17 @@ export class BaseError<T extends string> extends Error {
       stack,
       cause: this.#serializeCause(cause, new Set(), 0),
     };
+
+    // Written after the envelope, so the reader still sees name and message
+    // first. A hook cannot forge an envelope key or a bounded link because
+    // #RESERVED_NODE_KEYS drops every name this library writes, which is the
+    // same protection a cause node uses (see #serializeCauseNode).
+    Object.assign(
+      json,
+      BaseError.#nodeOwnFields(this, (item, budget) =>
+        this.#serializeData(item, budget),
+      ),
+    );
 
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
@@ -688,6 +693,10 @@ export class BaseError<T extends string> extends Error {
    * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields and
    *   names the remainder, and they share one node budget;
    * - a throw costs these fields and never the node, and names the loss;
+   * - it may run more than once for one log object: when a subclass's
+   *   {@link buildLogObject} override throws, the fallback builds the base
+   *   envelope again, which calls this hook a second time. Keep it free of
+   *   side effects, as a method that only describes its own error is;
    * - every value is copied as data at the root and on a cause alike (see
    *   {@link BaseError.#serializeData}), so the log shares no reference with
    *   the error. That copy is a JSON round-trip: a `Date` becomes its ISO
@@ -720,8 +729,8 @@ export class BaseError<T extends string> extends Error {
    * reported as one whose hook failed.
    */
   /*#__PURE__*/ static #isOwnRealm(value: unknown): value is BaseError<string> {
+    if (!isInstanceOf(value, BaseError)) return false;
     try {
-      if (!(value instanceof BaseError)) return false;
       // A Proxy passes `instanceof` and fails the private access, so this is
       // the brand, and it is read apart from the hook: an unreachable error
       // has no fields to lose, while a throwing hook does.
@@ -744,6 +753,7 @@ export class BaseError<T extends string> extends Error {
     ...BaseError.#ROOT_ENVELOPE_KEYS,
     "errors",
     "ownLogFields",
+    "logObjectOverride",
     // A name the runtime owns. Writing it into a plain object routes through
     // a prototype setter instead of adding a field.
     "__proto__",
@@ -762,35 +772,42 @@ export class BaseError<T extends string> extends Error {
     if (!BaseError.#isOwnRealm(value)) {
       return {};
     }
-    let fields: unknown;
-    try {
-      fields = value.#ownLogFields();
-    } catch {
-      // The hook is consumer code. Name the loss the same way the wide hook's
-      // guard does, so it is visible on the path this library recommends.
-      return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
-    }
-    if (!BaseError.#isWalkable(fields)) {
-      return {};
-    }
-    // One budget for the whole node, not one per field: the width cap bounds
-    // how many fields a node carries, and this bounds the work they cost.
-    const budget = { nodes: 0 };
     // Null-prototype target, so an own `__proto__` from a hook is copied as
     // ordinary data instead of routing through a prototype setter. Matches
     // the clone target of the redaction walker.
     const out = Object.create(null) as Record<string, unknown>;
-    let taken = 0;
     let dropped = 0;
-    for (const [key, item] of Object.entries(fields)) {
-      if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
-      if (taken >= MAX_OWN_LOG_FIELDS) {
-        dropped++;
-        continue;
+    try {
+      // The record is foreign data, not just the call that produced it: a
+      // getter on it throws, a Proxy trap on it throws, and reading its keys
+      // or its prototype throws. All of that stays inside this one try, so a
+      // hostile record costs these fields and never the node.
+      const fields: unknown = value.#ownLogFields();
+      if (!BaseError.#isWalkable(fields)) {
+        // A hook that returns something that is not a record contributed
+        // nothing readable. Name it, like every other loss on this path.
+        return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
       }
-      const data = copy(item, budget);
-      if (data !== undefined) out[key] = data;
-      taken++;
+      // One budget for the whole node, not one per field: the width cap
+      // bounds how many fields a node carries, and this bounds their cost.
+      const budget = { nodes: 0 };
+      let taken = 0;
+      for (const [key, item] of Object.entries(fields)) {
+        if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
+        if (taken >= MAX_OWN_LOG_FIELDS) {
+          dropped++;
+          continue;
+        }
+        const data = copy(item, budget);
+        // A value with no JSON form contributes nothing, so it must not spend
+        // the cap either; otherwise a record of functions reports the one
+        // real field as dropped.
+        if (data === undefined) continue;
+        out[key] = data;
+        taken++;
+      }
+    } catch {
+      return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
     }
     if (dropped > 0) {
       out.ownLogFields = moreOwnLogFieldsMarker(dropped);
@@ -826,23 +843,20 @@ export class BaseError<T extends string> extends Error {
       const base = BaseError.prototype.buildLogObject.call(this);
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
         if (base[key] !== undefined) continue;
-        const value = readProperty(this, key);
+        const value = this.#serializeData(readProperty(this, key));
         if (value !== undefined) base[key] = value;
       }
-      // The base envelope already ran the narrow hook, so its own statement
-      // about those fields stands. Only an absent one is filled in, and with
-      // its own marker: what failed here is the subclass's log-object
-      // override, not the hook.
-      if (base.ownLogFields === undefined) {
-        base.ownLogFields = FAILED_LOG_OBJECT_OVERRIDE_MARKER;
-      }
+      // Its own key, not the hook's: the two failures are different facts and
+      // one must not shadow the other. `ownLogFields` stays the hook's
+      // statement, which the base envelope has already made.
+      base.logObjectOverride = FAILED_LOG_OBJECT_OVERRIDE_MARKER;
       return base;
     } catch {
       // A field of the instance itself throws. Read the rest defensively.
     }
     const triage: Record<string, unknown> = { message: "[log build failed]" };
     for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-      const value = readProperty(this, key);
+      const value = this.#serializeData(readProperty(this, key));
       if (value !== undefined) {
         triage[key] = value;
       }
