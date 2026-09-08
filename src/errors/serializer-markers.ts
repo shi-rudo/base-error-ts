@@ -20,9 +20,12 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
-/** The tail of a node's own fields cut at the width cap. */
-export function moreOwnLogFieldsMarker(dropped: number): string {
-  return `[${dropped} more log fields]`;
+/**
+ * A node's own fields cut at the width cap. It names no count on purpose: the
+ * reader stops at the cap, so it never learns how many fields are left.
+ */
+export function moreOwnLogFieldsMarker(): string {
+  return "[More log fields]";
 }
 
 /** A node whose own log fields could not be produced, because the hook threw. */
@@ -47,7 +50,7 @@ const SERIALIZER_MARKER = new RegExp(
     .join("|")}|${escapeForRegExp(moreAggregatedErrorsMarker(0)).replace(
     "0",
     "\\d+",
-  )}|${escapeForRegExp(moreOwnLogFieldsMarker(0)).replace("0", "\\d+")})$`,
+  )}|${escapeForRegExp(moreOwnLogFieldsMarker())})$`,
 );
 
 /**

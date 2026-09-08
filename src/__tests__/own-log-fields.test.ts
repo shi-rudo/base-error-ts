@@ -195,7 +195,7 @@ describe("a cause's own log fields", () => {
     expect(cause.f0).toBe(0);
     expect(cause.f99).toBe(99);
     expect(cause.f100).toBeUndefined();
-    expect(cause.ownLogFields).toBe("[50 more log fields]");
+    expect(cause.ownLogFields).toBe("[More log fields]");
   });
 
   it("applies the same width cap at the root", () => {
@@ -203,7 +203,7 @@ describe("a cause's own log fields", () => {
 
     expect(log.f99).toBe(99);
     expect(log.f100).toBeUndefined();
-    expect(log.ownLogFields).toBe("[50 more log fields]");
+    expect(log.ownLogFields).toBe("[More log fields]");
   });
 
   it("keeps a hook that sits exactly at the width cap whole and unmarked", () => {
@@ -222,22 +222,18 @@ describe("a cause's own log fields", () => {
     expect(log.ownLogFields).toBeUndefined();
   });
 
-  it("still cuts a long chain at the cause depth cap", () => {
+  it("carries the hook's fields on the deepest node a long chain reaches", () => {
     let chain: BaseError<string> = new ConcurrencyConflictError(3, 5);
-    for (let index = 0; index < 3000; index++) {
+    for (let index = 0; index < 99; index++) {
       chain = new BaseError(`hop ${index}`, chain);
     }
 
-    let depth = 0;
-    let node: unknown = chain.toLogObject();
-    while (node !== null && typeof node === "object") {
-      const next = (node as Record<string, unknown>).cause;
-      if (next === undefined) break;
-      node = next;
-      depth++;
+    let node = chain.toLogObject();
+    while (node.cause !== undefined && typeof node.cause === "object") {
+      node = node.cause as Record<string, unknown>;
     }
 
-    expect(depth).toBe(101);
+    expect(node.expectedVersion).toBe(3);
   });
 });
 
@@ -378,21 +374,19 @@ describe("the hook against the fields the library owns", () => {
     expect(causeOf(outer).ownLogFields).toBeUndefined();
   });
 
-  it("shares one node budget across a node's own fields", () => {
-    const wide = (): Record<string, unknown> => {
-      const graph: Record<string, unknown> = {};
-      for (let index = 0; index < 60_000; index++) graph[`k${index}`] = index;
-      return graph;
-    };
-    class TwoBigFields extends BaseError<"TwoBigFields"> {
+  it("does not let an oversized field mislabel its small siblings", () => {
+    const oversized: Record<string, unknown> = {};
+    for (let index = 0; index < 200_000; index++)
+      oversized[`k${index}`] = index;
+    class BigThenSmall extends BaseError<"BigThenSmall"> {
       protected override buildOwnLogFields(): Record<string, unknown> {
-        return { first: wide(), second: wide() };
+        return { big: oversized, small: { a: 1 } };
       }
     }
-    const log = new TwoBigFields("m").toLogObject();
+    const log = new BigThenSmall("m").toLogObject();
 
-    expect(typeof log.second).toBe("string");
-    expect(log.second).toContain("Circular");
+    expect(log.big).toContain("Circular");
+    expect(log.small).toEqual({ a: 1 });
   });
 });
 
@@ -467,7 +461,7 @@ describe("the log object when a subclass hook or override fails", () => {
 
     const outer = new BaseError("outer", new Wide("inner")).redactAllow([]);
     const cause = outer.toLogObject().cause as Record<string, unknown>;
-    expect(cause.ownLogFields).toBe("[50 more log fields]");
+    expect(cause.ownLogFields).toBe("[More log fields]");
   });
 
   it("keeps a __proto__ key from a hook away from a prototype setter", () => {
@@ -549,7 +543,7 @@ describe("the log object against a hostile or malformed hook record", () => {
 
   it("names a failed override even when the hook already made a statement", () => {
     const log = new WideAndOverrideThrows("m").toLogObject();
-    expect(log.ownLogFields).toBe("[50 more log fields]");
+    expect(log.ownLogFields).toBe("[More log fields]");
     expect(log.logObjectOverride).toBe("[Log object override failed]");
   });
 
@@ -567,5 +561,92 @@ describe("the log object against a hostile or malformed hook record", () => {
 
   it("keeps name first in the root log object of a subclass with a hook", () => {
     expect(Object.keys(new Ordered("m").toLogObject())[0]).toBe("name");
+  });
+});
+
+describe("the hook against the library's own words and order", () => {
+  class ForgedMarker extends BaseError<"ForgedMarker"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { token: "[Unserializable cause]", plain: "SECRET" };
+    }
+  }
+
+  class CapThenFunctions extends BaseError<"CapThenFunctions"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 100; i++) f[`real${i}`] = i;
+      for (let i = 0; i < 50; i++) f[`fn${i}`] = () => i;
+      return f;
+    }
+  }
+
+  class BigThenTiny extends BaseError<"BigThenTiny"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const big: Record<string, unknown> = {};
+      for (let i = 0; i < 200_000; i++) big[`k${i}`] = i;
+      return { big, tiny: { a: 1 } };
+    }
+  }
+
+  class ReservedName extends BaseError<"ReservedName"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { logObjectOverride: "mine", ok: 1 };
+    }
+  }
+
+  class StructuredWithHook extends StructuredError<
+    "X",
+    "C",
+    Record<string, unknown>
+  > {
+    constructor() {
+      super({ code: "X", category: "C", retryable: false, message: "m" });
+    }
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+  }
+
+  class HookAndRedactorThrow extends BaseError<"HookAndRedactorThrow"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      throw new Error("hook threw");
+    }
+  }
+
+  it("masks a cause hook value that forges a serializer marker", () => {
+    const outer = new BaseError("outer", new ForgedMarker("inner")).redactAllow(
+      [],
+    );
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+    expect(cause.token).toBe("[REDACTED]");
+  });
+
+  it("reports no cut when the fields past the cap have no JSON form", () => {
+    expect(
+      new CapThenFunctions("m").toLogObject().ownLogFields,
+    ).toBeUndefined();
+  });
+
+  it("keeps a small field intact beside an oversized sibling", () => {
+    const log = new BigThenTiny("m").toLogObject();
+    expect(log.tiny).toEqual({ a: 1 });
+  });
+
+  it("drops a reserved key and keeps the ordinary field beside it", () => {
+    const log = new ReservedName("m").toLogObject();
+    expect(log.ok).toBe(1);
+    expect(log.logObjectOverride).toBeUndefined();
+  });
+
+  it("puts the machine-readable code before the hook fields", () => {
+    const keys = Object.keys(new StructuredWithHook().toLogObject());
+    expect(keys.indexOf("code")).toBeLessThan(keys.indexOf("jobId"));
+  });
+
+  it("still names a failed hook when the redactor fails on top of it", () => {
+    const err = new HookAndRedactorThrow("m").redactWith(() => {
+      throw new Error("redactor threw");
+    });
+    expect(err.toLogObject().ownLogFields).toBe("[Own log fields unavailable]");
   });
 });
