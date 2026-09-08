@@ -10,6 +10,8 @@ import {
   isSerializerMarker,
   moreAggregatedErrorsMarker,
   moreOwnLogFieldsMarker,
+  UNAVAILABLE_OWN_LOG_FIELDS_MARKER,
+  FAILED_LOG_OBJECT_OVERRIDE_MARKER,
 } from "./serializer-markers.js";
 import {
   MAX_AGGREGATE_MEMBERS,
@@ -540,7 +542,7 @@ export class BaseError<T extends string> extends Error {
     value: unknown,
     region: RedactRegion,
   ): boolean {
-    return region === "cause" && isSerializerMarker(value);
+    return region !== "data" && isSerializerMarker(value);
   }
 
   /**
@@ -679,11 +681,19 @@ export class BaseError<T extends string> extends Error {
    * - it takes no arguments, so an error cannot describe itself differently
    *   depending on where it sits in a chain;
    * - it must not walk a cause chain and must not log another error;
-   * - the library's own envelope keys win, so a returned `name`, `message`,
-   *   `stack`, `cause` or `errors` is dropped rather than obeyed;
-   * - a throw costs these fields and never the node;
-   * - on a cause node every value is copied as data (see {@link
-   *   BaseError.#serializeData}), so the log shares no reference with the error.
+   * - every key that carries a name this library writes is dropped rather
+   *   than obeyed: `name`, `message`, `stack`, `code`, `category`,
+   *   `retryable`, `timestamp`, `timestampIso`, `details`, `cause`, `errors`
+   *   and `ownLogFields`, plus `__proto__`, which the runtime owns;
+   * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields and
+   *   names the remainder, and they share one node budget;
+   * - a throw costs these fields and never the node, and names the loss;
+   * - every value is copied as data at the root and on a cause alike (see
+   *   {@link BaseError.#serializeData}), so the log shares no reference with
+   *   the error. That copy is a JSON round-trip: a `Date` becomes its ISO
+   *   string, a `Map` or `Set` becomes `{}`, and a bigint becomes its decimal
+   *   string. Values passed through untouched when the same fields were added
+   *   by overriding {@link buildLogObject}.
    *
    * Everything returned here is logged wherever this error is logged. Treat it
    * as the place to put identifiers, not payloads.
@@ -703,10 +713,11 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * The own log fields of `value`, when `value` is a BaseError of this realm
-   * that yields a plain record. A throwing hook, a foreign error and a Proxy
-   * all read as absent, so a broken or unreachable hook costs these fields and
-   * nothing else.
+   * Whether `value` is a BaseError of this realm, reachable as one. A
+   * cross-realm instance fails `instanceof` and a Proxy fails the private
+   * access, so each reads as an error this library cannot ask for its own
+   * fields. Probed apart from the hook call, so an unreachable error is not
+   * reported as one whose hook failed.
    */
   /*#__PURE__*/ static #isOwnRealm(value: unknown): value is BaseError<string> {
     try {
@@ -733,6 +744,9 @@ export class BaseError<T extends string> extends Error {
     ...BaseError.#ROOT_ENVELOPE_KEYS,
     "errors",
     "ownLogFields",
+    // A name the runtime owns. Writing it into a plain object routes through
+    // a prototype setter instead of adding a field.
+    "__proto__",
   ]);
 
   /**
@@ -754,7 +768,7 @@ export class BaseError<T extends string> extends Error {
     } catch {
       // The hook is consumer code. Name the loss the same way the wide hook's
       // guard does, so it is visible on the path this library recommends.
-      return { ownLogFields: "[Own log fields unavailable]" };
+      return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
     }
     if (!BaseError.#isWalkable(fields)) {
       return {};
@@ -762,7 +776,10 @@ export class BaseError<T extends string> extends Error {
     // One budget for the whole node, not one per field: the width cap bounds
     // how many fields a node carries, and this bounds the work they cost.
     const budget = { nodes: 0 };
-    const out: Record<string, unknown> = {};
+    // Null-prototype target, so an own `__proto__` from a hook is copied as
+    // ordinary data instead of routing through a prototype setter. Matches
+    // the clone target of the redaction walker.
+    const out = Object.create(null) as Record<string, unknown>;
     let taken = 0;
     let dropped = 0;
     for (const [key, item] of Object.entries(fields)) {
@@ -802,8 +819,23 @@ export class BaseError<T extends string> extends Error {
       // The override failed. Fall through to the envelope it could not reach.
     }
     try {
+      // The base envelope skips the whole subclass chain, so the structural
+      // fields a subclass declares are read from the instance, exactly as the
+      // triage envelope below reads them. Without this the milder failure
+      // loses the machine-readable code that the worse one keeps.
       const base = BaseError.prototype.buildLogObject.call(this);
-      base.ownLogFields = "[Own log fields unavailable]";
+      for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
+        if (base[key] !== undefined) continue;
+        const value = readProperty(this, key);
+        if (value !== undefined) base[key] = value;
+      }
+      // The base envelope already ran the narrow hook, so its own statement
+      // about those fields stands. Only an absent one is filled in, and with
+      // its own marker: what failed here is the subclass's log-object
+      // override, not the hook.
+      if (base.ownLogFields === undefined) {
+        base.ownLogFields = FAILED_LOG_OBJECT_OVERRIDE_MARKER;
+      }
       return base;
     } catch {
       // A field of the instance itself throws. Read the rest defensively.

@@ -59,10 +59,10 @@ describe("toLogObject() against a throwing subclass override", () => {
     expect(cause.message).toBe("stale version");
   });
 
-  it("marks the log object so the missing fields are visible, not silent", () => {
+  it("names the failed override, apart from a failure of the narrow hook", () => {
     const log = new ThrowingOverride("write failed").toLogObject();
 
-    expect(log.ownLogFields).toBe("[Own log fields unavailable]");
+    expect(log.ownLogFields).toBe("[Log object override failed]");
   });
 
   it("keeps JSON.stringify total, which is where a logger meets the error", () => {

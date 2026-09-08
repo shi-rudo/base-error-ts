@@ -25,6 +25,12 @@ export function moreOwnLogFieldsMarker(dropped: number): string {
   return `[${dropped} more log fields]`;
 }
 
+/** A node whose own log fields could not be produced, because the hook threw. */
+export const UNAVAILABLE_OWN_LOG_FIELDS_MARKER = "[Own log fields unavailable]";
+
+/** A node whose subclass log-object override threw; the base envelope stands in. */
+export const FAILED_LOG_OBJECT_OVERRIDE_MARKER = "[Log object override failed]";
+
 function escapeForRegExp(literal: string): string {
   return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -34,6 +40,8 @@ const SERIALIZER_MARKER = new RegExp(
     CIRCULAR_CAUSE_CHAIN_MARKER,
     MAX_CAUSE_DEPTH_MARKER,
     UNSERIALIZABLE_CAUSE_MARKER,
+    UNAVAILABLE_OWN_LOG_FIELDS_MARKER,
+    FAILED_LOG_OBJECT_OVERRIDE_MARKER,
   ]
     .map(escapeForRegExp)
     .join("|")}|${escapeForRegExp(moreAggregatedErrorsMarker(0)).replace(

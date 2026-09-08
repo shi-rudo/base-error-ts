@@ -403,3 +403,81 @@ describe("the hook against the fields the library owns", () => {
     expect(log.second).toContain("Circular");
   });
 });
+
+describe("the log object when a subclass hook or override fails", () => {
+  class StructuredWideThrows extends StructuredError<
+    "CONFLICT",
+    "C",
+    Record<string, unknown>
+  > {
+    constructor() {
+      super({ code: "CONFLICT", category: "C", retryable: true, message: "m" });
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      throw new Error("wide override threw");
+    }
+  }
+
+  class WideThrowsHookWorks extends BaseError<"WideThrowsHookWorks"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J-1" };
+    }
+    protected override buildLogObject(): Record<string, unknown> {
+      throw new Error("wide override threw");
+    }
+  }
+
+  class HookThrows extends BaseError<"HookThrows"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      throw new Error("hook threw");
+    }
+  }
+
+  class Wide extends BaseError<"Wide"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 150; i++) f[`f${i}`] = i;
+      return f;
+    }
+  }
+
+  class ProtoHook extends BaseError<"ProtoHook"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f = Object.create(null) as Record<string, unknown>;
+      f["__proto__"] = { polluted: "YES" };
+      f.ok = 1;
+      return f;
+    }
+  }
+
+  it("keeps the machine-readable code when a subclass log-object override throws", () => {
+    expect(new StructuredWideThrows().toLogObject().code).toBe("CONFLICT");
+  });
+
+  it("does not claim own fields are gone when the hook produced them", () => {
+    const log = new WideThrowsHookWorks("m").toLogObject();
+    expect(log.jobId).toBe("J-1");
+    expect(log.ownLogFields).not.toBe("[Own log fields unavailable]");
+  });
+
+  it("keeps the unavailable marker readable on a cause under an allow list", () => {
+    const outer = new BaseError("outer", new HookThrows("inner")).redactAllow(
+      [],
+    );
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+    expect(cause.ownLogFields).toBe("[Own log fields unavailable]");
+  });
+
+  it("keeps the width marker readable at the root under an allow list", () => {
+    expect(new Wide("w").redactAllow([]).toLogObject().ownLogFields).toBe(
+      "[50 more log fields]",
+    );
+  });
+
+  it("keeps a __proto__ key from a hook away from a prototype setter", () => {
+    const log = new ProtoHook("m").toLogObject();
+    expect(Object.getPrototypeOf(log)).toBe(Object.prototype);
+    expect(log.ok).toBe(1);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
