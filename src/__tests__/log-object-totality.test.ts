@@ -59,10 +59,11 @@ describe("toLogObject() against a throwing subclass override", () => {
     expect(cause.message).toBe("stale version");
   });
 
-  it("names the failed override, apart from a failure of the narrow hook", () => {
+  it("keeps the base envelope when the subclass override throws", () => {
     const log = new ThrowingOverride("write failed").toLogObject();
 
-    expect(log.logObjectOverride).toBe("[Log object override failed]");
+    expect(log.name).toBe("ThrowingOverride");
+    expect(log.timestamp).toBeTypeOf("number");
   });
 
   it("keeps JSON.stringify total, which is where a logger meets the error", () => {
@@ -104,7 +105,6 @@ describe("toLogObject() against a throwing subclass override", () => {
     const log = new WellBehaved("ok").toLogObject();
 
     expect(log.attempt).toBe(3);
-    expect(log.ownLogFields).toBeUndefined();
   });
 
   it("leaves toString() untouched, because it does not build a log object", () => {

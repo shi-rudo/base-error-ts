@@ -10,9 +10,6 @@ import {
   UNSERIALIZABLE_CAUSE_MARKER,
   isSerializerMarker,
   moreAggregatedErrorsMarker,
-  moreOwnLogFieldsMarker,
-  UNAVAILABLE_OWN_LOG_FIELDS_MARKER,
-  FAILED_LOG_OBJECT_OVERRIDE_MARKER,
 } from "./serializer-markers.js";
 import {
   MAX_AGGREGATE_MEMBERS,
@@ -544,25 +541,16 @@ export class BaseError<T extends string> extends Error {
     region: RedactRegion,
     key: string,
   ): boolean {
+    // A marker is the library's word only where the library writes one, and
+    // it writes them under `cause` and as members of `errors`. A hook field
+    // sits at a cause node's top level too, so without the key a consumer
+    // value that merely matches a marker string would survive an allow-list.
     return (
       region === "cause" &&
-      BaseError.#MARKER_KEYS.has(key) &&
+      (key === "cause" || key === "errors") &&
       isSerializerMarker(value)
     );
   }
-
-  /**
-   * Keys under which the serializer writes its own markers. A marker is the
-   * library's word only where the library wrote it: a hook field now lands at
-   * a cause node's top level too, and a consumer value that merely matches a
-   * marker string must stay data, or it survives an allow-list.
-   */
-  static readonly #MARKER_KEYS: ReadonlySet<string> = new Set([
-    "cause",
-    "errors",
-    "ownLogFields",
-    "logObjectOverride",
-  ]);
 
   /**
    * Region a child **container** enters (a leaf never transitions; its
@@ -697,9 +685,14 @@ export class BaseError<T extends string> extends Error {
    * - every key that carries a name this library writes is dropped rather
    *   than obeyed, and {@link BaseError.#RESERVED_NODE_KEYS} is the list;
    * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
-   *   past that the reader stops and names the cut without a count;
-   * - a throw, or a return that is not a record, costs these fields and never
-   *   the node, and names the loss;
+   *   the reader stops there;
+   * - a throw, a hostile getter, or a return that is not a record costs these
+   *   fields and never the node;
+   *
+   * Every one of those losses is silent. This path writes no marker of its
+   * own, unlike the cause spine, because a marker here is a key on the log
+   * object that a redaction region has to classify and that a hook could
+   * forge, and that machinery cost more than the diagnostic was worth;
    * - every value is copied as data at the root and on a cause alike (see
    *   {@link BaseError.#serializeData}), so the log shares no reference with
    *   the error. That copy is a JSON round-trip: a `Date` becomes its ISO
@@ -754,10 +747,7 @@ export class BaseError<T extends string> extends Error {
     // `details` would survive `redactAllow` unmasked. Reserving the whole set
     // keeps an unknown key data, which is what fail-closed means here.
     ...BaseError.#ROOT_ENVELOPE_KEYS,
-    // Every key the serializer writes a marker to is reserved by derivation,
-    // so the two sets cannot drift: a marker key a hook could write would let
-    // it forge a statement this library never made.
-    ...BaseError.#MARKER_KEYS,
+    "errors",
     // A name the runtime owns. Writing it into a plain object routes through
     // a prototype setter instead of adding a field.
     "__proto__",
@@ -777,63 +767,35 @@ export class BaseError<T extends string> extends Error {
     // ordinary data instead of routing through a prototype setter. Matches
     // the clone target of the redaction walker.
     const out = Object.create(null) as Record<string, unknown>;
-    let capped = false;
     try {
       // The record is foreign data, not just the call that produced it: a
       // getter on it throws, a Proxy trap on it throws, and reading its keys
       // or its prototype throws. All of that stays inside this one try, so a
       // hostile record costs these fields and never the node.
       const fields: unknown = value.#ownLogFields();
-      // A record, not "something the redaction walker would descend into":
-      // a Map or a class instance with no own enumerable keys contributes
-      // nothing, which is an empty contribution and not a failure.
       if (
         typeof fields !== "object" ||
         fields === null ||
         Array.isArray(fields)
       ) {
-        return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
+        return {};
       }
-      let taken = 0;
-      let looked = 0;
       const record = fields as Record<string, unknown>;
-      // The walk stops at the cap instead of reading a record of any size to
-      // the end, so the cap bounds the work and not only the output. Past the
-      // cap it looks at a bounded number of further keys, only to learn
-      // whether anything loggable is actually left; it never learns how many,
-      // which is why the marker names no count.
+      let taken = 0;
+      // Stops at the cap rather than reading a record of any size to the end,
+      // so the cap bounds the work and not only the output.
       for (const key of Object.keys(record)) {
+        if (taken >= MAX_OWN_LOG_FIELDS) break;
         if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
         // Read through the guarded reader, so one throwing getter costs its
         // own key and leaves every sibling already collected in place.
-        const item = readProperty(record, key);
-        if (taken >= MAX_OWN_LOG_FIELDS) {
-          // A cheap probe: these are exactly the values with no JSON form,
-          // so it answers "would anything have been logged" without paying
-          // for a round-trip whose result is thrown away.
-          if (item !== undefined && typeof item !== "function") {
-            capped = true;
-            break;
-          }
-          if (++looked > MAX_OWN_LOG_FIELDS) {
-            capped = true;
-            break;
-          }
-          continue;
-        }
-        const data = this.#serializeData(item);
-        // A value with no JSON form contributes nothing, so it spends no part
-        // of the cap either; otherwise a record of functions reports the one
-        // real field beside them as cut.
+        const data = this.#serializeData(readProperty(record, key));
         if (data === undefined) continue;
         out[key] = data;
         taken++;
       }
     } catch {
-      return { ownLogFields: UNAVAILABLE_OWN_LOG_FIELDS_MARKER };
-    }
-    if (capped) {
-      out.ownLogFields = moreOwnLogFieldsMarker();
+      return out;
     }
     return out;
   }
@@ -898,18 +860,11 @@ export class BaseError<T extends string> extends Error {
         const value = this.#serializeData(readProperty(this, key));
         if (value !== undefined) base[key] = value;
       }
-      // Its own key, not the hook's: the two failures are different facts and
-      // one must not shadow the other. `ownLogFields` stays the hook's
-      // statement, which the base envelope has already made.
-      base.logObjectOverride = FAILED_LOG_OBJECT_OVERRIDE_MARKER;
       return base;
     } catch {
       // A field of the instance itself throws. Read the rest defensively.
     }
-    const triage: Record<string, unknown> = {
-      message: "[log build failed]",
-      logObjectOverride: FAILED_LOG_OBJECT_OVERRIDE_MARKER,
-    };
+    const triage: Record<string, unknown> = { message: "[log build failed]" };
     for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
       const value = this.#serializeData(readProperty(this, key));
       if (value !== undefined) {
@@ -943,13 +898,6 @@ export class BaseError<T extends string> extends Error {
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
         const value = readProperty(raw, key);
         if (value !== undefined) safe[key] = value;
-      }
-      // A failure of the hook or of a subclass override is a statement this
-      // library made about its own output, not payload, and it is exactly
-      // what a reader needs when a second thing has failed on top of it.
-      for (const key of BaseError.#MARKER_KEYS) {
-        const value = readProperty(raw, key);
-        if (isSerializerMarker(value)) safe[key] = value;
       }
       return safe;
     }

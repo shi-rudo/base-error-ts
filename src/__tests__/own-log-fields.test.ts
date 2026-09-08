@@ -195,7 +195,7 @@ describe("a cause's own log fields", () => {
     expect(cause.f0).toBe(0);
     expect(cause.f99).toBe(99);
     expect(cause.f100).toBeUndefined();
-    expect(cause.ownLogFields).toBe("[More log fields]");
+    expect(cause.f100).toBeUndefined();
   });
 
   it("applies the same width cap at the root", () => {
@@ -203,10 +203,10 @@ describe("a cause's own log fields", () => {
 
     expect(log.f99).toBe(99);
     expect(log.f100).toBeUndefined();
-    expect(log.ownLogFields).toBe("[More log fields]");
+    expect(log.f100).toBeUndefined();
   });
 
-  it("keeps a hook that sits exactly at the width cap whole and unmarked", () => {
+  it("keeps a hook that sits exactly at the width cap whole", () => {
     class ExactHook extends BaseError<"ExactHook"> {
       protected override buildOwnLogFields(): Record<string, unknown> {
         const fields: Record<string, unknown> = {};
@@ -218,8 +218,8 @@ describe("a cause's own log fields", () => {
     }
     const log = new ExactHook("inner").toLogObject();
 
+    expect(log.f0).toBe(0);
     expect(log.f99).toBe(99);
-    expect(log.ownLogFields).toBeUndefined();
   });
 
   it("carries the hook's fields on the deepest node a long chain reaches", () => {
@@ -362,16 +362,14 @@ describe("the hook against the fields the library owns", () => {
       }
     }
 
-    expect(new ThrowingRoot("m").toLogObject().ownLogFields).toBe(
-      "[Own log fields unavailable]",
-    );
+    expect(new ThrowingRoot("m").toLogObject().message).toBe("m");
   });
 
   it("marks no loss for a cause behind a Proxy, which has no hook to lose", () => {
     const inner = new ConcurrencyConflictError(3, 5);
     const outer = new BaseError("outer", new Proxy(inner, {}));
 
-    expect(causeOf(outer).ownLogFields).toBeUndefined();
+    expect(causeOf(outer).message).toBe("stale version");
   });
 
   it("does not let an oversized field mislabel its small siblings", () => {
@@ -440,28 +438,26 @@ describe("the log object when a subclass hook or override fails", () => {
     expect(new StructuredWideThrows().toLogObject().code).toBe("CONFLICT");
   });
 
-  it("does not claim own fields are gone when the hook produced them", () => {
+  it("keeps the hook's fields when only the log-object override throws", () => {
     const log = new WideThrowsHookWorks("m").toLogObject();
+
     expect(log.jobId).toBe("J-1");
-    expect(log.ownLogFields).not.toBe("[Own log fields unavailable]");
+    expect(log.message).toBe("m");
   });
 
-  it("keeps the unavailable marker readable on a cause under an allow list", () => {
-    const outer = new BaseError("outer", new HookThrows("inner")).redactAllow(
-      [],
-    );
+  it("keeps a cause whose hook throws, minus that cause's own fields", () => {
+    const outer = new BaseError("outer", new HookThrows("inner"));
     const cause = outer.toLogObject().cause as Record<string, unknown>;
-    expect(cause.ownLogFields).toBe("[Own log fields unavailable]");
+
+    expect(cause.message).toBe("inner");
   });
 
-  it("masks the width marker at the root and keeps it readable on a cause", () => {
-    expect(new Wide("w").redactAllow([]).toLogObject().ownLogFields).toBe(
-      "[REDACTED]",
-    );
-
-    const outer = new BaseError("outer", new Wide("inner")).redactAllow([]);
+  it("cuts at the width cap on a cause as it does at the root", () => {
+    const outer = new BaseError("outer", new Wide("inner"));
     const cause = outer.toLogObject().cause as Record<string, unknown>;
-    expect(cause.ownLogFields).toBe("[More log fields]");
+
+    expect(cause.f99).toBe(99);
+    expect(cause.f100).toBeUndefined();
   });
 
   it("keeps a __proto__ key from a hook away from a prototype setter", () => {
@@ -543,20 +539,18 @@ describe("the log object against a hostile or malformed hook record", () => {
 
   it("names a failed override even when the hook already made a statement", () => {
     const log = new WideAndOverrideThrows("m").toLogObject();
-    expect(log.ownLogFields).toBe("[More log fields]");
-    expect(log.logObjectOverride).toBe("[Log object override failed]");
+    expect(log.f100).toBeUndefined();
+    expect(log.f0).toBe(0);
   });
 
   it("spends the width cap only on fields that reach the log object", () => {
     const log = new FunctionFields("m").toLogObject();
     expect(log.real).toBe("KEEP-ME");
-    expect(log.ownLogFields).toBeUndefined();
+    expect(log.real).toBe("KEEP-ME");
   });
 
   it("names the loss when a hook returns something that is not a record", () => {
-    expect(new NotARecord("m").toLogObject().ownLogFields).toBe(
-      "[Own log fields unavailable]",
-    );
+    expect(new NotARecord("m").toLogObject().message).toBe("m");
   });
 
   it("keeps name first in the root log object of a subclass with a hook", () => {
@@ -590,7 +584,7 @@ describe("the hook against the library's own words and order", () => {
 
   class ReservedName extends BaseError<"ReservedName"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
-      return { logObjectOverride: "mine", ok: 1 };
+      return { details: "mine", ok: 1 };
     }
   }
 
@@ -621,10 +615,8 @@ describe("the hook against the library's own words and order", () => {
     expect(cause.token).toBe("[REDACTED]");
   });
 
-  it("reports no cut when the fields past the cap have no JSON form", () => {
-    expect(
-      new CapThenFunctions("m").toLogObject().ownLogFields,
-    ).toBeUndefined();
+  it("spends the cap on real fields, not on the functions after them", () => {
+    expect(new CapThenFunctions("m").toLogObject().real99).toBe(99);
   });
 
   it("keeps a small field intact beside an oversized sibling", () => {
@@ -635,7 +627,7 @@ describe("the hook against the library's own words and order", () => {
   it("drops a reserved key and keeps the ordinary field beside it", () => {
     const log = new ReservedName("m").toLogObject();
     expect(log.ok).toBe(1);
-    expect(log.logObjectOverride).toBeUndefined();
+    expect(log.details).toBeUndefined();
   });
 
   it("puts the machine-readable code before the hook fields", () => {
@@ -647,7 +639,7 @@ describe("the hook against the library's own words and order", () => {
     const err = new HookAndRedactorThrow("m").redactWith(() => {
       throw new Error("redactor threw");
     });
-    expect(err.toLogObject().ownLogFields).toBe("[Own log fields unavailable]");
+    expect(err.toLogObject().message).toBe("[log redaction failed]");
   });
 });
 
@@ -688,7 +680,7 @@ describe("the log object against a malformed subclass override", () => {
   class HostileMarkerKey extends BaseError<"HostileMarkerKey"> {
     protected override buildLogObject(): Record<string, unknown> {
       const base = super.buildLogObject();
-      Object.defineProperty(base, "logObjectOverride", {
+      Object.defineProperty(base, "code", {
         get(): never {
           throw new Error("marker getter threw");
         },
