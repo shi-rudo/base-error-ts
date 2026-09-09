@@ -7,6 +7,9 @@ Status: implemented on PR #23; release: unreleased.
 The error model owns a bounded log representation, cause traversal, and redaction.
 Consumers own log delivery, layout, and conversion into the recommended `OwnLogFields` contract.
 The deprecated envelope hook remains a compatibility boundary.
+The next major makes its bounded inspection cuts visible in the existing `message` field.
+A string message keeps its text with the size marker appended. Other values become the marker without coercion.
+This reports stopped inspection, not the number of lost data fields. Fixed envelope fields remain reachable and retain their values.
 
 The library retains its bounded data copier in `src/errors/log-data.ts`.
 It is not a general JSON serializer and is not a new package export.
@@ -16,6 +19,10 @@ bigint strings, bounded cuts, failure markers, and primitive diagnostic views of
 Top-level nonfinite numbers and negative zero retain the existing JavaScript-value behavior.
 Foreign reads remain guarded. Descriptor inspections and copied values consume an explicit allowance.
 Redaction and serialization share one position rule in `log-position.ts`.
+Private container provenance preserves serializer depth cuts through redaction copies.
+At the depth cap, redaction emits a fresh empty container and copies no consumer fields.
+After node exhaustion, already-read scalar envelope fields retain their values and types.
+Non-scalar envelope fields are omitted without expansion. This preserves decisions such as `retryable: false`.
 
 ## Execution context
 
@@ -42,6 +49,8 @@ BaseError and StructuredError forward the continuation throughout the library-ow
 `inspectOwnLogFields` is an explicit consumer-test function.
 It inspects a returned record without executing getters or serialization callbacks.
 It reports reserved names such as `details`, unsupported values, and inspection limits.
+The inspector checks up to 1,000 root keys and continues past the 100-field retention limit.
+It reports retention width only for more than 100 valid data fields. Skipped fields have separate contract issues.
 An empty issue list means the bounded inspection found no contract violation.
 The function is never invoked by the production logging path.
 It does not add diagnostic keys or expand marker exceptions.

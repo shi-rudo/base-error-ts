@@ -137,7 +137,7 @@ describe("log build guards", () => {
     const log = new CustomLogError(raw).toLogObject();
 
     expect(reads).toBeLessThanOrEqual(1000);
-    expect(log.message).toBe("retained");
+    expect(log.message).toBe("retained [Max log size exceeded]");
     expect(log.own).toBe(1);
   });
 
@@ -191,7 +191,7 @@ describe("log build guards", () => {
     const log = new CustomLogError(raw).toLogObject();
 
     expect(descriptors).toBeLessThanOrEqual(1000);
-    expect(log.message).toBe("probe");
+    expect(log.message).toBe("probe [Max log size exceeded]");
   });
 
   it("keeps the base envelope when no custom field is readable", () => {

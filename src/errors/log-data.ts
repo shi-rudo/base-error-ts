@@ -27,6 +27,20 @@ import {
 } from "./walker-bounds.js";
 
 const SIZE_CUT = Symbol("log.size");
+const depthCuts = new WeakSet<object>();
+
+/** A serializer cut must not acquire a different diagnosis during redaction. */
+export function isLogDataDepthCut(value: object): boolean {
+  return depthCuts.has(value);
+}
+
+export function copyLogDataDepthCut<T extends object>(
+  source: object,
+  target: T,
+): T {
+  if (depthCuts.has(source)) depthCuts.add(target);
+  return target;
+}
 
 /** JSON unboxes by internal brand; a consumer tag cannot grant or hide it. */
 function unboxData(value: object): unknown {
@@ -140,8 +154,14 @@ export function serializeLogData(
               spine: spine + (region === "cause" && !array ? 1 : 0),
             }
           : childPosition(parent, arrayParent, key, item);
-      if (position.depth >= MAX_DATA_DEPTH || position.spine > MAX_CAUSE_DEPTH)
-        return array ? [] : {};
+      if (
+        position.depth >= MAX_DATA_DEPTH ||
+        position.spine > MAX_CAUSE_DEPTH
+      ) {
+        const terminal = array ? [] : {};
+        depthCuts.add(terminal);
+        return terminal;
+      }
       if (seen.has(item)) throw new Error("circular data");
       seen.add(item);
       try {

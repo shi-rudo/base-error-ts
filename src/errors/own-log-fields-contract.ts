@@ -9,6 +9,7 @@ import {
   MAX_DATA_DEPTH,
   MAX_DATA_NODES,
   MAX_OWN_LOG_FIELDS,
+  MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
 
 export type OwnLogFieldsIssue = {
@@ -139,8 +140,10 @@ export function inspectOwnLogFields(
           report(path, "unreadable");
           return;
         }
-        const width = root ? MAX_OWN_LOG_FIELDS : MAX_DATA_NODES;
+        const width = root ? MAX_OWN_LOG_FIELDS_READ : MAX_DATA_NODES;
         const cut = keys.length > width;
+        let widthReported = cut;
+        let retained = 0;
         if (cut) report(path, "width-limit");
         let indices = 0;
         let length = 0;
@@ -191,7 +194,18 @@ export function inspectOwnLogFields(
             } else if (!descriptor.enumerable) {
               report(childPath, "non-enumerable");
             } else {
+              const before = issues.length;
               visit(descriptor.value, childPath);
+              // Only valid data fields are certainly retained without callbacks.
+              if (
+                root &&
+                issues.length === before &&
+                ++retained > MAX_OWN_LOG_FIELDS &&
+                !widthReported
+              ) {
+                report(path, "width-limit");
+                widthReported = true;
+              }
             }
           } catch {
             report(childPath, "unreadable");

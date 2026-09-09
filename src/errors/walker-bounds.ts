@@ -89,9 +89,10 @@ export const MAX_DATA_NODES = 100_000;
 
 /**
  * Shared allowance for one synchronous log build, including cause nodes and
- * data visits and own-key inspections across all fields. Reentrant logging
- * shares the allowance. One final key per active hook can carry a size cut.
- * Matches the data walker cap; exhaustion emits a size marker, never a cycle.
+ * data visits and own-key inspections across all fields. Public calls from
+ * consumer callbacks and contextless legacy builds get independent allowances.
+ * One final key per active hook can carry a size cut. Fixed scalar envelope
+ * fields survive exhaustion without further expansion. Matches the data cap.
  */
 export const MAX_LOG_NODES: number = MAX_DATA_NODES;
 

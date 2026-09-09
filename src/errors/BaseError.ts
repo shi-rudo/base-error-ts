@@ -7,13 +7,20 @@ import {
   createLogBuildContext,
   type LogBuildContext,
 } from "./log-build-context.js";
-import { serializeLogData } from "./log-data.js";
+import {
+  serializeLogData,
+  isLogDataDepthCut,
+  copyLogDataDepthCut,
+} from "./log-data.js";
 import {
   childPosition,
   type LogRegion as RedactRegion,
 } from "./log-position.js";
 import {
   readMembers,
+  readOwnKeys,
+  readOwnPropertyDescriptor,
+  UNREADABLE_REFLECTION,
   readOwnEnumerableKeys,
   readOwnProperty,
   readProperty,
@@ -384,10 +391,12 @@ export class BaseError<T extends string> extends Error {
     if (!Array.isArray(value) && !BaseError.#isWalkable(value)) {
       return value;
     }
-    // Past a cap, replace the container with a marker rather than recursing.
-    // Leaves are unaffected (they never recurse), so shallow data is intact.
+    // Preserve serializer cuts; otherwise the redactor diagnoses its own cap.
+    // Leaves never recurse, so shallow data is intact.
     if (depth >= MAX_DATA_DEPTH || spine > MAX_CAUSE_DEPTH) {
-      return REDACTION_DEPTH_MARKER;
+      return isLogDataDepthCut(value)
+        ? copyLogDataDepthCut(value, Array.isArray(value) ? [] : {})
+        : REDACTION_DEPTH_MARKER;
     }
     if (state.seen.has(value)) {
       return REDACTION_CYCLE_MARKER;
@@ -459,7 +468,7 @@ export class BaseError<T extends string> extends Error {
           }
           items.push(redacted);
         }
-        return items;
+        return copyLogDataDepthCut(value, items);
       }
       // Null-prototype target so an own `__proto__`/`constructor` key from
       // untrusted details is copied as ordinary data (and masked/recursed like
@@ -514,7 +523,7 @@ export class BaseError<T extends string> extends Error {
           BaseError.#copySerializerMarker(value, out, key, val);
         }
       }
-      return out;
+      return copyLogDataDepthCut(value, out);
     } finally {
       state.seen.delete(value);
     }
@@ -805,19 +814,31 @@ export class BaseError<T extends string> extends Error {
   }
 
   /** Copy once, in source order, with safe own writes even for __proto__. */
-  #copyLogRecord(
-    record: Record<string, unknown>,
-  ): Record<string, unknown> | undefined {
+  #copyLogRecord(record: Record<string, unknown>): {
+    fields: Record<string, unknown> | undefined;
+    cut: boolean;
+  } {
     const envelopeKeys = [...ROOT_ENVELOPE_KEYS, "errors"];
-    const keys = Array.from(
-      readOwnEnumerableKeys(
-        record,
-        MAX_LOG_OBJECT_KEYS_READ - envelopeKeys.length,
-      ),
-    );
+    const keys = readOwnKeys(record);
+    if (keys === UNREADABLE_REFLECTION)
+      return { fields: undefined, cut: false };
+    const limit = MAX_LOG_OBJECT_KEYS_READ - envelopeKeys.length;
+    // Short-circuit wide inputs to bound the tail scan by the envelope width.
+    const cut =
+      keys.length > MAX_LOG_OBJECT_KEYS_READ ||
+      keys.slice(limit).some((key) => !envelopeKeys.includes(key as string));
     const copied = Object.create(null) as Record<string, unknown>;
     let defined = false;
-    for (const key of keys) {
+    for (let index = 0; index < keys.length && index < limit; index++) {
+      const key = keys[index];
+      if (typeof key !== "string") continue;
+      const descriptor = readOwnPropertyDescriptor(record, key);
+      if (
+        descriptor === undefined ||
+        descriptor === UNREADABLE_REFLECTION ||
+        !descriptor.enumerable
+      )
+        continue;
       const value = readProperty(record, key);
       copied[key] = value;
       if (value !== undefined) defined = true;
@@ -832,7 +853,7 @@ export class BaseError<T extends string> extends Error {
       }
     }
     // Spread creates own data properties and preserves the public prototype.
-    return defined ? { ...copied } : undefined;
+    return { fields: defined ? { ...copied } : undefined, cut };
   }
 
   /**
@@ -850,6 +871,16 @@ export class BaseError<T extends string> extends Error {
   /*#__PURE__*/ #assembleLogObject(
     context: LogBuildContext,
   ): Record<string, unknown> {
+    let cut = false;
+    const finish = (log: Record<string, unknown>): Record<string, unknown> => {
+      if (cut) {
+        log.message =
+          typeof log.message === "string" && log.message.length > 0
+            ? `${log.message} ${MAX_LOG_SIZE_MARKER}`
+            : MAX_LOG_SIZE_MARKER;
+      }
+      return log;
+    };
     try {
       const built: unknown = this.buildLogObject(() =>
         this.#baseLogObject(context),
@@ -866,7 +897,8 @@ export class BaseError<T extends string> extends Error {
         !Array.isArray(built)
       ) {
         const copied = this.#copyLogRecord(built as Record<string, unknown>);
-        if (copied !== undefined) return copied;
+        cut = copied.cut;
+        if (copied.fields !== undefined) return finish(copied.fields);
       }
     } catch {
       // The override failed. Fall through to the envelope it could not reach.
@@ -879,14 +911,17 @@ export class BaseError<T extends string> extends Error {
       const base = this.#baseLogObject(context);
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
         if (base[key] !== undefined) continue;
-        const value = serializeLogData(readProperty(this, key), context);
+        const value = BaseError.#serializeEnvelopeField(
+          readProperty(this, key),
+          context,
+        );
         if (value !== undefined) base[key] = value;
       }
-      return base;
+      return finish(base);
     } catch {
       // A field of the instance itself throws. Read the rest defensively.
     }
-    return this.#triageLogObject(context);
+    return finish(this.#triageLogObject(context));
   }
 
   /**
@@ -900,7 +935,10 @@ export class BaseError<T extends string> extends Error {
   ): Record<string, unknown> {
     const triage: Record<string, unknown> = { message: "[log build failed]" };
     for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-      const value = serializeLogData(readProperty(this, key), context);
+      const value = BaseError.#serializeEnvelopeField(
+        readProperty(this, key),
+        context,
+      );
       if (value !== undefined) {
         triage[key] = value;
       }
@@ -1373,16 +1411,31 @@ export class BaseError<T extends string> extends Error {
       // must not share a reference with the cause, and the consumer's
       // JSON.stringify must not meet a bigint or a cycle the cause carried.
       const serialized: Record<string, unknown> = {
-        name: serializeLogData(readProperty(cause, "name"), context),
-        message: serializeLogData(readProperty(cause, "message"), context),
-        stack: serializeLogData(readProperty(cause, "stack"), context),
+        name: BaseError.#serializeEnvelopeField(
+          readProperty(cause, "name"),
+          context,
+        ),
+        message: BaseError.#serializeEnvelopeField(
+          readProperty(cause, "message"),
+          context,
+        ),
+        stack: BaseError.#serializeEnvelopeField(
+          readProperty(cause, "stack"),
+          context,
+        ),
       };
 
       // Preserve StructuredError fields if present (duck-typing). This is the
       // only route for a foreign cause: a plain `Error` carrying these fields,
       // a cross-realm instance and a Proxy have no reachable hook to ask.
       for (const key of ["code", "category", "retryable", "details"]) {
-        const value = serializeLogData(readProperty(cause, key), context);
+        const value =
+          key === "details"
+            ? serializeLogData(readProperty(cause, key), context)
+            : BaseError.#serializeEnvelopeField(
+                readProperty(cause, key),
+                context,
+              );
         if (value !== undefined) serialized[key] = value;
       }
 
@@ -1435,6 +1488,25 @@ export class BaseError<T extends string> extends Error {
 
     // A cause that is not an error is data.
     return serializeLogData(cause, context, "cause", depth);
+  }
+
+  /** The fixed envelope must never turn a scalar decision into a size marker. */
+  static #serializeEnvelopeField(
+    value: unknown,
+    context: LogBuildContext,
+  ): unknown {
+    if (context.budget.nodes >= context.budget.limit) {
+      if (
+        value === null ||
+        typeof value === "string" ||
+        typeof value === "boolean" ||
+        typeof value === "number"
+      )
+        return value;
+      // An exhausted envelope omits other values instead of forging a scalar.
+      return undefined;
+    }
+    return serializeLogData(value, context);
   }
 
   /**

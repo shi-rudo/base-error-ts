@@ -44,14 +44,24 @@ Review conversions when migrating. See the
 [log field contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/base-error.md#adding-your-own-log-fields)
 for limits and fallback behavior.
 
+The next major changes oversized legacy `buildLogObject()` records.
+A bounded inspection cut appends ` [Max log size exceeded]` to a nonempty string `message`.
+For other message values, the library uses that marker alone without coercion.
+The notice reports an inspection cut, including uninspected non-enumerable or unsupported keys.
+Fixed envelope fields remain reachable beyond the custom inspection limit and keep their values.
+If only recovered envelope fields remain, no notice is added.
+
 The base envelope keeps its original key order and its own `stack` and `cause`
 keys even when their values are `undefined`. `StructuredError` still adds
 `details` only when present. Empty or all-undefined legacy overrides fall back
-to that base envelope, not to a build-failure message.
+to that base envelope. An inspection cut adds its notice to this fallback too.
 
 Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
-field the reader could not expand; it never labels that cut as a cycle.
+data field the reader could not expand. It never labels that cut as a cycle.
+Already-read scalar envelope fields survive exhaustion, including `code` and `retryable: false`.
+After exhaustion, non-scalar envelope fields are omitted without expansion.
+Redaction preserves the empty containers that the serializer produced at its depth cap.
 A `BaseError` nested in copied data retains primitive diagnostic fields and its
 sticky redaction policy. It does not restart hooks or expand its details or links.
 Use the `cause` chain when the full nested diagnosis is required.
@@ -65,6 +75,8 @@ and starts a separately bounded sub-build. Prefer migrating to the narrow hook.
 Use the exported `inspectOwnLogFields(record)` in consumer tests to detect
 reserved names such as `details`, unsupported values, getters, cycles, and limits.
 It returns issues with `path` and `reason`; valid records return `[]`.
+The checker inspects up to 1,000 root keys and reports more than 100 valid data fields as a width limit.
+Skipped keys do not count toward that retention limit.
 The checker never runs implicitly in the log path and adds no log fields.
 
 ## v7 to v8

@@ -133,7 +133,7 @@ describe("redaction walker: the cause spine is depth-capped", () => {
     expect(log.message).toBe("outer");
     expect(typeof log.stack).toBe("string");
     expect(spineHops(log)).toBeLessThanOrEqual(101);
-    expect(innermost(log).cause).toBe(DEPTH_MARKER);
+    expect(innermost(log)).toEqual({});
   });
 
   it("caps a deep cause object that a subclass puts on the spine itself", () => {
@@ -313,7 +313,11 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
 
     expect(log.message).toBe("outer");
     expect(errorsObjectDepth(log.cause)).toBeLessThanOrEqual(101);
-    expect(JSON.stringify(log.cause)).toContain(DEPTH_MARKER);
+    let terminal = log.cause as Log;
+    while (typeof terminal.errors === "object" && terminal.errors !== null) {
+      terminal = terminal.errors as Log;
+    }
+    expect(terminal).toEqual({});
   });
 
   it("does not drop the log for an errors object chain deeper than the host stack", () => {
@@ -348,8 +352,17 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
     const objectLog = objectLinked.toLogObject();
 
     expect(listSpineHops(listLog)).toBe(spineHops(objectLog));
-    expect(listSpineHops(listLog)).toBe(100);
-    expect(JSON.stringify(listLog)).toContain(DEPTH_MARKER);
+    expect(listSpineHops(listLog)).toBe(101);
+    let terminal: unknown = listLog.cause;
+    while (typeof terminal === "object" && terminal !== null) {
+      const next: unknown = Array.isArray(terminal)
+        ? terminal[0]
+        : (terminal as Log).cause;
+      if (next === undefined) break;
+      terminal = next;
+    }
+    expect(terminal).toEqual({});
+    expect(innermost(objectLog)).toEqual({});
   });
 
   it("charges every nesting level of a list under cause one hop", () => {

@@ -132,6 +132,9 @@ expect(inspectOwnLogFields({ details: "lost" })).toEqual([
 A test subclass can expose `super.buildOwnLogFields()` through a public test
 method. Inspect that method's result to check the actual hook implementation.
 The checker reports at most 100 issues and uses the data depth and node limits.
+It inspects up to 1,000 root keys, including keys after the 100-field retention limit.
+It reports a width limit for more than 100 valid data fields or more than 1,000 root keys.
+Skipped keys do not count as valid data fields. Other contract violations have their own issues.
 An empty result means the inspected record satisfies the recommended data contract.
 It does not predict the remaining budget when that record sits in a larger log.
 
@@ -165,6 +168,13 @@ shares a 100,000-visit budget across causes, data values, and own-key inspection
 field becomes `[Max log size exceeded]`. A later field can carry the same marker
 before the hook reader stops; an aggregate ends with one size marker. This names
 a size cut, never a cycle. Earlier completed fields remain intact.
+Already-read scalar envelope fields survive exhaustion. In particular, `code`
+keeps its value and `retryable: false` stays boolean `false`. After exhaustion,
+non-scalar envelope fields are omitted without expansion.
+
+Redaction preserves empty containers that the serializer produced at its depth cap.
+Private container provenance identifies these cuts. Consumer data added to a cut
+container cannot pass the redaction depth cap.
 
 The marker is a **value**, not an extra diagnostic key. On a data field it is
 masked under `redactAllow([])`. Only a marker emitted on a cause link or aggregate
@@ -212,6 +222,17 @@ for fixed envelope fields.
 Symbols and non-enumerable keys consume this limit. Key enumeration itself is
 eager, because JavaScript has no lazy own-key operation. A custom record with
 no defined readable fields falls back to the base envelope.
+An inspection cut adds its notice to the selected envelope, including this fallback.
+
+**Breaking change for the next major:** a legacy inspection cut changes `message`.
+The library appends ` [Max log size exceeded]` to a nonempty string message.
+Otherwise, `message` becomes `[Max log size exceeded]`, without coercing the original value.
+The notice means the library stopped inspection. Uninspected keys can include
+non-enumerable or unsupported keys. It does not assert that every omitted key held data.
+Fixed envelope fields remain reachable beyond the custom inspection limit.
+If only these recovered fields remain, the library reports no cut.
+The notice does not change `code`, `category`, or `retryable`.
+Move custom layout into a logging adapter and migrate fields to `buildOwnLogFields()`.
 
 Each public `toLogObject()` call starts an independent build, including calls
 made explicitly by a consumer callback. A `BaseError` encountered as a data

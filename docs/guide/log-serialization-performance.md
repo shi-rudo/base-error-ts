@@ -52,10 +52,29 @@ references behind a 100-link Proxy prototype chain, the old `instanceof` guard
 performed 10,100 prototype reads. Private-brand recognition performs zero.
 This removes that implicit traversal; it does not bound work inside consumer callbacks.
 
+## Contract corrections at traversal limits
+
+A further quiet run compares `8274c53` with the decision, inspection, terminal,
+and legacy-cut corrections. Both bundles use the same explicit `tsconfig.json`
+and esbuild settings. The inspector is still outside the logging path.
+
+| Input | Sticky root policy | `8274c53` | Contract corrections |
+| --- | --- | ---: | ---: |
+| Shallow cause with details | none | 4.74 | 4.61 |
+| Shallow cause with details | deny secret | 9.35 | 9.09 |
+| 100-member aggregate | none | 219.88 | 220.91 |
+| 100-member aggregate | deny secret | 470.33 | 476.64 |
+| 100-node cause chain | none | 219.28 | 221.00 |
+| 100-node cause chain | deny secret | 464.65 | 476.32 |
+
+The larger cases differ by about 0.5–2.5% in this run. Their sample ranges overlap.
+These timings do not establish a statistically significant change or a workerd CPU guarantee.
+Access-count regressions remain the evidence for inspection and expansion limits.
+
 ## Reproduce
 
 The scenario and timing code is
-[`scripts/benchmark-log-serialization.mjs`](https://github.com/shi-rudo/base-error-ts/blob/fix/cause-own-log-fields/scripts/benchmark-log-serialization.mjs).
+[`scripts/benchmark-log-serialization.mjs`](https://github.com/shi-rudo/base-error-ts/blob/8274c5349f5c296857c70f2e279ec542bf96a6f2/scripts/benchmark-log-serialization.mjs).
 It uses 100 warm-up calls, then nine samples of 200 calls. Revision order rotates
 between samples. The script reports each median, minimum, and maximum as JSON.
 
@@ -66,6 +85,7 @@ record. The sticky variant calls `redact(["secret"])` on the root only.
 
 Bundle `src/index.ts` from each revision using the same esbuild installation,
 with `bundle: true`, `format: "esm"`, `platform: "neutral"`, and `target: "es2020"`.
+Pass the same explicit `tsconfig` path for both revisions to avoid different defaults outside the repository.
 Then run:
 
 ```sh

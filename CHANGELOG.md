@@ -22,11 +22,19 @@
 
 - **`buildLogObject()` on `BaseError` and `StructuredError`.** Use `buildOwnLogFields()` for additional data fields. Move envelope layout changes into the consumer's logging adapter, after `toLogObject()` applies redaction. Existing overrides and `super.buildLogObject()` calls remain supported, with deprecation annotations. This release does not remove the hook. See `MIGRATION.md` for the transition and value conversions.
 
+### Breaking changes (next major)
+
+- **Oversized legacy log records report inspection cuts in `message`.** A nonempty string message receives ` [Max log size exceeded]`. Other message values become that marker without coercion. Fixed decision fields retain their values. If only recovered envelope fields remain after the custom inspection limit, no notice is added. The notice reports stopped inspection, including uninspected unsupported keys.
+
 ### Fixed
+
+- **Budget exhaustion preserves scalar cause decisions.** Already-read envelope values such as `code: 0` and `retryable: false` retain their value and type. Non-scalar envelope fields are omitted after exhaustion without further expansion.
+- **Contract inspection separates read width from retained fields.** It inspects up to 1,000 root keys, including reserved names after index 100. Skipped keys do not cause a false 100-field width report.
+- **Redaction preserves serializer depth cuts.** Private container provenance preserves their empty terminal containers through sticky policy copies. Data inserted into these containers cannot pass the redaction depth cap.
 
 - **Public log builds no longer depend on an ambient serialization flag.** Each call has an explicit context. Nested data errors receive their diagnostic view directly, without calling their `toJSON` override. Public calls from consumer callbacks keep full behavior and an independent allowance. Legacy envelope overrides can forward the optional `buildBase` continuation; contextless `super` calls remain separately bounded. The data copier has independent native-JSON compatibility and adversarial tests. Private-brand recognition avoids unbudgeted prototype traversal when copied data is inspected for nested errors.
 
-- **One budget covers serialized causes and data fields per library-owned build.** `MAX_LOG_NODES` (100,000) bounds their combined expansion and hook key inspections. Exhaustion uses `[Max log size exceeded]` rather than a circular-object diagnosis. The aggregate reader stops with one size marker; a hook reader may mark its next field before stopping. Completed fields survive. Root legacy values still pass through under the existing contract; consumer callbacks and eager own-key enumeration cannot be interrupted. Resolves the reproduced amplification in `base-error-ts-920`.
+- **One budget covers serialized causes and data fields per library-owned build.** `MAX_LOG_NODES` (100,000) bounds their combined expansion and hook key inspections. Exhaustion uses `[Max log size exceeded]` rather than a circular-object diagnosis. The aggregate reader stops with one size marker; a hook reader may mark its next field before stopping. Completed fields survive. Nested legacy values still pass through under the existing contract; consumer callbacks and eager own-key enumeration cannot be interrupted. Resolves the reproduced amplification in `base-error-ts-920`.
 
 - **Nested data errors keep a bounded diagnosis.** A `BaseError` inside copied data keeps primitive identity, message, stack, and structured fields, with its sticky policy applied. Its hooks and links do not re-enter logging. Previously the re-entrancy guard returned `{}` (`base-error-ts-6qz`).
 

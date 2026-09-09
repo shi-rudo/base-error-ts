@@ -257,7 +257,7 @@ describe("inspectOwnLogFields", () => {
     expect(issues[0]?.path).toHaveLength(100);
   });
 
-  it("reports the root width cut before inspecting additional fields", () => {
+  it("continues checking keys after reporting the retained-field limit", () => {
     let descriptors = 0;
     const value = new Proxy(
       Object.fromEntries(
@@ -274,7 +274,7 @@ describe("inspectOwnLogFields", () => {
       path: [],
       reason: "width-limit",
     });
-    expect(descriptors).toBeLessThanOrEqual(100);
+    expect(descriptors).toBe(200);
   });
 
   it("caps issue output for many invalid values", () => {
