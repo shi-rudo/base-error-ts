@@ -1,6 +1,8 @@
 import { BaseError, StructuredError, type OwnLogFields } from "../index.js";
 
 class RequestError extends StructuredError<"REQUEST_FAILED", "INTERNAL"> {
+  readonly requestId?: string;
+
   constructor() {
     super({
       code: "REQUEST_FAILED",
@@ -12,7 +14,7 @@ class RequestError extends StructuredError<"REQUEST_FAILED", "INTERNAL"> {
 
   protected override buildOwnLogFields(): OwnLogFields {
     return {
-      requestId: "req-1",
+      requestId: this.requestId ?? null,
       attempt: 2,
       cached: false,
       optional: null,

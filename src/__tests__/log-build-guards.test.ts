@@ -98,7 +98,9 @@ describe("log build guards", () => {
 
     expect(calls).toBe(1);
     expect(log.retained).toBe("value");
-    expect(log.nested).toEqual({ error: {} });
+    expect(log.nested).toMatchObject({
+      error: { name: "OwnFieldsError", message: "probe" },
+    });
   });
 
   it("does not start another error's hook from a data value", () => {
@@ -112,7 +114,9 @@ describe("log build guards", () => {
     const log = error.toLogObject();
 
     expect(calls).toBe(0);
-    expect(log.nested).toEqual([{}]);
+    expect(log.nested).toMatchObject([
+      { name: "OwnFieldsError", message: "probe" },
+    ]);
   });
 
   it("bounds copying a frozen custom log while retaining its envelope", () => {
@@ -190,7 +194,7 @@ describe("log build guards", () => {
     expect(log.message).toBe("probe");
   });
 
-  it("keeps the triage envelope when no custom field is readable", () => {
+  it("keeps the base envelope when no custom field is readable", () => {
     const raw = new Proxy({} as Log, {
       get() {
         throw new Error("unreadable");
@@ -202,7 +206,7 @@ describe("log build guards", () => {
 
     const log = new CustomLogError(raw).toLogObject();
 
-    expect(log.message).toBe("[log build failed]");
+    expect(log.message).toBe("probe");
     expect(log.name).toBe("CustomLogError");
     expect(log.own).toBe(1);
   });

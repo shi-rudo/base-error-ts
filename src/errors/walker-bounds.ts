@@ -42,7 +42,9 @@ export const MAX_AGGREGATE_MEMBERS = 100;
  * subclass contributes its own fields through `buildOwnLogFields`, so the key
  * count of a node is consumer-controlled and is the one width a walker cannot
  * otherwise bound: the redaction node budget is charged in the data region
- * only, so a node's own leaves cost it nothing. Past the cap the reader stops, and the cut is silent: a marker here would be a key on the log object that a redaction region has to classify and that a subclass could forge.
+ * only, so a node's own leaves cost it nothing. Past the cap the reader
+ * stops silently.
+ * A diagnostic key here could collide with consumer fields.
  */
 export const MAX_OWN_LOG_FIELDS = 100;
 
@@ -58,7 +60,7 @@ export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 
 /**
  * Custom log records get the same own-key inspection allowance as the
- * own-fields hook. The fixed envelope is read separately from this allowance.
+ * own-fields hook. Fixed envelope inspections reserve part of this allowance.
  */
 export const MAX_LOG_OBJECT_KEYS_READ: number = MAX_OWN_LOG_FIELDS_READ;
 
@@ -72,10 +74,12 @@ export const MAX_DATA_DEPTH = 100;
 
 /**
  * Total-node budget for one walk over a data tree: a redaction walk, the JSON
- * round-trip of one data value in the log object, and one `cloneJsonSafe`
- * call. The unit is one visited value, a container or a leaf, in all three
+ * copy of log data, and one `cloneJsonSafe` call. Log data shares its
+ * allowance with the whole build (MAX_LOG_NODES). The unit is one visited
+ * value, a container or a leaf, in these
  * walkers; the redaction walker charges the values of its data regions only,
- * because the root and cause envelopes are bounded by the spine caps. The depth cap bounds depth, not width, and shared (DAG) references
+ * because the root and cause envelopes are bounded by the spine caps.
+ * The depth cap bounds depth, not width, and shared (DAG) references
  * are cloned once per reference, so a small input can legally expand
  * exponentially (`{a, b}` doubling per level). Past the budget the walk
  * degrades to its marker or its rejection instead of running the blowup to
@@ -84,15 +88,16 @@ export const MAX_DATA_DEPTH = 100;
 export const MAX_DATA_NODES = 100_000;
 
 /**
- * Total number of cause-graph nodes one `StructuredError.fromJSON` call
- * reconstructs. The depth cap and the width cap still allow `100^depth`
- * reconstructions, and a shared reference makes such a payload tiny in
- * memory, so the walk also carries a node budget. The serializer has no
- * total-node cap (depth and width per node compound), so no finite budget
- * covers every legal serializer output, and this value cannot come from the
- * serializer caps. 10,000 is a deliberate ceiling: every realistic log shape
- * round-trips losslessly, while a hostile payload is capped at about 10^4
- * stack captures, which is tens of milliseconds and not seconds.
+ * Shared allowance for one synchronous log build, including cause nodes and
+ * data visits and own-key inspections across all fields. Reentrant logging
+ * shares the allowance. One final key per active hook can carry a size cut.
+ * Matches the data walker cap; exhaustion emits a size marker, never a cycle.
+ */
+export const MAX_LOG_NODES: number = MAX_DATA_NODES;
+
+/**
+ * Total cause nodes reconstructed by fromJSON. Stack captures are costlier
+ * than log values, so reconstruction gets one tenth of the log allowance.
  */
 export const MAX_RECONSTRUCTED_CAUSE_NODES = 10_000;
 

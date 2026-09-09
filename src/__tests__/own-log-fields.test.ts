@@ -388,8 +388,8 @@ describe("the hook against the fields the library owns", () => {
     }
     const log = new BigThenSmall("m").toLogObject();
 
-    expect(log.big).toContain("Circular");
-    expect(log.small).toEqual({ a: 1 });
+    expect(log.big).toBe("[Max log size exceeded]");
+    expect(log.small).toBe("[Max log size exceeded]");
   });
 });
 

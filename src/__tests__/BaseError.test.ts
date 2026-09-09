@@ -978,7 +978,7 @@ describe("BaseError", () => {
 
         const cause = causeOf(node);
         expect(typeof cause).toBe("string");
-        expect(cause).toContain("Circular");
+        expect(cause).toBe("[Max log size exceeded]");
       });
     });
 

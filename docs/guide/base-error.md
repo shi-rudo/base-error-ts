@@ -90,12 +90,13 @@ class ConcurrencyConflictError extends StructuredError<
   constructor(
     public readonly expectedVersion: number,
     public readonly actualVersion: number,
+    public readonly requestId?: string,
   ) {
     super({ code: "CONCURRENCY_CONFLICT", category: "CONFLICT", retryable: true, message: "stale version" });
   }
 
   protected override buildOwnLogFields(): OwnLogFields {
-    return { expectedVersion: this.expectedVersion, actualVersion: this.actualVersion };
+    return { expectedVersion: this.expectedVersion, actualVersion: this.actualVersion, requestId: this.requestId ?? null };
   }
 }
 ```
@@ -103,7 +104,8 @@ class ConcurrencyConflictError extends StructuredError<
 `OwnLogFields` is the recommended return type. It describes a readonly record
 whose values are strings, numbers, booleans, `null`, readonly arrays, or nested
 records. Convert dates, collections,
-and bigints explicitly. Omit absent fields or use `null`. Do not return
+and bigints explicitly. Use `?? null` for optional fields, as above, or omit
+the key. Do not return
 getters, callbacks, or objects with custom serialization methods.
 
 The type rejects common non-data values, including functions, dates, and errors.
@@ -128,19 +130,26 @@ bounded:
 | Rule | Effect |
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
-| Must not walk a chain or log another error | An error returned directly as a field value is dropped. A nested `BaseError` becomes `{}` during the data copy |
+| Must not walk a chain or log another error | An error returned directly as a field value is dropped. A nested `BaseError` keeps a primitive diagnostic envelope and its sticky policy; its hooks, details, and links are not expanded |
 | The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
 | A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws costs its own key only |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
-| Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Other fields keep their own budgets |
+| Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Cause depth counts separately |
 
-Every one of those losses is **silent**. This path writes no marker of its own,
-unlike the cause spine, where the serializer names a cut. A marker here would
-be a key on the log object that a redaction region has to classify and that a
-hook could forge, and that machinery cost more than the diagnostic was worth.
-If you need to know that a hook was cut or failed, assert on its fields in a
-test rather than reading it out of a production log.
+Rejected keys, failed hooks, and width cuts remain silent. The whole log build
+shares a 100,000-visit budget across causes, data values, and own-key inspections
+(`MAX_LOG_NODES` in `src/errors/walker-bounds.ts`). Once spent, the current data
+field becomes `[Max log size exceeded]`. A later field can carry the same marker
+before the hook reader stops; an aggregate ends with one size marker. This names
+a size cut, never a cycle. Earlier completed fields remain intact.
+
+The marker is a **value**, not an extra diagnostic key. On a data field it is
+masked under `redactAllow([])`. Only a marker emitted on a cause link or aggregate
+slot has the private provenance that can preserve it there. Matching consumer
+text gets no exception. The fixed root envelope copy has its own bounded key
+allowance. JavaScript key enumeration is eager, and consumer callbacks cannot be
+interrupted; the budget limits the library's subsequent reads and expansion.
 
 Everything returned here is logged wherever this error is logged. It is the
 place for identifiers, not for payloads. A redaction policy still applies:
@@ -188,3 +197,16 @@ data depth count separately in the data copy, as they do in redaction.
 
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.
+
+### Log object compatibility
+
+The base envelope retains its property order: `name`, `message`, `timestamp`,
+`timestampIso`, `stack`, `cause`. The last two keys remain own properties even
+when their values are `undefined`; JSON omits those values as before.
+`StructuredError` appends `code`, `category`, `retryable`, and `details` when
+present. Legacy override records keep their enumerable key order within the
+copy allowance. Empty or all-undefined overrides use the ordinary base envelope;
+`[log build failed]` is reserved for failure of that fallback too.
+
+The reproducible performance comparison is in
+[the serialization measurement](./log-serialization-performance.md).

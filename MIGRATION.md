@@ -15,8 +15,9 @@ protected override buildLogObject(): Record<string, unknown> {
 }
 
 // After: import type { OwnLogFields } from "@shirudo/base-error";
+// requestId may be optional; use null when it is absent.
 protected override buildOwnLogFields(): OwnLogFields {
-  return { requestId: this.requestId };
+  return { requestId: this.requestId ?? null };
 }
 ```
 
@@ -42,6 +43,18 @@ The narrow hook copies values; the deprecated hook passes nested values through.
 Review conversions when migrating. See the
 [log field contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/base-error.md#adding-your-own-log-fields)
 for limits and fallback behavior.
+
+The base envelope keeps its original key order and its own `stack` and `cause`
+keys even when their values are `undefined`. `StructuredError` still adds
+`details` only when present. Empty or all-undefined legacy overrides fall back
+to that base envelope, not to a build-failure message.
+
+Data copying now shares one log-build budget across fields and cause nodes.
+An exhausted budget emits `[Max log size exceeded]`, including at a later
+field the reader could not expand; it never labels that cut as a cycle.
+A `BaseError` nested in copied data retains primitive diagnostic fields and its
+sticky redaction policy. It does not restart hooks or expand its details or links.
+Use the `cause` chain when the full nested diagnosis is required.
 
 ## v7 to v8
 

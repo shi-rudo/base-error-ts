@@ -82,15 +82,13 @@ describe("a native cause with a non-JSON extension field", () => {
     );
   });
 
-  it("degrades a details graph past the node budget to the circular marker", () => {
+  it("marks a details graph past the shared log budget as a size cut", () => {
     const cause = new Error("db") as Extended;
     cause.details = makeDag(18);
 
     const error = wrap(cause);
 
-    expect(causeNode(error).details).toBe(
-      "[Circular Object with keys: [a, b]]",
-    );
+    expect(causeNode(error).details).toBe("[Max log size exceeded]");
   });
 
   it("keeps the node when details is a Proxy whose every trap throws", () => {

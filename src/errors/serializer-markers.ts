@@ -18,3 +18,6 @@ export const UNSERIALIZABLE_CAUSE_MARKER = "[Unserializable cause]";
 export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
+
+/** Work omitted because the shared log-build allowance is exhausted. */
+export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";

@@ -1,6 +1,10 @@
 import {
   isInstanceOf,
   readMembers,
+  readObjectTag,
+  readConstructorName,
+  readToJSON,
+  UNREADABLE_TO_JSON,
   readOwnEnumerableKeys,
   readOwnProperty,
   readProperty,
@@ -10,6 +14,7 @@ import type { JsonSafeValue } from "./json-safe.js";
 import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
   MAX_CAUSE_DEPTH_MARKER,
+  MAX_LOG_SIZE_MARKER,
   UNSERIALIZABLE_CAUSE_MARKER,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
@@ -19,6 +24,7 @@ import {
   MAX_DATA_DEPTH,
   MAX_DATA_NODES,
   MAX_LOG_OBJECT_KEYS_READ,
+  MAX_LOG_NODES,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
@@ -62,6 +68,8 @@ export type RedactMask = string | ((value: unknown, key: string) => unknown);
  * The deny-list (`redact`) ignores it.
  */
 type RedactRegion = "root" | "cause" | "data";
+
+type WalkPosition = { region: RedactRegion; depth: number; spine: number };
 
 /** Markers the redaction walker writes where a bound cut its walk. */
 const REDACTION_DEPTH_MARKER = "[Max redaction depth exceeded]";
@@ -129,9 +137,12 @@ export class BaseError<T extends string> extends Error {
 
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
 
-  // JSON calls toJSON before its replacer. A nested error must not start a
-  // fresh log build before the data serializer can enforce its bounds.
+  // A data toJSON callback must not restart hooks or cause traversal.
   static #serializingData = false;
+
+  // Reentrant callbacks share the current synchronous log build allowance.
+  static #logBudget: { nodes: number; readonly limit: number } | undefined;
+  static readonly #sizeCut = Symbol("log.size");
 
   /**
    * Mask for the technical `message` in {@link toString}, set only by a
@@ -439,8 +450,12 @@ export class BaseError<T extends string> extends Error {
         // the rest of that spine they stay out of the data-depth budget, so a
         // deep aggregate cannot marker-truncate a shallow `details` nested
         // beneath it; each member is one hop on the spine instead.
-        const itemDepth = region === "cause" ? depth : depth + 1;
-        const itemSpine = region === "cause" ? spine + 1 : spine;
+        const position = BaseError.#childPosition(
+          { region, depth, spine },
+          true,
+          key,
+          value,
+        );
         // Built index by index into a fresh plain array, so the walk can stop
         // at the budget with one marker in place of the rest.
         const items: unknown[] = [];
@@ -456,10 +471,10 @@ export class BaseError<T extends string> extends Error {
                 item,
                 decide,
                 region,
-                itemDepth,
+                position.depth,
                 state,
                 key,
-                itemSpine,
+                position.spine,
               ),
             );
             continue;
@@ -515,27 +530,20 @@ export class BaseError<T extends string> extends Error {
         const decision = decide(key, val, region);
         if (decision === BaseError.#RECURSE) {
           if (Array.isArray(val) || BaseError.#isWalkable(val)) {
-            const childRegion = BaseError.#childRegion(region, key, val);
-            // The cause chain is its own spine, so descending it must not
-            // consume the data-depth budget; otherwise a deep chain would
-            // marker-truncate a shallow `details` on a deep cause. An object
-            // on the spine is one hop instead. A list on the spine is free:
-            // each of its container elements is the hop (see the array
-            // branch), so a `cause` that holds a list costs the same as a
-            // `cause` that holds the object.
-            const childDepth = childRegion === "cause" ? depth : depth + 1;
-            const childSpine =
-              childRegion === "cause" && !Array.isArray(val)
-                ? spine + 1
-                : spine;
+            const position = BaseError.#childPosition(
+              { region, depth, spine },
+              false,
+              key,
+              val,
+            );
             out[key] = BaseError.#redactWalk(
               val,
               decide,
-              childRegion,
-              childDepth,
+              position.region,
+              position.depth,
               state,
               key,
-              childSpine,
+              position.spine,
             );
           } else {
             if (region === "data") state.nodes++;
@@ -596,6 +604,25 @@ export class BaseError<T extends string> extends Error {
     if (BaseError.#hasSerializerMarker(source, key, value)) {
       BaseError.#markSerializerMarker(target, key, value);
     }
+  }
+
+  /** Shared position rule for serialization and redaction. */
+  static #childPosition(
+    parent: WalkPosition,
+    array: boolean,
+    key: string,
+    value: unknown,
+  ): WalkPosition {
+    const region = array
+      ? parent.region
+      : BaseError.#childRegion(parent.region, key, value);
+    return {
+      region,
+      depth: region === "cause" ? parent.depth : parent.depth + 1,
+      spine:
+        parent.spine +
+        (region === "cause" && (array || !Array.isArray(value)) ? 1 : 0),
+    };
   }
 
   /**
@@ -696,8 +723,8 @@ export class BaseError<T extends string> extends Error {
    * Proxy around a BaseError carry no reachable policy and are logged like a
    * foreign error.
    *
-   * During data serialization, a nested log call returns an empty record.
-   * This prevents a foreign `toJSON` from restarting the log walk.
+   * During data serialization, nested errors keep a primitive diagnostic
+   * envelope and their sticky policy, without restarting hooks or traversal.
    *
    * ⚠️ This is a **log** serialization: it carries the technical message, stack,
    * cause chain and raw `details`. **Never return it to a client.** Anything that
@@ -708,12 +735,35 @@ export class BaseError<T extends string> extends Error {
    * an allow-listed, message-free public view.
    */
   public toLogObject(): Record<string, unknown> {
-    if (BaseError.#serializingData) return {};
-    const raw = this.#buildLogObjectTotal();
-    if (!this.#redactor) {
-      return raw;
+    if (BaseError.#serializingData) return this.#dataErrorEnvelope();
+    const previous = BaseError.#logBudget;
+    BaseError.#logBudget ??= { nodes: 0, limit: MAX_LOG_NODES };
+    try {
+      const raw = this.#buildLogObjectTotal();
+      return this.#redactor
+        ? BaseError.#redactFailClosed(this.#redactor, raw)
+        : raw;
+    } finally {
+      BaseError.#logBudget = previous;
     }
-    return BaseError.#redactFailClosed(this.#redactor, raw);
+  }
+
+  /** Nested data errors retain diagnostics without invoking hooks or links. */
+  #dataErrorEnvelope(): Record<string, unknown> {
+    const log: Record<string, unknown> = {};
+    for (const key of [...BaseError.#SAFE_TRIAGE_KEYS, "message", "stack"]) {
+      const value = readProperty(this, key);
+      if (
+        value === null ||
+        typeof value === "string" ||
+        typeof value === "boolean" ||
+        (typeof value === "number" && Number.isFinite(value))
+      )
+        log[key] = value;
+    }
+    return this.#redactor
+      ? BaseError.#redactFailClosed(this.#redactor, log)
+      : log;
   }
 
   /**
@@ -744,14 +794,13 @@ export class BaseError<T extends string> extends Error {
    * - every value is copied as data (see {@link BaseError.#serializeData}),
    *   so the log shares no reference with the error.
    *
-   * That copy is a JSON round-trip. A `Date` becomes its ISO string, a `Map`
+   * That copy follows JSON value conversions. A `Date` becomes its ISO string, a `Map`
    * becomes `{}`, and a bigint becomes its decimal string. The same values
    * passed through untouched when the fields were added by overriding
    * {@link buildLogObject}.
    *
-   * Every loss here is silent. This path writes no marker of its own, because
-   * a marker is a key that a redaction region has to classify and that a hook
-   * could forge.
+   * Rejected keys and values are omitted. Exhausting the shared log budget
+   * replaces a field with the log-size marker, which remains data under redaction.
    *
    * Everything returned here is logged wherever this error is logged. Treat it
    * as the place to put identifiers, not payloads.
@@ -838,6 +887,7 @@ export class BaseError<T extends string> extends Error {
       for (const key of readOwnEnumerableKeys(
         record,
         MAX_OWN_LOG_FIELDS_READ,
+        BaseError.#logBudget,
       )) {
         if (taken >= MAX_OWN_LOG_FIELDS) break;
         if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
@@ -868,36 +918,38 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ #buildLogObjectTotal(): Record<string, unknown> {
     const assembled = this.#assembleLogObject();
-    const own = this.#nodeOwnFields(this);
-    const merged: Record<string, unknown> = {};
-    for (const key of BaseError.#ROOT_ENVELOPE_KEYS) {
-      const value = readOwnProperty(assembled, key);
-      if (value !== undefined) {
-        merged[key] = value;
-        BaseError.#copySerializerMarker(assembled, merged, key, value);
-      }
-    }
-    const errors = readOwnProperty(assembled, "errors");
-    if (errors !== undefined) merged.errors = errors;
-    for (const key of readOwnEnumerableKeys(
-      assembled,
-      MAX_LOG_OBJECT_KEYS_READ,
-    )) {
-      if (BaseError.#ROOT_ENVELOPE_KEYS.has(key) || key === "errors") continue;
-      const value = readProperty(assembled, key);
-      if (value !== undefined) {
-        Object.defineProperty(merged, key, {
-          value,
-          writable: true,
-          enumerable: true,
-          configurable: true,
-        });
-      }
-    }
-    return Object.assign(
-      Object.keys(merged).length === 0 ? this.#triageLogObject() : merged,
-      own,
+    return Object.assign(assembled, this.#nodeOwnFields(this));
+  }
+
+  /** Copy once, in source order, with safe own writes even for __proto__. */
+  #copyLogRecord(
+    record: Record<string, unknown>,
+  ): Record<string, unknown> | undefined {
+    const envelopeKeys = [...BaseError.#ROOT_ENVELOPE_KEYS, "errors"];
+    const keys = Array.from(
+      readOwnEnumerableKeys(
+        record,
+        MAX_LOG_OBJECT_KEYS_READ - envelopeKeys.length,
+      ),
     );
+    const copied = Object.create(null) as Record<string, unknown>;
+    let defined = false;
+    for (const key of keys) {
+      const value = readProperty(record, key);
+      copied[key] = value;
+      if (value !== undefined) defined = true;
+    }
+    // The fixed envelope remains reachable beyond the custom-key allowance.
+    for (const key of envelopeKeys) {
+      if (Object.prototype.hasOwnProperty.call(copied, key)) continue;
+      const value = readOwnProperty(record, key);
+      if (value !== undefined) {
+        copied[key] = value;
+        defined = true;
+      }
+    }
+    // Spread creates own data properties and preserves the public prototype.
+    return defined ? { ...copied } : undefined;
   }
 
   /**
@@ -908,7 +960,8 @@ export class BaseError<T extends string> extends Error {
    *
    * The fallback keeps what it can. The envelope this class builds carries
    * `name`, `message`, `stack` and the bounded cause chain, and no subclass
-   * contributed to it, so a broken override costs its own shaping. When that envelope throws as well, a field of the instance
+   * contributed to it, so a broken override costs its own shaping.
+   * When that envelope throws as well, a field of the instance
    * is hostile, and only the guarded triage envelope remains.
    */
   /*#__PURE__*/ #assembleLogObject(): Record<string, unknown> {
@@ -925,15 +978,8 @@ export class BaseError<T extends string> extends Error {
         built !== null &&
         !Array.isArray(built)
       ) {
-        const record = built as Record<string, unknown>;
-        const prototype = Object.getPrototypeOf(record) as unknown;
-        if (prototype === Object.prototype || prototype === null) return record;
-        for (const _key of readOwnEnumerableKeys(
-          record,
-          MAX_LOG_OBJECT_KEYS_READ,
-        )) {
-          return record;
-        }
+        const copied = this.#copyLogRecord(built as Record<string, unknown>);
+        if (copied !== undefined) return copied;
       }
     } catch {
       // The override failed. Fall through to the envelope it could not reach.
@@ -1023,12 +1069,7 @@ export class BaseError<T extends string> extends Error {
   /*#__PURE__*/ static #redactorOf(
     value: unknown,
   ): ((log: Record<string, unknown>) => Record<string, unknown>) | undefined {
-    if (!BaseError.#sameRealm(value)) return undefined;
-    try {
-      return value.#redactor;
-    } catch {
-      return undefined;
-    }
+    return BaseError.#sameRealm(value) ? value.#redactor : undefined;
   }
 
   /**
@@ -1412,6 +1453,10 @@ export class BaseError<T extends string> extends Error {
       return cause;
     }
 
+    if (!BaseError.#takeLogNode()) {
+      return BaseError.#markSerializerMarker(holder, key, MAX_LOG_SIZE_MARKER);
+    }
+
     if (depth >= MAX_CAUSE_DEPTH) {
       return BaseError.#markSerializerMarker(
         holder,
@@ -1498,6 +1543,55 @@ export class BaseError<T extends string> extends Error {
     return this.#serializeData(cause, "cause", depth);
   }
 
+  /** JSON unboxes by internal brand; a consumer tag cannot grant or hide it. */
+  static #unboxData(value: object): unknown {
+    const tag = readObjectTag(value);
+    const tagged =
+      tag === undefined ||
+      readProperty(value, Symbol.toStringTag) !== undefined;
+    let primitive: unknown = value;
+    if (tag === "[object Number]" || tagged) {
+      try {
+        primitive = Number.prototype.valueOf.call(value);
+      } catch {
+        /* No number brand. */
+      }
+    }
+    if (primitive === value && (tag === "[object String]" || tagged)) {
+      try {
+        primitive = String.prototype.valueOf.call(value);
+      } catch {
+        /* No string brand. */
+      }
+    }
+    if (primitive === value && (tag === "[object Boolean]" || tagged)) {
+      try {
+        primitive = Boolean.prototype.valueOf.call(value);
+      } catch {
+        /* No boolean brand. */
+      }
+    }
+    if (primitive === value && (tag === "[object BigInt]" || tagged)) {
+      try {
+        primitive = BigInt.prototype.valueOf.call(value);
+      } catch {
+        /* No bigint brand. */
+      }
+    }
+    // Number and string wrappers run conversion hooks; booleans use their slot.
+    if (typeof primitive === "number") return +(value as unknown as number);
+    if (typeof primitive === "string") return String(value);
+    return primitive;
+  }
+
+  static #takeLogNode(): boolean {
+    const budget = BaseError.#logBudget;
+    if (budget === undefined) return true;
+    if (budget.nodes >= MAX_LOG_NODES) return false;
+    budget.nodes++;
+    return true;
+  }
+
   /**
    * A foreign value as the log object carries it: decoupled from its source
    * and safe for the consumer's `JSON.stringify`. One rule for a plain-object
@@ -1506,12 +1600,12 @@ export class BaseError<T extends string> extends Error {
    *
    * A primitive passes as-is, except a bigint, which has no JSON form and is
    * written as its decimal string, at every depth. A function or symbol has
-   * no JSON form either and reads as absent. An object is copied through the
-   * native JSON round-trip: it keeps structured data, honors `toJSON`, drops
-   * what JSON drops, and shares no reference with the source. A value the
-   * round-trip cannot take (a cycle, a throwing `toJSON`, a graph past the
-   * node budget) degrades to the circular-object marker. Total: nothing in
-   * here throws.
+   * no JSON form either and reads as absent. A bounded walker copies objects,
+   * honors `toJSON`, and applies JSON value conversions. Foreign reads and
+   * descriptor inspections are guarded and charged before expansion. A cycle
+   * or a throwing `toJSON` uses the legacy
+   * circular-object fallback. Budget exhaustion uses the log-size marker.
+   * Nothing in here throws.
    *
    * Cause depth and data depth count separately, with the redaction regions.
    * At a depth cap, the copy keeps an empty container and reads no children.
@@ -1521,73 +1615,111 @@ export class BaseError<T extends string> extends Error {
     region: RedactRegion = "data",
     spine = 0,
   ): unknown {
+    if (
+      value === undefined ||
+      typeof value === "function" ||
+      typeof value === "symbol"
+    )
+      return undefined;
+    const budget = BaseError.#logBudget ?? { nodes: 0, limit: MAX_LOG_NODES };
+    if (budget.nodes >= MAX_LOG_NODES) return MAX_LOG_SIZE_MARKER;
     if (typeof value === "object" && value !== null) {
       const serializing = BaseError.#serializingData;
       BaseError.#serializingData = true;
-      try {
-        // JSON duplicates shared references. Charge each visit and record
-        // its current position, because a shared object can occur at different depths.
-        let nodes = 0;
-        let root = true;
-        const positions = new WeakMap<
-          object,
-          {
-            region: RedactRegion;
-            depth: number;
-            spine: number;
-          }
-        >();
-        const json = JSON.stringify(
-          value,
-          function (this: object, _key, item: unknown) {
-            if (++nodes > MAX_DATA_NODES) {
-              throw new Error("payload exceeds serialization bounds");
-            }
-            const parent = positions.get(this);
-            const childRegion =
-              root || parent === undefined
-                ? region
-                : Array.isArray(this)
-                  ? parent.region
-                  : BaseError.#childRegion(parent.region, _key, item);
-            const depth =
-              childRegion === "cause" || root ? 0 : (parent?.depth ?? 0) + 1;
-            const childSpine =
-              childRegion !== "cause"
-                ? 0
-                : (parent?.spine ?? spine) +
-                  (Array.isArray(this) || !Array.isArray(item) ? 1 : 0);
-            root = false;
-            if (typeof item === "object" && item !== null) {
-              if (depth >= MAX_DATA_DEPTH || childSpine > MAX_CAUSE_DEPTH) {
-                return Array.isArray(item) ? [] : {};
-              }
-              positions.set(item, {
-                region: childRegion,
-                depth,
-                spine: childSpine,
-              });
-            }
-            return typeof item === "bigint" ? item.toString() : item;
-          },
-        );
-        if (json === undefined) {
-          // A top-level toJSON returning undefined has no JSON form.
-          return this.#serializeCircularObject(value);
+      const seen = new Set<object>();
+      const copy = (
+        input: unknown,
+        key: string,
+        parent?: WalkPosition,
+        arrayParent = false,
+      ): unknown => {
+        if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
+        budget.nodes++;
+        let item = input;
+        const toJSON = readToJSON(item);
+        if (toJSON === UNREADABLE_TO_JSON) throw new Error("unreadable toJSON");
+        if (typeof toJSON === "function")
+          item = Reflect.apply(toJSON, item, [key]);
+        if (item !== null && typeof item === "object") {
+          item = BaseError.#unboxData(item);
         }
-        return JSON.parse(json);
-      } catch {
-        // If JSON.stringify fails (circular references, a throwing toJSON, a
-        // size blowup, ...), create a more useful representation
+        if (typeof item === "bigint") return item.toString();
+        if (typeof item === "number")
+          return Number.isFinite(item) ? item : null;
+        if (typeof item === "function" || typeof item === "symbol")
+          return undefined;
+        if (item === null || typeof item !== "object") return item;
+        const array = Array.isArray(item);
+        const position =
+          parent === undefined
+            ? {
+                region,
+                depth: 0,
+                spine: spine + (region === "cause" && !array ? 1 : 0),
+              }
+            : BaseError.#childPosition(parent, arrayParent, key, item);
+        if (
+          position.depth >= MAX_DATA_DEPTH ||
+          position.spine > MAX_CAUSE_DEPTH
+        )
+          return array ? [] : {};
+        if (seen.has(item)) throw new Error("circular data");
+        seen.add(item);
+        try {
+          if (array) {
+            const length = readProperty(item, "length");
+            const count =
+              typeof length === "number" &&
+              Number.isSafeInteger(length) &&
+              length >= 0
+                ? length
+                : 0;
+            const out: unknown[] = [];
+            for (let index = 0; index < count; index++) {
+              if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
+              out.push(
+                copy(
+                  readProperty(item, String(index)),
+                  String(index),
+                  position,
+                  true,
+                ) ?? null,
+              );
+            }
+            return out;
+          }
+          const out = Object.create(null) as Record<string, unknown>;
+          const keys = readOwnEnumerableKeys(item, MAX_LOG_NODES, budget);
+          let entry = keys.next();
+          while (!entry.done) {
+            if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
+            const key = entry.value;
+            const field = copy(readProperty(item, key), key, position);
+            if (field !== undefined) out[key] = field;
+            entry = keys.next();
+          }
+          if (!entry.value) throw new Error("unreadable data keys");
+          // A cut can fall on a non-enumerable key and yield no field.
+          if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
+          return { ...out };
+        } finally {
+          seen.delete(item);
+        }
+      };
+      try {
+        const result = copy(value, "");
+        return result === undefined
+          ? this.#serializeCircularObject(value)
+          : result;
+      } catch (error) {
+        if (error === BaseError.#sizeCut) return MAX_LOG_SIZE_MARKER;
         return this.#serializeCircularObject(value);
       } finally {
         BaseError.#serializingData = serializing;
       }
     }
+    budget.nodes++;
     if (typeof value === "bigint") return value.toString();
-    if (typeof value === "function" || typeof value === "symbol") {
-      return undefined;
-    }
     return value;
   }
 
@@ -1605,6 +1737,16 @@ export class BaseError<T extends string> extends Error {
   ): unknown[] {
     const serialized: unknown[] = [];
     for (const error of aggregate.members) {
+      if ((BaseError.#logBudget?.nodes ?? 0) >= MAX_LOG_NODES) {
+        serialized.push(
+          BaseError.#markSerializerMarker(
+            serialized,
+            String(serialized.length),
+            MAX_LOG_SIZE_MARKER,
+          ),
+        );
+        return serialized;
+      }
       serialized.push(
         this.#serializeCause(
           error,
@@ -1637,10 +1779,13 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ #serializeCircularObject(obj: object): string {
     try {
-      const type = obj.constructor?.name || "Object";
-      const keys = Object.keys(obj).slice(0, 5); // Show first 5 keys
-      const keyInfo = keys.length > 0 ? ` with keys: [${keys.join(", ")}]` : "";
-      const moreKeys = Object.keys(obj).length > 5 ? "..." : "";
+      const type = readConstructorName(obj) || "Object";
+      const keys = Array.from(
+        readOwnEnumerableKeys(obj, 6, BaseError.#logBudget),
+      );
+      const keyInfo =
+        keys.length > 0 ? ` with keys: [${keys.slice(0, 5).join(", ")}]` : "";
+      const moreKeys = keys.length > 5 ? "..." : "";
 
       return `[Circular ${type}${keyInfo}${moreKeys}]`;
     } catch {
