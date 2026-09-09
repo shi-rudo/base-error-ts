@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../errors/BaseError.js";
+import { StructuredError } from "../errors/StructuredError.js";
 
 type Log = Record<string, unknown>;
 
@@ -13,35 +14,54 @@ class OwnFieldsError extends BaseError<"OwnFieldsError"> {
   }
 }
 
-class CustomLogError extends BaseError<"CustomLogError"> {
-  constructor(private readonly log: Log) {
-    super("probe");
-  }
-
-  protected override buildLogObject(): Log {
-    return this.log;
-  }
-
-  protected override buildOwnLogFields(): Log {
-    return { own: 1 };
-  }
-}
-
 describe("log build guards", () => {
-  it("does not recover inherited fields when redaction fails", () => {
-    const raw = Object.create({ code: { token: "SECRET" } }) as Log;
-    Object.defineProperty(raw, "hostile", {
-      enumerable: true,
-      get() {
-        throw new Error("read failed");
-      },
+  it("omits a throwing code getter installed by a failed redactor", () => {
+    const error = new StructuredError({
+      code: "PERMANENT",
+      category: "VALIDATION",
+      retryable: false,
+      message: "SECRET",
+    }).redactWith((raw) => {
+      Object.defineProperty(raw, "code", {
+        get() {
+          throw new Error("unreadable");
+        },
+      });
+      throw new Error("redactor failed");
     });
-    const error = new CustomLogError(raw).redactAllow([]);
 
     const log = error.toLogObject();
 
-    expect(log.code).toBeUndefined();
+    expect(log).toMatchObject({
+      message: "[log redaction failed]",
+      category: "VALIDATION",
+      retryable: false,
+    });
+    expect(log).not.toHaveProperty("code");
     expect(JSON.stringify(log)).not.toContain("SECRET");
+  });
+
+  it("does not recover an inherited code installed by a failed redactor", () => {
+    const error = new StructuredError({
+      code: "PERMANENT",
+      category: "VALIDATION",
+      retryable: false,
+      message: "SECRET",
+    }).redactWith((raw) => {
+      delete raw.code;
+      Object.setPrototypeOf(raw, { code: "FORGED" });
+      throw new Error("redactor failed");
+    });
+
+    const log = error.toLogObject();
+
+    expect(log).toMatchObject({
+      message: "[log redaction failed]",
+      category: "VALIDATION",
+      retryable: false,
+    });
+    expect(log).not.toHaveProperty("code");
+    expect(JSON.stringify(log)).not.toContain("FORGED");
   });
 
   it.each([
@@ -54,14 +74,15 @@ describe("log build guards", () => {
   ])(
     "does not recover a consumer container under %s when redaction fails",
     (key) => {
-      const error = new CustomLogError({
-        [key]: { token: "SECRET" },
-        hostile: {
+      const error = new BaseError("probe").redactAllow([]);
+      Object.defineProperty(error, key, { value: { token: "SECRET" } });
+      Object.defineProperty(error, "details", {
+        value: {
           get value() {
             throw new Error("read failed");
           },
         },
-      }).redactAllow([]);
+      });
 
       const log = error.toLogObject();
 
@@ -70,22 +91,6 @@ describe("log build guards", () => {
       expect(JSON.stringify(log)).not.toContain("SECRET");
     },
   );
-
-  it("does not invoke a foreign setter while adding own fields", () => {
-    const pair = Proxy.revocable(
-      { message: "retained" },
-      {
-        set() {
-          pair.revoke();
-          return true;
-        },
-      },
-    );
-    const error = new CustomLogError(pair.proxy);
-
-    expect(() => JSON.stringify(error)).not.toThrow();
-    expect(error.toLogObject()).toMatchObject({ message: "retained", own: 1 });
-  });
 
   it("does not re-enter a hook through a nested error", () => {
     let calls = 0;
@@ -117,28 +122,6 @@ describe("log build guards", () => {
     expect(log.nested).toMatchObject([
       { name: "OwnFieldsError", message: "probe" },
     ]);
-  });
-
-  it("bounds copying a frozen custom log while retaining its envelope", () => {
-    let reads = 0;
-    const raw: Log = {};
-    for (let index = 0; index < 5000; index++) {
-      Object.defineProperty(raw, `k${index}`, {
-        enumerable: true,
-        get() {
-          reads++;
-          return index;
-        },
-      });
-    }
-    raw.message = "retained";
-    Object.freeze(raw);
-
-    const log = new CustomLogError(raw).toLogObject();
-
-    expect(reads).toBeLessThanOrEqual(1000);
-    expect(log.message).toBe("retained [Max log size exceeded]");
-    expect(log.own).toBe(1);
   });
 
   it("does not inspect inherited keys to collect own fields", () => {
@@ -173,42 +156,6 @@ describe("log build guards", () => {
     new OwnFieldsError(() => raw).toLogObject();
 
     expect(descriptors).toBeLessThanOrEqual(1000);
-  });
-
-  it("bounds the record-shape probe of a custom log", () => {
-    let descriptors = 0;
-    const target = Object.create({}) as Log;
-    for (let index = 0; index < 5000; index++) {
-      Object.defineProperty(target, `k${index}`, { value: index });
-    }
-    const raw = new Proxy(target, {
-      getOwnPropertyDescriptor(object, key) {
-        descriptors++;
-        return Reflect.getOwnPropertyDescriptor(object, key);
-      },
-    });
-
-    const log = new CustomLogError(raw).toLogObject();
-
-    expect(descriptors).toBeLessThanOrEqual(1000);
-    expect(log.message).toBe("probe [Max log size exceeded]");
-  });
-
-  it("keeps the base envelope when no custom field is readable", () => {
-    const raw = new Proxy({} as Log, {
-      get() {
-        throw new Error("unreadable");
-      },
-      ownKeys() {
-        throw new Error("unreadable");
-      },
-    });
-
-    const log = new CustomLogError(raw).toLogObject();
-
-    expect(log.message).toBe("probe");
-    expect(log.name).toBe("CustomLogError");
-    expect(log.own).toBe(1);
   });
 
   it("masks marker-shaped data in a scalar errors field", () => {

@@ -31,13 +31,6 @@ class ConcurrencyConflictError extends StructuredError<
   }
 }
 
-/** A subclass still on the wide hook, which this change deprecates. */
-class LegacyOverride extends BaseError<"LegacyOverride"> {
-  protected override buildLogObject(): Record<string, unknown> {
-    return { ...super.buildLogObject(), attempt: 3 };
-  }
-}
-
 /** A hook whose value is byte-identical to one of the serializer's markers. */
 class MarkerLookalike extends BaseError<"MarkerLookalike"> {
   protected override buildOwnLogFields(): Record<string, unknown> {
@@ -96,16 +89,6 @@ describe("a cause's own log fields", () => {
     expect(cause.category).toBe("DATABASE");
     expect(cause.retryable).toBe(true);
     expect(cause.details).toEqual({ query: "select 1" });
-  });
-
-  it("leaves a subclass on the wide hook working at the root", () => {
-    expect(new LegacyOverride("legacy").toLogObject().attempt).toBe(3);
-  });
-
-  it("does not carry the fields of a subclass that stays on the wide hook", () => {
-    const outer = new BaseError("outer", new LegacyOverride("legacy"));
-
-    expect(causeOf(outer).attempt).toBeUndefined();
   });
 
   it("reads no hook from a cause behind a Proxy, which has no reachable brand", () => {
@@ -393,29 +376,7 @@ describe("the hook against the fields the library owns", () => {
   });
 });
 
-describe("the log object when a subclass hook or override fails", () => {
-  class StructuredWideThrows extends StructuredError<
-    "CONFLICT",
-    "C",
-    Record<string, unknown>
-  > {
-    constructor() {
-      super({ code: "CONFLICT", category: "C", retryable: true, message: "m" });
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      throw new Error("wide override threw");
-    }
-  }
-
-  class WideThrowsHookWorks extends BaseError<"WideThrowsHookWorks"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { jobId: "J-1" };
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      throw new Error("wide override threw");
-    }
-  }
-
+describe("the log object when a subclass hook fails", () => {
   class HookThrows extends BaseError<"HookThrows"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       throw new Error("hook threw");
@@ -438,17 +399,6 @@ describe("the log object when a subclass hook or override fails", () => {
       return f;
     }
   }
-
-  it("keeps the machine-readable code when a subclass log-object override throws", () => {
-    expect(new StructuredWideThrows().toLogObject().code).toBe("CONFLICT");
-  });
-
-  it("keeps the hook's fields when only the log-object override throws", () => {
-    const log = new WideThrowsHookWorks("m").toLogObject();
-
-    expect(log.jobId).toBe("J-1");
-    expect(log.message).toBe("m");
-  });
 
   it("keeps a cause whose hook throws, minus that cause's own fields", () => {
     const outer = new BaseError("outer", new HookThrows("inner"));
@@ -485,14 +435,11 @@ describe("the log object against a hostile or malformed hook record", () => {
     }
   }
 
-  class WideAndOverrideThrows extends BaseError<"WideAndOverrideThrows"> {
+  class WideHook extends BaseError<"WideHook"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       const f: Record<string, unknown> = {};
       for (let i = 0; i < 150; i++) f[`f${i}`] = i;
       return f;
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      throw new Error("override threw");
     }
   }
 
@@ -536,8 +483,8 @@ describe("the log object against a hostile or malformed hook record", () => {
     expect(json).not.toContain("[Unserializable cause]");
   });
 
-  it("keeps the hook's fields when a failed override meets the width cap", () => {
-    const log = new WideAndOverrideThrows("m").toLogObject();
+  it("keeps the hook's first fields at its width cap", () => {
+    const log = new WideHook("m").toLogObject();
     expect(log.f100).toBeUndefined();
     expect(log.f0).toBe(0);
   });
@@ -623,28 +570,7 @@ describe("the hook against the library's own words and order", () => {
   });
 });
 
-describe("the log object against a malformed subclass override", () => {
-  class ReturnsNothing extends BaseError<"ReturnsNothing"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      return undefined as unknown as Record<string, unknown>;
-    }
-  }
-
-  class ReturnsFrozen extends BaseError<"ReturnsFrozen"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { jobId: "J" };
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      return Object.freeze({ ...super.buildLogObject() });
-    }
-  }
-
-  class ReturnsString extends BaseError<"ReturnsString"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      return "nope" as unknown as Record<string, unknown>;
-    }
-  }
-
+describe("the log object against a throwing field getter", () => {
   class OneHostileKey extends BaseError<"OneHostileKey"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       return {
@@ -657,84 +583,14 @@ describe("the log object against a malformed subclass override", () => {
     }
   }
 
-  class HostileMarkerKey extends BaseError<"HostileMarkerKey"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      const base = super.buildLogObject();
-      Object.defineProperty(base, "code", {
-        get(): never {
-          throw new Error("marker getter threw");
-        },
-        enumerable: true,
-      });
-      return base;
-    }
-  }
-
-  it("stays total when an override returns nothing", () => {
-    expect(() => new ReturnsNothing("m").toLogObject()).not.toThrow();
-  });
-
-  it("stays total and keeps the hook fields when an override returns a frozen object", () => {
-    const err = new ReturnsFrozen("m");
-    expect(() => err.toLogObject()).not.toThrow();
-    expect(err.toLogObject().jobId).toBe("J");
-  });
-
-  it("returns a record when an override returns a primitive", () => {
-    const log = new ReturnsString("m").toLogObject();
-    expect(typeof log).toBe("object");
-    expect(log.message).toBe("m");
-  });
-
   it("costs one hostile key its own entry and keeps its siblings", () => {
     const log = new OneHostileKey("m").toLogObject();
     expect(log.a).toBe(1);
     expect(log.b).toBe(2);
   });
-
-  it("stays total when a marker getter throws on the fail-closed path", () => {
-    const err = new HostileMarkerKey("m").redactWith(() => {
-      throw new Error("redactor threw");
-    });
-    expect(() => err.toLogObject()).not.toThrow();
-  });
 });
 
 describe("the log object against a malformed or oversized contribution", () => {
-  class FrozenWithHostileGetter extends BaseError<"FrozenWithHostileGetter"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { jobId: "J" };
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      const base = super.buildLogObject();
-      Object.defineProperty(base, "boom", {
-        get(): never {
-          throw new Error("getter threw");
-        },
-        enumerable: true,
-      });
-      return Object.freeze(base);
-    }
-  }
-
-  class ReturnsArray extends BaseError<"ReturnsArray"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      return [] as unknown as Record<string, unknown>;
-    }
-  }
-
-  it("stays total when a frozen log object also carries a throwing getter", () => {
-    const err = new FrozenWithHostileGetter("m");
-    expect(() => err.toLogObject()).not.toThrow();
-    expect(err.toLogObject().jobId).toBe("J");
-  });
-
-  it("returns a record when an override returns an array", () => {
-    const log = new ReturnsArray("m").toLogObject();
-    expect(Array.isArray(log)).toBe(false);
-    expect(log.message).toBe("m");
-  });
-
   it("reads a bounded number of keys however long the record is", () => {
     let reads = 0;
     const counting: Record<string, unknown> = {};
@@ -760,58 +616,11 @@ describe("the log object against a malformed or oversized contribution", () => {
 });
 
 describe("the log object against a hostile or self-referencing contribution", () => {
-  class HostileProxyLog extends BaseError<"HostileProxyLog"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { jobId: "J" };
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      return new Proxy({} as Record<string, unknown>, {
-        set(): never {
-          throw new Error("set trap threw");
-        },
-        ownKeys(): never {
-          throw new Error("ownKeys trap threw");
-        },
-      });
-    }
-  }
-
-  class FrozenProtoLog extends BaseError<"FrozenProtoLog"> {
-    protected override buildOwnLogFields(): Record<string, unknown> {
-      return { jobId: "J" };
-    }
-    protected override buildLogObject(): Record<string, unknown> {
-      const base = Object.create(null) as Record<string, unknown>;
-      base.message = "m";
-      base["__proto__"] = { polluted: "YES" };
-      return Object.freeze(base);
-    }
-  }
-
-  class ReturnsDate extends BaseError<"ReturnsDate"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      return new Date(0) as unknown as Record<string, unknown>;
-    }
-  }
-
   class SelfReferencing extends BaseError<"SelfReferencing"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       return { a: this, b: this };
     }
   }
-
-  it("stays total when an override returns a Proxy whose traps throw", () => {
-    expect(() => new HostileProxyLog("m").toLogObject()).not.toThrow();
-  });
-
-  it("keeps a frozen object's __proto__ away from a prototype setter", () => {
-    const log = new FrozenProtoLog("m").toLogObject();
-    expect((log as Record<string, unknown>).polluted).toBeUndefined();
-  });
-
-  it("keeps the error when an override returns a Date", () => {
-    expect(new ReturnsDate("m").toLogObject().message).toBe("m");
-  });
   class HoldsAnotherError extends BaseError<"HoldsAnotherError"> {
     protected override buildOwnLogFields(): Record<string, unknown> {
       return { related: new BaseError("other"), ok: 1 };

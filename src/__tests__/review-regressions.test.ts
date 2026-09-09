@@ -42,10 +42,10 @@ describe("review regressions", () => {
     });
   });
   it.each([{}, { foo: undefined }])(
-    "uses the base envelope for an empty override %j",
+    "keeps the envelope for an empty own-fields contribution %j",
     (fields) => {
       class Empty extends BaseError<"Empty"> {
-        protected override buildLogObject(): Log {
+        protected override buildOwnLogFields(): Log {
           return fields;
         }
       }
@@ -123,38 +123,6 @@ describe("review regressions", () => {
     expect(reads).toBeLessThanOrEqual(6);
     expect(JSON.stringify(log)).toContain("[Max log size exceeded]");
   });
-  it("enumerates a custom prototype log only once", () => {
-    let enumerations = 0;
-    const record = new Proxy(
-      Object.assign(Object.create({}) as Log, { message: "custom" }),
-      {
-        ownKeys(value) {
-          enumerations++;
-          return Reflect.ownKeys(value);
-        },
-      },
-    );
-    class Custom extends BaseError<"Custom"> {
-      protected override buildLogObject(): Log {
-        return record;
-      }
-    }
-    expect(new Custom("original").toLogObject().message).toBe("custom");
-    expect(enumerations).toBe(1);
-  });
-});
-
-it("retains non-enumerable own envelope fields from an override", () => {
-  class Hidden extends BaseError<"Hidden"> {
-    protected override buildLogObject(): Log {
-      return Object.defineProperty({}, "message", {
-        value: "custom diagnostic",
-      });
-    }
-  }
-  expect(new Hidden("original").toLogObject().message).toBe(
-    "custom diagnostic",
-  );
 });
 
 it("bounds fallback key inspections after a failed data callback", () => {

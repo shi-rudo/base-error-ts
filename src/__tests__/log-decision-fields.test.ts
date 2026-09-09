@@ -75,17 +75,11 @@ describe("decision fields after a size cut", () => {
     expect(log.cause).not.toHaveProperty("retryable");
     expect(reads).toBe(0);
   });
-  it("preserves decisions in the fallback after an override exhausts its continuation", () => {
+  it("preserves root decisions after its cause exhausts the build allowance", () => {
     class Broken extends BaseError<"Broken"> {
       readonly code = "PERMANENT";
       readonly category = "VALIDATION";
       readonly retryable = false;
-      protected override buildLogObject(
-        buildBase?: () => Record<string, unknown>,
-      ): Record<string, unknown> {
-        buildBase?.();
-        throw new Error("override failed");
-      }
     }
     const cause = Object.assign(new Error("native"), {
       details: Array(100_001).fill(1),

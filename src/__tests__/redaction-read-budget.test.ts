@@ -70,19 +70,14 @@ function foreignRecord(
   return { value, counts, keys };
 }
 
-function redactLegacy(details: unknown, mode: Mode, denied: string[]) {
-  class Legacy extends BaseError<"Legacy"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      return {
-        message: "original",
-        details,
-        code: 0,
-        category: "PERMANENT",
-        retryable: false,
-      };
-    }
+function redactDetails(details: unknown, mode: Mode, denied: string[]) {
+  class WithDetails extends BaseError<"WithDetails"> {
+    readonly code = 0;
+    readonly category = "PERMANENT";
+    readonly retryable = false;
+    readonly details = details;
   }
-  const error = new Legacy("original");
+  const error = new WithDetails("original");
   return (
     mode === "allow" ? error.redactAllow([]) : error.redact(denied)
   ).toLogObject();
@@ -117,67 +112,68 @@ describe.each<Mode>(["allow", "deny"])(
   (mode) => {
     it("stops reading wide enumerable values at the shared allowance", () => {
       const foreign = foreignRecord(100_010, true);
-      const log = redactLegacy(foreign.value, mode, foreign.keys);
+      const log = redactDetails(foreign.value, mode, foreign.keys);
       checkBoundedAndMasked(log, foreign.value, foreign.counts);
     });
 
     it("charges non-enumerable descriptor work shared across sibling references", () => {
       const foreign = foreignRecord(60_000, false);
       const details = { first: foreign.value, second: foreign.value };
-      const log = redactLegacy(details, mode, ["secret"]);
+      const log = redactDetails(details, mode, ["secret"]);
       checkBoundedAndMasked(log, details, foreign.counts);
     });
 
     it("shares the allowance with custom-prototype walkability checks", () => {
       const foreign = foreignRecord(60_000, false, true);
       const details = { first: foreign.value, second: foreign.value };
-      const log = redactLegacy(details, mode, ["secret"]);
+      const log = redactDetails(details, mode, ["secret"]);
       checkBoundedAndMasked(log, details, foreign.counts);
     });
 
     it("does not retain a raw custom-prototype object when classification exhausts the allowance", () => {
       const foreign = foreignRecord(100_010, false, true);
-      const log = redactLegacy(foreign.value, mode, ["secret"]);
+      const log = redactDetails(foreign.value, mode, ["secret"]);
       checkBoundedAndMasked(log, foreign.value, foreign.counts);
     });
   },
 );
 
-describe.each<Mode>(["allow", "deny"])("%s legacy cause arrays", (mode) => {
-  it("bounds index reads on the cause spine and preserves safe decisions", () => {
-    let reads = 0;
-    const errors = Array.from({ length: 100_010 }, (_, index) => index);
-    for (let index = 0; index < errors.length; index++) {
-      Object.defineProperty(errors, index, {
-        get() {
-          reads++;
-          return null;
-        },
-      });
-    }
-    class Legacy extends BaseError<"Legacy"> {
-      protected override buildLogObject(): Record<string, unknown> {
-        return {
-          message: "outer",
-          errors,
-          code: 0,
-          category: "PERMANENT",
-          retryable: false,
-        };
+describe.each<Mode>(["allow", "deny"])(
+  "%s arrays returned by a cause policy",
+  (mode) => {
+    it("bounds index reads on the cause spine and preserves safe decisions", () => {
+      let reads = 0;
+      const errors = Array.from({ length: 100_010 }, (_, index) => index);
+      for (let index = 0; index < errors.length; index++) {
+        Object.defineProperty(errors, index, {
+          get() {
+            reads++;
+            return null;
+          },
+        });
       }
-    }
-    const error = new Legacy("outer");
+      class WithDecisions extends BaseError<"WithDecisions"> {
+        readonly code = 0;
+        readonly category = "PERMANENT";
+        readonly retryable = false;
+      }
+      const inner = new BaseError("inner").redactWith(() => ({ errors }));
+      const error = new WithDecisions("outer", inner);
 
-    const log = (
-      mode === "allow" ? error.redactAllow([]) : error.redact([])
-    ).toLogObject();
+      const log = (
+        mode === "allow" ? error.redactAllow([]) : error.redact([])
+      ).toLogObject();
 
-    expect(reads).toBeLessThanOrEqual(100_000);
-    expect(log).toEqual({
-      message: "[Max redaction size exceeded]",
-      code: 0,
-      category: "PERMANENT",
-      retryable: false,
+      expect(reads).toBeLessThanOrEqual(100_000);
+      expect(log).toEqual({
+        message: "[Max redaction size exceeded]",
+        name: "WithDecisions",
+        timestamp: error.timestamp,
+        timestampIso: error.timestampIso,
+        code: 0,
+        category: "PERMANENT",
+        retryable: false,
+      });
     });
-  });
-});
+  },
+);

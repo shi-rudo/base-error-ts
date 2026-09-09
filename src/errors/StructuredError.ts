@@ -411,30 +411,4 @@ export class StructuredError<
     // Any other object: opaque data, kept as-is.
     return value;
   }
-
-  /**
-   * Extends BaseError's raw log object with code, category, retryable, and
-   * details. These are the fields of this class, not a subclass contribution,
-   * so they are composed here and cannot be removed by a subclass that
-   * overrides `buildOwnLogFields`. On a cause they are read from the instance
-   * by the serializer, so they survive one level down as well. Redaction, if
-   * configured, is applied by the inherited {@link toLogObject} to the
-   * complete assembled object.
-   *
-   * @deprecated Override {@link buildOwnLogFields} to contribute data fields.
-   * Reshape the completed log in the consumer's logging adapter instead.
-   */
-  protected override buildLogObject(
-    buildBase?: () => Record<string, unknown>,
-  ): Record<string, unknown> {
-    const baseJson = super.buildLogObject(buildBase);
-
-    return {
-      ...baseJson,
-      code: this.code,
-      category: this.category,
-      retryable: this.retryable,
-      ...(this.details !== undefined && { details: this.details }),
-    };
-  }
 }

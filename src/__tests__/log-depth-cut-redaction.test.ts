@@ -31,19 +31,14 @@ it("keeps terminal provenance through an inner redaction copy", () => {
 it("does not pass data added to a serializer terminal through redaction", () => {
   let cause: unknown = { leaf: "secret" };
   for (let i = 0; i < 110; i++) cause = { cause };
-  class Mutating extends BaseError<"Mutating"> {
-    protected override buildLogObject(
-      buildBase?: () => Record<string, unknown>,
-    ): Record<string, unknown> {
-      const log = super.buildLogObject(buildBase);
-      let terminal = log;
-      while (typeof terminal.cause === "object" && terminal.cause !== null)
-        terminal = terminal.cause as Record<string, unknown>;
-      terminal.secret = "PRIVATE";
-      return log;
-    }
-  }
-  const log = new Mutating("outer", cause).redactAllow([]).toLogObject();
+  const inner = new BaseError("inner", cause).redactWith((log) => {
+    let terminal = log;
+    while (typeof terminal.cause === "object" && terminal.cause !== null)
+      terminal = terminal.cause as Record<string, unknown>;
+    terminal.secret = "PRIVATE";
+    return log;
+  });
+  const log = new BaseError("outer", inner).redactAllow([]).toLogObject();
   expect(JSON.stringify(log)).not.toContain("PRIVATE");
   let node: unknown = log;
   while (typeof node === "object" && node !== null && "cause" in node)

@@ -6,10 +6,12 @@ Status: implemented on PR #23; release: unreleased.
 
 The error model owns a bounded log representation, cause traversal, and redaction.
 Consumers own log delivery, layout, and conversion into the recommended `OwnLogFields` contract.
-The deprecated envelope hook remains a compatibility boundary.
-The next major makes its bounded inspection cuts visible in the existing `message` field.
-A string message keeps its text with the size marker appended. Other values become the marker without coercion.
-This reports stopped inspection, not the number of lost data fields. Fixed envelope fields remain reachable and retain their values.
+The next major removes the wide `buildLogObject()` hook.
+The library reads the fixed envelope itself, independently of `buildOwnLogFields()`.
+`StructuredError` uses this assembly directly, so a subclass cannot replace its fields through the data hook.
+The legacy record copier, continuation, cut suffix, and multi-stage fallback are removed.
+Each instance property is read through the guarded reader; an unreadable field does not discard its siblings.
+Root `details` keeps its existing value semantics. This decision does not migrate root details to the data copier.
 
 The library retains its bounded data copier in `src/errors/log-data.ts`.
 It is not a general JSON serializer and is not a new package export.
@@ -36,13 +38,8 @@ A private-brand check recognizes local instances without traversing consumer pro
 An explicit public call from consumer code retains normal public behavior.
 Consumer callbacks must terminate; the library cannot interrupt their synchronous work.
 
-The legacy `buildLogObject` hook receives an optional `buildBase` continuation.
-Forwarding it to `super.buildLogObject(buildBase)` preserves the current allowance without exposing mutable bookkeeping.
-Existing overrides that call `super.buildLogObject()` remain valid.
-That contextless call starts its own bounded sub-build, with its own allowance.
-A consumer can invoke such work repeatedly, just as it can call a getter or another logger repeatedly.
-The budget covers library traversal, not arbitrary work initiated by consumer code.
-BaseError and StructuredError forward the continuation throughout the library-owned path.
+The build context is private to library traversal. Consumers receive no continuation.
+Explicit public calls from consumer code still start independent bounded builds.
 
 ## Redaction read allowance
 
@@ -69,7 +66,7 @@ It does not add diagnostic keys or expand marker exceptions.
 
 ## Costs and rejected alternatives
 
-This change removes ambient coupling; extracting a file alone would not do that.
+This change removes ambient coupling and the legacy envelope repair path.
 It does not remove ownership of the data-copy algorithm or make the feature small.
 Native JSON cannot enforce our inspection allowance before descriptor reads.
 Narrowing runtime inputs now would change established cause-data behavior.

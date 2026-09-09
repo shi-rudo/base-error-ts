@@ -41,7 +41,6 @@ import {
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
   MAX_DATA_NODES,
-  MAX_LOG_OBJECT_KEYS_READ,
   MAX_REDACTION_READS,
   MAX_LOG_NODES,
   MAX_OWN_LOG_FIELDS,
@@ -690,41 +689,24 @@ export class BaseError<T extends string> extends Error {
     return this;
   }
 
-  /**
-   * Assembles the raw log object (no redaction). The public {@link toLogObject}
-   * applies redaction to the complete assembled object.
-   *
-   * Existing overrides and `super.buildLogObject()` calls remain supported
-   * during migration. An override runs at the root only.
-   *
-   * Forward the optional `buildBase` continuation through `super` to share
-   * this build's allowance. Calling `super` without it starts a bounded sub-build.
-   *
-   * @deprecated Override {@link buildOwnLogFields} to contribute data fields.
-   * Reshape the completed log in the consumer's logging adapter instead.
-   */
-  protected buildLogObject(
-    buildBase?: () => Record<string, unknown>,
-  ): Record<string, unknown> {
-    return buildBase === undefined
-      ? this.#baseLogObject(BaseError.#newLogContext())
-      : buildBase();
-  }
-
+  /** The library owns the envelope; each foreign field is read independently. */
   #baseLogObject(context: LogBuildContext): Record<string, unknown> {
-    const { name, message, timestamp, timestampIso, stack } = this;
-    const ownProperties = this as unknown as Record<string, unknown>;
-    const cause = ownProperties.cause;
-
-    const json: Record<string, unknown> = {
-      name,
-      message, // The original technical message
-      timestamp,
-      timestampIso,
-      stack,
-    };
+    const json: Record<string, unknown> = {};
+    for (const key of [
+      "name",
+      "message",
+      "timestamp",
+      "timestampIso",
+      "stack",
+    ]) {
+      const value = BaseError.#serializeEnvelopeField(
+        readProperty(this, key),
+        context,
+      );
+      if (value !== undefined) json[key] = value;
+    }
     json.cause = this.#serializeCause(
-      cause,
+      readProperty(this, "cause"),
       new Set(),
       0,
       json,
@@ -744,6 +726,18 @@ export class BaseError<T extends string> extends Error {
         context,
       );
     }
+
+    // Read structured fields by shape, as the cause serializer does. They
+    // belong to the envelope, so an own-fields override cannot replace them.
+    for (const key of ["code", "category", "retryable"]) {
+      const value = BaseError.#serializeEnvelopeField(
+        readProperty(this, key),
+        context,
+      );
+      if (value !== undefined) json[key] = value;
+    }
+    const details = readProperty(this, "details");
+    if (details !== undefined) json.details = details;
 
     return json;
   }
@@ -773,7 +767,7 @@ export class BaseError<T extends string> extends Error {
    */
   public toLogObject(): Record<string, unknown> {
     const context = BaseError.#newLogContext();
-    const raw = this.#assembleLogObject(context);
+    const raw = this.#baseLogObject(context);
     Object.assign(raw, this.#nodeOwnFields(this, context));
     return this.#redactor
       ? BaseError.#redactFailClosed(this.#redactor, raw)
@@ -812,10 +806,8 @@ export class BaseError<T extends string> extends Error {
    * The base signature accepts unknown values for compatibility and runtime guards.
    * The hook must finish synchronously; its work is not bounded by the serializer.
    *
-   * This is the hook the serializer can reach on a **cause**, so fields added
-   * here survive at every depth of every chain that wraps this error, while
-   * fields added by overriding {@link buildLogObject} appear at the root only.
-   * That is the reason the narrow hook exists.
+   * Fields added here survive at every depth of a cause chain. The library
+   * builds the fixed envelope independently of this contribution.
    *
    * The contract, because the caller is a logging path that must not throw
    * and must stay bounded:
@@ -833,9 +825,7 @@ export class BaseError<T extends string> extends Error {
    *   so the log shares no reference with the error.
    *
    * That copy follows JSON value conversions. A `Date` becomes its ISO string, a `Map`
-   * becomes `{}`, and a bigint becomes its decimal string. The same values
-   * passed through untouched when the fields were added by overriding
-   * {@link buildLogObject}.
+   * becomes `{}`, and a bigint becomes its decimal string.
    *
    * Rejected keys and values are omitted. Exhausting the shared log budget
    * replaces a field with the log-size marker, which remains data under redaction.
@@ -912,139 +902,6 @@ export class BaseError<T extends string> extends Error {
     return out;
   }
 
-  /** Copy once, in source order, with safe own writes even for __proto__. */
-  #copyLogRecord(record: Record<string, unknown>): {
-    fields: Record<string, unknown> | undefined;
-    cut: boolean;
-  } {
-    const envelopeKeys = [...ROOT_ENVELOPE_KEYS, "errors"];
-    const keys = readOwnKeys(record);
-    if (keys === UNREADABLE_REFLECTION)
-      return { fields: undefined, cut: false };
-    const limit = MAX_LOG_OBJECT_KEYS_READ - envelopeKeys.length;
-    // Short-circuit wide inputs to bound the tail scan by the envelope width.
-    const cut =
-      keys.length > MAX_LOG_OBJECT_KEYS_READ ||
-      keys.slice(limit).some((key) => !envelopeKeys.includes(key as string));
-    const copied = Object.create(null) as Record<string, unknown>;
-    let defined = false;
-    for (let index = 0; index < keys.length && index < limit; index++) {
-      const key = keys[index];
-      if (typeof key !== "string") continue;
-      const descriptor = readOwnPropertyDescriptor(record, key);
-      if (
-        descriptor === undefined ||
-        descriptor === UNREADABLE_REFLECTION ||
-        !descriptor.enumerable
-      )
-        continue;
-      const value = readProperty(record, key);
-      copied[key] = value;
-      if (value !== undefined) defined = true;
-    }
-    // The fixed envelope remains reachable beyond the custom-key allowance.
-    for (const key of envelopeKeys) {
-      if (Object.prototype.hasOwnProperty.call(copied, key)) continue;
-      const value = readOwnProperty(record, key);
-      if (value !== undefined) {
-        copied[key] = value;
-        defined = true;
-      }
-    }
-    // Spread creates own data properties and preserves the public prototype.
-    return { fields: defined ? { ...copied } : undefined, cut };
-  }
-
-  /**
-   * The envelope as the subclass chain builds it, with the totality contract
-   * of this path. {@link buildLogObject} may be overridden, and an override is
-   * code this library did not write, running inside `catch`, where a new
-   * exception destroys the error the caller set out to log.
-   *
-   * The fallback keeps what it can. The envelope this class builds carries
-   * `name`, `message`, `stack` and the bounded cause chain, and no subclass
-   * contributed to it, so a broken override costs its own shaping.
-   * When that envelope throws as well, a field of the instance
-   * is hostile, and only the guarded triage envelope remains.
-   */
-  /*#__PURE__*/ #assembleLogObject(
-    context: LogBuildContext,
-  ): Record<string, unknown> {
-    let cut = false;
-    const finish = (log: Record<string, unknown>): Record<string, unknown> => {
-      if (cut) {
-        log.message =
-          typeof log.message === "string" && log.message.length > 0
-            ? `${log.message} ${MAX_LOG_SIZE_MARKER}`
-            : MAX_LOG_SIZE_MARKER;
-      }
-      return log;
-    };
-    try {
-      const built: unknown = this.buildLogObject(() =>
-        this.#baseLogObject(context),
-      );
-      // An override can return the wrong shape as easily as it can throw: a
-      // missing `return` yields undefined, and a primitive would be handed
-      // to a caller whose contract says record. Both count as a failure.
-      // A record, not merely an object: a `Date`, a `Map` and an array all
-      // pass a `typeof` test and carry nothing this library can read, so
-      // accepting one would erase the error rather than log it.
-      if (
-        typeof built === "object" &&
-        built !== null &&
-        !Array.isArray(built)
-      ) {
-        const copied = this.#copyLogRecord(built as Record<string, unknown>);
-        cut = copied.cut;
-        if (copied.fields !== undefined) return finish(copied.fields);
-      }
-    } catch {
-      // The override failed. Fall through to the envelope it could not reach.
-    }
-    try {
-      // The base envelope skips the whole subclass chain, so the structural
-      // fields a subclass declares are read from the instance, exactly as the
-      // triage envelope below reads them. Without this the milder failure
-      // loses the machine-readable code that the worse one keeps.
-      const base = this.#baseLogObject(context);
-      for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-        if (base[key] !== undefined) continue;
-        const value = BaseError.#serializeEnvelopeField(
-          readProperty(this, key),
-          context,
-        );
-        if (value !== undefined) base[key] = value;
-      }
-      return finish(base);
-    } catch {
-      // A field of the instance itself throws. Read the rest defensively.
-    }
-    return finish(this.#triageLogObject(context));
-  }
-
-  /**
-   * The last envelope: what this class can read off the instance itself when
-   * everything an override touched has failed. Every read is guarded and every
-   * value is copied as data, so this cannot throw and cannot hand a consumer's
-   * `JSON.stringify` a value it refuses.
-   */
-  /*#__PURE__*/ #triageLogObject(
-    context: LogBuildContext,
-  ): Record<string, unknown> {
-    const triage: Record<string, unknown> = { message: "[log build failed]" };
-    for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-      const value = BaseError.#serializeEnvelopeField(
-        readProperty(this, key),
-        context,
-      );
-      if (value !== undefined) {
-        triage[key] = value;
-      }
-    }
-    return triage;
-  }
-
   /**
    * Runs a redactor over a log object. Fail-closed: a broken redactor must
    * neither crash the logging path nor leak the unredacted payload, so a
@@ -1068,7 +925,7 @@ export class BaseError<T extends string> extends Error {
             ? REDACTION_SIZE_MARKER
             : "[log redaction failed]",
       };
-      // Guarded reads: `raw` came from a subclass override, so a getter on it
+      // A custom redactor can mutate `raw` before throwing, so a getter on it
       // can throw, and this is the one path that must never throw.
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
         const value = readOwnProperty(raw, key);

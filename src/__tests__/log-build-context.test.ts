@@ -58,46 +58,6 @@ describe("independent public log builds", () => {
   });
 });
 
-describe("legacy build continuation", () => {
-  function fullCause(): Error {
-    const cause = new Error("inner");
-    Object.defineProperty(cause, "details", {
-      value: Array.from({ length: 100_001 }, () => 1),
-    });
-    return cause;
-  }
-
-  it("shares the allowance when an override forwards the continuation", () => {
-    class Forwarding extends Fields {
-      protected override buildLogObject(
-        buildBase?: () => Record<string, unknown>,
-      ): Record<string, unknown> {
-        return { ...super.buildLogObject(buildBase), legacy: "L" };
-      }
-    }
-    const log = new Forwarding({ requestId: "R" }, fullCause()).toLogObject();
-    expect(log).toMatchObject({
-      legacy: "L",
-      requestId: "[Max log size exceeded]",
-      cause: { details: "[Max log size exceeded]" },
-    });
-  });
-
-  it("keeps contextless super calls compatible with a separately bounded build", () => {
-    class Legacy extends Fields {
-      protected override buildLogObject(): Record<string, unknown> {
-        return { ...super.buildLogObject(), legacy: "L" };
-      }
-    }
-    const log = new Legacy({ requestId: "R" }, fullCause()).toLogObject();
-    expect(log).toMatchObject({
-      legacy: "L",
-      requestId: "R",
-      cause: { details: "[Max log size exceeded]" },
-    });
-  });
-});
-
 it("does not traverse consumer prototype chains to recognize a nested data error", () => {
   let reads = 0;
   let prototype: object | null = null;

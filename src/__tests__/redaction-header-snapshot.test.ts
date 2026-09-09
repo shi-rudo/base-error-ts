@@ -1,13 +1,15 @@
 import { expect, it } from "vitest";
 import { BaseError } from "../index.js";
 
-function legacy(fields: Record<string, unknown>) {
-  class Legacy extends BaseError<"Legacy"> {
-    protected override buildLogObject(): Record<string, unknown> {
-      return { message: "outer", ...fields, code: 0, retryable: false };
-    }
+function customCause(fields: Record<string, unknown>) {
+  class WithDecisions extends BaseError<"WithDecisions"> {
+    readonly code = 0;
+    readonly retryable = false;
   }
-  return new Legacy("outer");
+  return new WithDecisions(
+    "outer",
+    new BaseError("inner").redactWith(() => fields),
+  );
 }
 
 it("does not read cause-array indices again to mask stack headers", () => {
@@ -18,10 +20,10 @@ it("does not read cause-array indices again to mask stack headers", () => {
       return Reflect.get(target, key, receiver);
     },
   });
-  const log = legacy({ errors }).redact(["message"]).toLogObject();
+  const log = customCause({ errors }).redact(["message"]).toLogObject();
   expect(reads).toBe(60_000);
   expect(log).toMatchObject({ code: 0, retryable: false });
-  expect(log.errors).toHaveLength(60_000);
+  expect((log.cause as Record<string, unknown>).errors).toHaveLength(60_000);
 });
 
 it("masks the stack value that was copied even when its getter changes later", () => {
@@ -36,10 +38,10 @@ it("masks the stack value that was copied even when its getter changes later", (
         : undefined;
     },
   };
-  const log = legacy({ cause }).redact(["message"]).toLogObject();
+  const log = customCause({ cause }).redact(["message"]).toLogObject();
   expect(JSON.stringify(log)).not.toContain("PRIVATE_MESSAGE");
   expect(reads).toBe(1);
-  expect(log.cause).toMatchObject({
+  expect((log.cause as Record<string, unknown>).cause).toMatchObject({
     stack: "Error: [REDACTED]\n    at operation",
   });
 });

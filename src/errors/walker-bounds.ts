@@ -58,12 +58,6 @@ export const MAX_OWN_LOG_FIELDS = 100;
 export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 
 /**
- * Custom log records get the same own-key inspection allowance as the
- * own-fields hook. Fixed envelope inspections reserve part of this allowance.
- */
-export const MAX_LOG_OBJECT_KEYS_READ: number = MAX_OWN_LOG_FIELDS_READ;
-
-/**
  * Deepest nesting in a data tree. The redaction walker writes a marker at
  * the cap, and `cloneJsonSafe` rejects the value. The log data serializer
  * keeps an empty container at the cap, without reading its children.
@@ -96,7 +90,7 @@ export const MAX_REDACTION_READS: number = MAX_DATA_NODES;
 /**
  * Shared allowance for one synchronous log build, including cause nodes and
  * data visits and own-key inspections across all fields. Public calls from
- * consumer callbacks and contextless legacy builds get independent allowances.
+ * consumer callbacks get independent allowances.
  * One final key per active hook can carry a size cut. Fixed scalar envelope
  * fields survive exhaustion without further expansion. Matches the data cap.
  */

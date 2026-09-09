@@ -98,6 +98,29 @@ of the second stack-header pass. A separate regression counts that work: a
 when masking messages. The changing-stack-getter regression verifies that the
 copied secret is masked without rereading its source.
 
+## Removing the legacy envelope hook
+
+A quiet paired run compares `19788cd` with the removal of `buildLogObject()`
+and its record-copy and fallback paths. Both bundles use the same explicit
+tsconfig and esbuild settings.
+
+| Input | Sticky root policy | `19788cd` | Internal envelope assembly |
+| --- | --- | ---: | ---: |
+| Shallow cause with details | none | 4.49 | 3.15 |
+| Shallow cause with details | deny secret | 10.32 | 9.51 |
+| 100-member aggregate | none | 202.04 | 203.16 |
+| 100-member aggregate | deny secret | 530.29 | 514.58 |
+| 100-node cause chain | none | 202.73 | 203.15 |
+| 100-node cause chain | deny secret | 514.31 | 511.45 |
+
+The shallow unredacted median falls about 30%; its redacted median falls about
+8%. The larger cases differ by at most 3%. Sample ranges overlap in all six
+comparisons, so these measurements do not establish statistical significance.
+Removing root assembly overhead does not remove the cost of copying and
+redacting a large cause graph. The main reduction is structural: five methods
+and a net 175 production lines are removed, including the legacy record copier,
+continuation, inspection-cut notice, and multi-stage fallback.
+
 ## Reproduce
 
 The scenario and timing code is

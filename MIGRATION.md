@@ -1,10 +1,10 @@
 # Migration Guide
 
-## Unreleased: log field hooks
+## Next major: log field hooks
 
-`buildLogObject()` is deprecated on `BaseError` and `StructuredError`.
-Existing overrides and `super.buildLogObject()` calls remain supported.
-The hook is not removed in this release.
+`buildLogObject()` is removed from `BaseError` and `StructuredError`.
+Overrides and `super.buildLogObject()` calls no longer compile.
+JavaScript methods with that name are no longer called by the library.
 
 Move additional fields to `buildOwnLogFields()`:
 
@@ -39,22 +39,17 @@ An envelope override has no direct replacement hook. Move log layout changes
 to the consumer's logging adapter, after `toLogObject()` applies redaction.
 Do not restore fields from the raw error after redaction.
 
-The narrow hook copies values; the deprecated hook passes nested values through.
+The narrow hook copies values; the removed hook passed nested values through.
 Review conversions when migrating. See the
 [log field contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/base-error.md#adding-your-own-log-fields)
 for limits and fallback behavior.
 
-The next major changes oversized legacy `buildLogObject()` records.
-A bounded inspection cut appends ` [Max log size exceeded]` to a nonempty string `message`.
-For other message values, the library uses that marker alone without coercion.
-The notice reports an inspection cut, including uninspected non-enumerable or unsupported keys.
-Fixed envelope fields remain reachable beyond the custom inspection limit and keep their values.
-If only recovered envelope fields remain, no notice is added.
-
-The base envelope keeps its original key order and its own `stack` and `cause`
-keys even when their values are `undefined`. `StructuredError` still adds
-`details` only when present. Empty or all-undefined legacy overrides fall back
-to that base envelope. An inspection cut adds its notice to this fallback too.
+The library now reads its fixed envelope directly from the instance through guarded reads.
+A getter that throws costs its own field; other diagnostics and the cause survive.
+There is no legacy record inspection, inspection-cut suffix, or fallback assembly.
+Undefined or unreadable root fields are omitted, except for the own `cause` slot.
+The readable fields retain their order. `StructuredError` still adds `details` only when present.
+Root `details` keeps its existing in-process value semantics and is walked by redaction when configured.
 
 Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
@@ -68,10 +63,6 @@ Use the `cause` chain when the full nested diagnosis is required.
 
 Public `toLogObject()` calls retain their full behavior inside consumer callbacks.
 The library projects nested data errors directly without invoking their `toJSON` overrides.
-A legacy hook can forward the optional `buildBase` callback to `super.buildLogObject(buildBase)`
-to share the enclosing allowance. Contextless `super.buildLogObject()` remains valid
-and starts a separately bounded sub-build. Prefer migrating to the narrow hook.
-
 Use the exported `inspectOwnLogFields(record)` in consumer tests to detect
 reserved names such as `details`, unsupported values, getters, cycles, and limits.
 It returns issues with `path` and `reason`; valid records return `[]`.

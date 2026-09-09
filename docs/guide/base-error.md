@@ -146,8 +146,7 @@ interrupt consumer code or bound the work inside a getter or callback.
 
 Fields declared here survive at **every depth of every chain that wraps this
 error**, so an adapter that wraps the error in its own type does not lose them.
-That is the reason this hook exists, and it is the difference from overriding
-`buildLogObject()`, whose fields appear at the root only.
+The library builds the envelope internally; `buildLogObject()` is removed in the next major.
 
 The rules the hook lives under, because a log path must not throw and must stay
 bounded:
@@ -179,8 +178,8 @@ container cannot pass the redaction depth cap.
 The marker is a **value**, not an extra diagnostic key. On a data field it is
 masked under `redactAllow([])`. Only a marker emitted on a cause link or aggregate
 slot has the private provenance that can preserve it there. Matching consumer
-text gets no exception. The fixed root envelope copy has its own bounded key
-allowance. JavaScript key enumeration is eager, and consumer callbacks cannot be
+text gets no exception. Root assembly reads a fixed list of instance properties.
+JavaScript key enumeration is eager, and consumer callbacks cannot be
 interrupted; the budget limits the library's subsequent reads and expansion.
 
 Built-in redaction has a separate 100,000-read allowance per walk
@@ -207,9 +206,9 @@ and `details` and drops the rest.
 
 ### Migrating from `buildLogObject()`
 
-`buildLogObject()` is deprecated. Existing overrides and `super.buildLogObject()`
-calls remain supported during migration. This release does not remove the hook.
-Both uses can show a deprecation diagnostic in your editor.
+**Breaking change for the next major:** `buildLogObject()` is removed from
+`BaseError` and `StructuredError`. Overrides and `super.buildLogObject()` calls
+no longer compile. JavaScript methods with that name are not called by logging.
 
 Move additional fields into `buildOwnLogFields()`. Return only those fields;
 do not spread `super.buildLogObject()` into the result. For an own-fields
@@ -222,63 +221,35 @@ the consumer's logging adapter. Transform the result of `error.toLogObject()`
 after redaction. Do not read raw error properties back into the transformed log.
 No replacement envelope hook is provided.
 
-The two hooks have different value semantics. `buildOwnLogFields()` copies its
-values through the bounded data serializer. A date becomes an ISO string,
-a bigint becomes a decimal string, and a map becomes `{}`. The deprecated hook
-passes nested values through. Convert values explicitly when migrating to
-`OwnLogFields`; for example, use `date.toISOString()` and `bigint.toString()`.
+The removed hook passed nested values through. `buildOwnLogFields()` copies its
+values through the bounded data serializer: dates become ISO strings, bigints
+become decimal strings, and maps become `{}`. Convert values explicitly when
+migrating to `OwnLogFields`, for example with `date.toISOString()`.
 
-For the deprecated hook, the library copies the returned record without invoking
-its setters. It preserves enumerable key order, reserving part of its 1000-key allowance
-for fixed envelope fields.
-Symbols and non-enumerable keys consume this limit. Key enumeration itself is
-eager, because JavaScript has no lazy own-key operation. A custom record with
-no defined readable fields falls back to the base envelope.
-An inspection cut adds its notice to the selected envelope, including this fallback.
-
-**Breaking change for the next major:** a legacy inspection cut changes `message`.
-The library appends ` [Max log size exceeded]` to a nonempty string message.
-Otherwise, `message` becomes `[Max log size exceeded]`, without coercing the original value.
-The notice means the library stopped inspection. Uninspected keys can include
-non-enumerable or unsupported keys. It does not assert that every omitted key held data.
-Fixed envelope fields remain reachable beyond the custom inspection limit.
-If only these recovered fields remain, the library reports no cut.
-The notice does not change `code`, `category`, or `retryable`.
-Move custom layout into a logging adapter and migrate fields to `buildOwnLogFields()`.
+The legacy record copier, inspection-cut message suffix, and fallback assembly
+are removed with the hook. A throwing instance getter now costs its own field;
+other readable diagnostics, decision fields, and the cause chain remain available.
 
 Each public `toLogObject()` call starts an independent build, including calls
 made explicitly by a consumer callback. A `BaseError` encountered as a data
 value instead receives its primitive diagnostic view directly. Its `toJSON`
 override is not called. Cause depth and data depth count separately.
 
-The legacy hook accepts an optional `buildBase` continuation. Forward it through
-an override to keep cause traversal within the enclosing build's allowance:
-
-```ts
-protected override buildLogObject(
-  buildBase?: () => Record<string, unknown>,
-): Record<string, unknown> {
-  return { ...super.buildLogObject(buildBase), legacyField: "value" };
-}
-```
-
-Existing `super.buildLogObject()` calls remain valid but start a separately
-bounded sub-build. Consumer callbacks can initiate multiple builds; their work
-is outside the enclosing traversal allowance. The library stores no current-build
-state. Prefer migrating fields to the narrow hook over extending this legacy seam.
+Consumer callbacks can initiate multiple public builds. Their work remains
+outside the enclosing traversal allowance. The library stores no current-build state.
 
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.
 
 ### Log object compatibility
 
-The base envelope retains its property order: `name`, `message`, `timestamp`,
-`timestampIso`, `stack`, `cause`. The last two keys remain own properties even
-when their values are `undefined`; JSON omits those values as before.
-`StructuredError` appends `code`, `category`, `retryable`, and `details` when
-present. Legacy override records keep their enumerable key order within the
-copy allowance. Empty or all-undefined overrides use the ordinary base envelope;
-`[log build failed]` is reserved for failure of that fallback too.
+The root reads `name`, `message`, `timestamp`, `timestampIso`, and `stack` in
+that order, followed by `cause`, aggregate members, and structured fields.
+Undefined or unreadable fields are omitted, except for the own `cause` slot.
+`StructuredError` fields are read independently of the own-fields hook.
+Root `details` retains its existing in-process value semantics; redaction walks
+it when configured. Cause details and own-hook values use bounded data copies.
+Custom redactors remain consumer callbacks and can replace their node's log.
 
 The reproducible performance comparison is in
 [the serialization measurement](./log-serialization-performance.md).
