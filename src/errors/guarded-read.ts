@@ -185,3 +185,42 @@ export function readToJSON(value: unknown): unknown {
     return UNREADABLE_TO_JSON;
   }
 }
+
+/** Reflection failed; distinct from an absent own property or null prototype. */
+export const UNREADABLE_REFLECTION: unique symbol = Symbol(
+  "unreadable.reflection",
+);
+
+/** Inspect an own property without invoking its getter. Proxy traps can run. */
+export function readOwnPropertyDescriptor(
+  value: object,
+  key: string | symbol,
+): PropertyDescriptor | undefined | typeof UNREADABLE_REFLECTION {
+  try {
+    return Reflect.getOwnPropertyDescriptor(value, key);
+  } catch {
+    return UNREADABLE_REFLECTION;
+  }
+}
+
+/** Read a prototype without accessing consumer constructor properties. */
+export function readPrototype(
+  value: object,
+): object | null | typeof UNREADABLE_REFLECTION {
+  try {
+    return Reflect.getPrototypeOf(value);
+  } catch {
+    return UNREADABLE_REFLECTION;
+  }
+}
+
+/** Own-key enumeration is eager even when subsequent inspection is bounded. */
+export function readOwnKeys(
+  value: object,
+): (string | symbol)[] | typeof UNREADABLE_REFLECTION {
+  try {
+    return Reflect.ownKeys(value);
+  } catch {
+    return UNREADABLE_REFLECTION;
+  }
+}

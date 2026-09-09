@@ -65,6 +65,8 @@ const status = matchError(err, {
 
 For additional log fields, override `buildOwnLogFields()` and use the exported
 `OwnLogFields` return type. These fields survive when the error becomes a cause.
+Use `inspectOwnLogFields(record)` in consumer tests to find reserved names and
+non-data values before logging. It returns diagnostic issues without adding log fields.
 For an optional field, return `requestId: this.requestId ?? null`, or omit its key.
 `buildLogObject()` is deprecated; existing overrides remain supported during
 migration. See the [log field contract](docs/guide/base-error.md#adding-your-own-log-fields)

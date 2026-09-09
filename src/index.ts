@@ -7,6 +7,8 @@ export type {
   OwnLogFields,
   RedactMask,
 } from "./errors/BaseError.js";
+export { inspectOwnLogFields } from "./errors/own-log-fields-contract.js";
+export type { OwnLogFieldsIssue } from "./errors/own-log-fields-contract.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
 export { matchError } from "./errors/match.js";

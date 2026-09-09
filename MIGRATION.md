@@ -49,12 +49,23 @@ keys even when their values are `undefined`. `StructuredError` still adds
 `details` only when present. Empty or all-undefined legacy overrides fall back
 to that base envelope, not to a build-failure message.
 
-Data copying now shares one log-build budget across fields and cause nodes.
+Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
 field the reader could not expand; it never labels that cut as a cycle.
 A `BaseError` nested in copied data retains primitive diagnostic fields and its
 sticky redaction policy. It does not restart hooks or expand its details or links.
 Use the `cause` chain when the full nested diagnosis is required.
+
+Public `toLogObject()` calls retain their full behavior inside consumer callbacks.
+The library projects nested data errors directly without invoking their `toJSON` overrides.
+A legacy hook can forward the optional `buildBase` callback to `super.buildLogObject(buildBase)`
+to share the enclosing allowance. Contextless `super.buildLogObject()` remains valid
+and starts a separately bounded sub-build. Prefer migrating to the narrow hook.
+
+Use the exported `inspectOwnLogFields(record)` in consumer tests to detect
+reserved names such as `details`, unsupported values, getters, cycles, and limits.
+It returns issues with `path` and `reason`; valid records return `[]`.
+The checker never runs implicitly in the log path and adds no log fields.
 
 ## v7 to v8
 

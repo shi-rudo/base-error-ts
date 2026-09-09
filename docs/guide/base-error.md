@@ -113,6 +113,28 @@ It cannot prove that numbers are finite, records have plain prototypes, or
 values contain no getters or cycles. Runtime guards still apply. The base hook
 keeps its `Record<string, unknown>` signature so existing overrides remain compatible.
 
+### Check the contract in consumer tests
+
+Use `inspectOwnLogFields` on the record your hook returns. It reports reserved
+names, unsupported values, accessors, cycles, and inspection limits with paths.
+It does not execute getters or serialization callbacks, and never runs implicitly
+while logging. Proxy reflection traps still execute and cannot be interrupted.
+
+```ts
+import { inspectOwnLogFields } from "@shirudo/base-error";
+
+expect(inspectOwnLogFields({ requestId: "R" })).toEqual([]);
+expect(inspectOwnLogFields({ details: "lost" })).toEqual([
+  { path: ["details"], reason: "reserved-key" },
+]);
+```
+
+A test subclass can expose `super.buildOwnLogFields()` through a public test
+method. Inspect that method's result to check the actual hook implementation.
+The checker reports at most 100 issues and uses the data depth and node limits.
+An empty result means the inspected record satisfies the recommended data contract.
+It does not predict the remaining budget when that record sits in a larger log.
+
 The hook supplies data; the library assembles the envelope, traverses causes,
 and applies redaction. The consumer's logging adapter selects the log level,
 transport, sampling, and storage. The hook must finish synchronously and must
@@ -131,13 +153,13 @@ bounded:
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
 | Must not walk a chain or log another error | An error returned directly as a field value is dropped. A nested `BaseError` keeps a primitive diagnostic envelope and its sticky policy; its hooks, details, and links are not expanded |
-| The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `#RESERVED_NODE_KEYS` in `src/errors/BaseError.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
+| The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `RESERVED_NODE_KEYS` in `src/errors/log-field-keys.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
 | A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws costs its own key only |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
 | Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Cause depth counts separately |
 
-Rejected keys, failed hooks, and width cuts remain silent. The whole log build
+Rejected keys, failed hooks, and width cuts remain silent in production. Each library-owned build
 shares a 100,000-visit budget across causes, data values, and own-key inspections
 (`MAX_LOG_NODES` in `src/errors/walker-bounds.ts`). Once spent, the current data
 field becomes `[Max log size exceeded]`. A later field can carry the same marker
@@ -185,15 +207,32 @@ passes nested values through. Convert values explicitly when migrating to
 `OwnLogFields`; for example, use `date.toISOString()` and `bigint.toString()`.
 
 For the deprecated hook, the library copies the returned record without invoking
-its setters. It reads the fixed envelope first, then inspects at most 1000 own
-keys for other fields.
+its setters. It preserves enumerable key order, reserving part of its 1000-key allowance
+for fixed envelope fields.
 Symbols and non-enumerable keys consume this limit. Key enumeration itself is
 eager, because JavaScript has no lazy own-key operation. A custom record with
-no readable fields falls back to the triage envelope.
+no defined readable fields falls back to the base envelope.
 
-During a data value's `toJSON`, a nested `toLogObject()` call returns `{}`.
-This prevents recursive logging from restarting the walker. Cause depth and
-data depth count separately in the data copy, as they do in redaction.
+Each public `toLogObject()` call starts an independent build, including calls
+made explicitly by a consumer callback. A `BaseError` encountered as a data
+value instead receives its primitive diagnostic view directly. Its `toJSON`
+override is not called. Cause depth and data depth count separately.
+
+The legacy hook accepts an optional `buildBase` continuation. Forward it through
+an override to keep cause traversal within the enclosing build's allowance:
+
+```ts
+protected override buildLogObject(
+  buildBase?: () => Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...super.buildLogObject(buildBase), legacyField: "value" };
+}
+```
+
+Existing `super.buildLogObject()` calls remain valid but start a separately
+bounded sub-build. Consumer callbacks can initiate multiple builds; their work
+is outside the enclosing traversal allowance. The library stores no current-build
+state. Prefer migrating fields to the narrow hook over extending this legacy seam.
 
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.

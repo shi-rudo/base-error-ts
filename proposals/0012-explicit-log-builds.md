@@ -1,0 +1,56 @@
+# Explicit log builds and checked consumer fields
+
+Status: implemented on PR #23; release: unreleased.
+
+## Responsibility
+
+The error model owns a bounded log representation, cause traversal, and redaction.
+Consumers own log delivery, layout, and conversion into the recommended `OwnLogFields` contract.
+The deprecated envelope hook remains a compatibility boundary.
+
+The library retains its bounded data copier in `src/errors/log-data.ts`.
+It is not a general JSON serializer and is not a new package export.
+Its compatibility contract includes JSON conversions, callbacks, and boxed primitives already supported by this package.
+Direct tests compare that contract against native JSON and pin intentional differences:
+bigint strings, bounded cuts, failure markers, and primitive diagnostic views of nested errors.
+Top-level nonfinite numbers and negative zero retain the existing JavaScript-value behavior.
+Foreign reads remain guarded. Descriptor inspections and copied values consume an explicit allowance.
+Redaction and serialization share one position rule in `log-position.ts`.
+
+## Execution context
+
+Each public `toLogObject()` call creates its own context.
+Cause traversal, field inspection, and data copying receive that context explicitly.
+No current-build variable or re-entrancy switch controls another public call.
+
+A BaseError encountered as data receives a shallow diagnostic view directly.
+The data copier does not call its `toJSON`, hooks, or cause traversal.
+A private-brand check recognizes local instances without traversing consumer prototypes.
+An explicit public call from consumer code retains normal public behavior.
+Consumer callbacks must terminate; the library cannot interrupt their synchronous work.
+
+The legacy `buildLogObject` hook receives an optional `buildBase` continuation.
+Forwarding it to `super.buildLogObject(buildBase)` preserves the current allowance without exposing mutable bookkeeping.
+Existing overrides that call `super.buildLogObject()` remain valid.
+That contextless call starts its own bounded sub-build, with its own allowance.
+A consumer can invoke such work repeatedly, just as it can call a getter or another logger repeatedly.
+The budget covers library traversal, not arbitrary work initiated by consumer code.
+BaseError and StructuredError forward the continuation throughout the library-owned path.
+
+## Contract diagnostics
+
+`inspectOwnLogFields` is an explicit consumer-test function.
+It inspects a returned record without executing getters or serialization callbacks.
+It reports reserved names such as `details`, unsupported values, and inspection limits.
+An empty issue list means the bounded inspection found no contract violation.
+The function is never invoked by the production logging path.
+It does not add diagnostic keys or expand marker exceptions.
+
+## Costs and rejected alternatives
+
+This change removes ambient coupling; extracting a file alone would not do that.
+It does not remove ownership of the data-copy algorithm or make the feature small.
+Native JSON cannot enforce our inspection allowance before descriptor reads.
+Narrowing runtime inputs now would change established cause-data behavior.
+The library therefore keeps the copier with independent compatibility and adversarial tests.
+The performance comparison remains reproducible in `scripts/benchmark-log-serialization.mjs`.

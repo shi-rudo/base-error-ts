@@ -424,8 +424,10 @@ export class StructuredError<
    * @deprecated Override {@link buildOwnLogFields} to contribute data fields.
    * Reshape the completed log in the consumer's logging adapter instead.
    */
-  protected override buildLogObject(): Record<string, unknown> {
-    const baseJson = super.buildLogObject();
+  protected override buildLogObject(
+    buildBase?: () => Record<string, unknown>,
+  ): Record<string, unknown> {
+    const baseJson = super.buildLogObject(buildBase);
 
     return {
       ...baseJson,

@@ -1,10 +1,19 @@
 import {
-  isInstanceOf,
+  ENVELOPE_KEYS,
+  ROOT_ENVELOPE_KEYS,
+  RESERVED_NODE_KEYS,
+} from "./log-field-keys.js";
+import {
+  createLogBuildContext,
+  type LogBuildContext,
+} from "./log-build-context.js";
+import { serializeLogData } from "./log-data.js";
+import {
+  childPosition,
+  type LogRegion as RedactRegion,
+} from "./log-position.js";
+import {
   readMembers,
-  readObjectTag,
-  readConstructorName,
-  readToJSON,
-  UNREADABLE_TO_JSON,
   readOwnEnumerableKeys,
   readOwnProperty,
   readProperty,
@@ -58,18 +67,6 @@ export type OwnLogFields = Readonly<Record<string, JsonSafeValue>>;
  * for partial masking (`****6789`) or preserving the value's type.
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
-
-/**
- * Where a node sits in the log tree, for `redactAllow`'s structure-vs-data
- * decision: `"root"` (the top level, where only the library's own envelope
- * keys are kept), `"cause"` (a cause's top level, structural envelope keys
- * kept, the rest data), `"data"` (a `details` subtree, a cause's foreign
- * subtree, or a subclass-added top-level subtree, where every leaf is data).
- * The deny-list (`redact`) ignores it.
- */
-type RedactRegion = "root" | "cause" | "data";
-
-type WalkPosition = { region: RedactRegion; depth: number; spine: number };
 
 /** Markers the redaction walker writes where a bound cut its walk. */
 const REDACTION_DEPTH_MARKER = "[Max redaction depth exceeded]";
@@ -136,13 +133,6 @@ export class BaseError<T extends string> extends Error {
   public override readonly stack?: string;
 
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
-
-  // A data toJSON callback must not restart hooks or cause traversal.
-  static #serializingData = false;
-
-  // Reentrant callbacks share the current synchronous log build allowance.
-  static #logBudget: { nodes: number; readonly limit: number } | undefined;
-  static readonly #sizeCut = Symbol("log.size");
 
   /**
    * Mask for the technical `message` in {@link toString}, set only by a
@@ -257,7 +247,7 @@ export class BaseError<T extends string> extends Error {
    * key of the array that holds it, so a list of tokens is masked as a whole
    * unless that key is allowed.
    * Only the library's own structural envelope is kept: the fixed top-level
-   * fields ({@link BaseError.#ROOT_ENVELOPE_KEYS}: `name`/`message`/`stack`/
+   * fields ({@link ROOT_ENVELOPE_KEYS}: `name`/`message`/`stack`/
    * `code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`)
    * and a cause's top-level structural envelope keys (`name`/`message`/`stack`/
    * `code`/`category`/`retryable`). Any other top-level field (e.g. one a
@@ -294,9 +284,9 @@ export class BaseError<T extends string> extends Error {
           }
           // Leaf. Keep iff the region permits this key.
           const kept =
-            (region === "root" && BaseError.#ROOT_ENVELOPE_KEYS.has(key)) ||
+            (region === "root" && ROOT_ENVELOPE_KEYS.has(key)) ||
             allow.has(key) ||
-            (region === "cause" && BaseError.#ENVELOPE_KEYS.has(key));
+            (region === "cause" && ENVELOPE_KEYS.has(key));
           return kept ? value : BaseError.#applyMask(mask, value, key);
         },
         "root",
@@ -306,39 +296,6 @@ export class BaseError<T extends string> extends Error {
 
   /** Sentinel returned by a redaction decision to mean "descend / keep as-is". */
   static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
-
-  /**
-   * Structural fields of an error envelope that survive an allow-list at the
-   * **top level of a cause**. Everything else under a cause (foreign siblings
-   * and anything nested beneath them, plus `details`) is treated as data, so a
-   * plain object mimicking the structured shape cannot smuggle sensitive
-   * siblings (or envelope-named keys buried in foreign subtrees) past
-   * `redactAllow`. Private: it must not become a process-wide redaction toggle.
-   */
-  static readonly #ENVELOPE_KEYS: ReadonlySet<string> = new Set([
-    "name",
-    "message",
-    "stack",
-    "code",
-    "category",
-    "retryable",
-  ]);
-
-  /**
-   * The library's own **top-level** structural fields, the only root leaves an
-   * allow-list keeps. Everything else at the top level (a field a subclass
-   * adds via `buildOwnLogFields`) is data, so a subclass-added field leaks nothing
-   * through `redactAllow` by default. Which region a root **container** enters
-   * is decided by {@link BaseError.#childRegion}, not by this set. Private for
-   * the same reason as {@link BaseError.#ENVELOPE_KEYS}.
-   */
-  static readonly #ROOT_ENVELOPE_KEYS: ReadonlySet<string> = new Set([
-    ...BaseError.#ENVELOPE_KEYS,
-    "timestamp",
-    "timestampIso",
-    "cause",
-    "details",
-  ]);
 
   /*#__PURE__*/ static #applyMask(
     mask: RedactMask,
@@ -379,7 +336,7 @@ export class BaseError<T extends string> extends Error {
    * structural envelope from data:
    * - `"root"`: the top-level error envelope (kept verbatim by the allow-list);
    * - `"cause"`: at a `cause`'s top level; the structural envelope keys
-   *   (`#ENVELOPE_KEYS`) are kept, all other leaves are data;
+   *   (`ENVELOPE_KEYS`) are kept, all other leaves are data;
    * - `"data"`: inside a `details` subtree or a cause's foreign subtree; every
    *   leaf is data.
    *
@@ -446,11 +403,11 @@ export class BaseError<T extends string> extends Error {
     state.seen.add(value);
     try {
       if (Array.isArray(value)) {
-        // Aggregate members sit on the cause spine (see #childRegion). Like
+        // Aggregate members sit on the cause spine (see childPosition). Like
         // the rest of that spine they stay out of the data-depth budget, so a
         // deep aggregate cannot marker-truncate a shallow `details` nested
         // beneath it; each member is one hop on the spine instead.
-        const position = BaseError.#childPosition(
+        const position = childPosition(
           { region, depth, spine },
           true,
           key,
@@ -530,7 +487,7 @@ export class BaseError<T extends string> extends Error {
         const decision = decide(key, val, region);
         if (decision === BaseError.#RECURSE) {
           if (Array.isArray(val) || BaseError.#isWalkable(val)) {
-            const position = BaseError.#childPosition(
+            const position = childPosition(
               { region, depth, spine },
               false,
               key,
@@ -606,57 +563,6 @@ export class BaseError<T extends string> extends Error {
     }
   }
 
-  /** Shared position rule for serialization and redaction. */
-  static #childPosition(
-    parent: WalkPosition,
-    array: boolean,
-    key: string,
-    value: unknown,
-  ): WalkPosition {
-    const region = array
-      ? parent.region
-      : BaseError.#childRegion(parent.region, key, value);
-    return {
-      region,
-      depth: region === "cause" ? parent.depth : parent.depth + 1,
-      spine:
-        parent.spine +
-        (region === "cause" && (array || !Array.isArray(value)) ? 1 : 0),
-    };
-  }
-
-  /**
-   * Region a child **container** enters (a leaf never transitions; its
-   * keep/mask decision is made in the region it lives in). Data is sticky for
-   * the whole subtree. `details` → data. `cause`, and `errors` when it holds
-   * a list → cause: they are the only containers on the cause spine. Every
-   * other container, an object under `errors` included, drops
-   * to data, at the root as well as inside a cause. That covers a foreign key
-   * (a field a subclass added via `buildOwnLogFields`, a sibling a plain-object
-   * cause carries) and also an **envelope-named** key: the envelope fields
-   * (`name`/`message`/`stack`/`code`/`category`/`retryable`) are primitives,
-   * so a container found under one of those names is not the envelope. It is
-   * data, and an envelope-named leaf nested inside it stays masked.
-   */
-  /*#__PURE__*/ static #childRegion(
-    region: RedactRegion,
-    key: string,
-    value: unknown,
-  ): RedactRegion {
-    if (region === "data") return "data";
-    if (key === "details") return "data";
-    if (key === "cause") return "cause";
-    // An aggregate's members are further cause nodes, so they keep the same
-    // structural envelope a `cause` gets, at the root as well as inside a
-    // cause. Only a list transitions: the serializer writes `errors` as a
-    // list, so an object under that name is foreign data, and it is bounded
-    // by the data depth like any other foreign subtree. `errors` is
-    // deliberately **not** added to #ROOT_ENVELOPE_KEYS: a scalar named
-    // `errors` is still a data leaf and stays masked under an allow-list.
-    if (key === "errors") return Array.isArray(value) ? "cause" : "data";
-    return "data";
-  }
-
   /**
    * Sets a custom redactor applied to the full log object. Use for allow-lists
    * or scrubbing the technical `message`. Sticky; the last redactor wins.
@@ -683,10 +589,21 @@ export class BaseError<T extends string> extends Error {
    * Existing overrides and `super.buildLogObject()` calls remain supported
    * during migration. An override runs at the root only.
    *
+   * Forward the optional `buildBase` continuation through `super` to share
+   * this build's allowance. Calling `super` without it starts a bounded sub-build.
+   *
    * @deprecated Override {@link buildOwnLogFields} to contribute data fields.
    * Reshape the completed log in the consumer's logging adapter instead.
    */
-  protected buildLogObject(): Record<string, unknown> {
+  protected buildLogObject(
+    buildBase?: () => Record<string, unknown>,
+  ): Record<string, unknown> {
+    return buildBase === undefined
+      ? this.#baseLogObject(BaseError.#newLogContext())
+      : buildBase();
+  }
+
+  #baseLogObject(context: LogBuildContext): Record<string, unknown> {
     const { name, message, timestamp, timestampIso, stack } = this;
     const ownProperties = this as unknown as Record<string, unknown>;
     const cause = ownProperties.cause;
@@ -698,14 +615,26 @@ export class BaseError<T extends string> extends Error {
       timestampIso,
       stack,
     };
-    json.cause = this.#serializeCause(cause, new Set(), 0, json, "cause");
+    json.cause = this.#serializeCause(
+      cause,
+      new Set(),
+      0,
+      json,
+      "cause",
+      context,
+    );
 
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
     // the same bounded, cycle-safe serialization as an aggregate cause.
     const aggregate = readMembers(this, MAX_AGGREGATE_MEMBERS);
     if (aggregate !== undefined && aggregate.total > 0) {
-      json.errors = this.#serializeAggregate(aggregate, new Set([this]), 1);
+      json.errors = this.#serializeAggregate(
+        aggregate,
+        new Set([this]),
+        1,
+        context,
+      );
     }
 
     return json;
@@ -735,17 +664,18 @@ export class BaseError<T extends string> extends Error {
    * an allow-listed, message-free public view.
    */
   public toLogObject(): Record<string, unknown> {
-    if (BaseError.#serializingData) return this.#dataErrorEnvelope();
-    const previous = BaseError.#logBudget;
-    BaseError.#logBudget ??= { nodes: 0, limit: MAX_LOG_NODES };
-    try {
-      const raw = this.#buildLogObjectTotal();
-      return this.#redactor
-        ? BaseError.#redactFailClosed(this.#redactor, raw)
-        : raw;
-    } finally {
-      BaseError.#logBudget = previous;
-    }
+    const context = BaseError.#newLogContext();
+    const raw = this.#assembleLogObject(context);
+    Object.assign(raw, this.#nodeOwnFields(this, context));
+    return this.#redactor
+      ? BaseError.#redactFailClosed(this.#redactor, raw)
+      : raw;
+  }
+
+  static #newLogContext(): LogBuildContext {
+    return createLogBuildContext((value) =>
+      BaseError.#sameRealm(value) ? value.#dataErrorEnvelope() : undefined,
+    );
   }
 
   /** Nested data errors retain diagnostics without invoking hooks or links. */
@@ -786,12 +716,12 @@ export class BaseError<T extends string> extends Error {
    *   wherever it sits in a chain;
    * - it must not walk a cause chain and must not log another error;
    * - every key that carries a name this library writes is dropped rather
-   *   than obeyed, and {@link BaseError.#RESERVED_NODE_KEYS} is the list;
+   *   than obeyed, and {@link RESERVED_NODE_KEYS} is the list;
    * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
    *   the reader stops there;
    * - a throw, or a return that is not a record, costs these fields and never
    *   the node. A getter that throws costs its own key only;
-   * - every value is copied as data (see {@link BaseError.#serializeData}),
+   * - every value is copied as data (see {@link serializeLogData}),
    *   so the log shares no reference with the error.
    *
    * That copy follows JSON value conversions. A `Date` becomes its ISO string, a `Map`
@@ -809,51 +739,12 @@ export class BaseError<T extends string> extends Error {
     return {};
   }
 
-  /**
-   * Bridge to {@link buildOwnLogFields} through a private member, so reaching
-   * it is itself the realm brand: a cross-realm instance fails `instanceof`,
-   * and a Proxy fails the private access. Both then read as an error without
-   * own fields, exactly as {@link BaseError.#redactorOf} treats a policy.
-   */
-  /*#__PURE__*/ #ownLogFields(): Record<string, unknown> {
-    return this.buildOwnLogFields();
+  /** Private brands reject foreign instances and proxies without walking prototypes. */
+  static #sameRealm(value: unknown): value is BaseError<string> {
+    if (typeof value !== "object" || value === null) return false;
+    // eslint-disable-next-line no-restricted-syntax -- Private brands invoke no foreign reads or Proxy traps.
+    return #redactor in value;
   }
-
-  /**
-   * Whether `value` is a BaseError of this realm, reachable as one. A
-   * cross-realm instance fails `instanceof` and a Proxy fails the private
-   * access, so each reads as an error this library cannot ask for its own
-   * fields. Probed apart from the hook call, so an unreachable error is not
-   * reported as one whose hook failed.
-   */
-  /*#__PURE__*/ static #sameRealm(value: unknown): value is BaseError<string> {
-    try {
-      if (!isInstanceOf(value, BaseError)) return false;
-      // A Proxy passes `instanceof` and fails the private access, so the
-      // private read is the brand.
-      void value.#redactor;
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  /**
-   * Keys a cause node's own fields may not write: the library writes them
-   * itself, and two of them carry the bounded links.
-   */
-  static readonly #RESERVED_NODE_KEYS: ReadonlySet<string> = new Set([
-    // Every envelope name. The allow-list keeps a leaf by key name and not by
-    // provenance, so a hook field called `category` or `details` would survive
-    // `redactAllow` unmasked. Reserving the whole set keeps an unknown key
-    // data, which is what fail-closed means here. Some of these names the
-    // cause serializer never writes; they are reserved for that reason alone.
-    ...BaseError.#ROOT_ENVELOPE_KEYS,
-    "errors",
-    // A name the runtime owns. Writing it into a plain object routes through
-    // a prototype setter instead of adding a field.
-    "__proto__",
-  ]);
 
   /**
    * The own fields a node carries: the hook's record with the library's own
@@ -861,7 +752,10 @@ export class BaseError<T extends string> extends Error {
    * reader for the root and for a cause, so both positions carry the same
    * fields under the same rules.
    */
-  /*#__PURE__*/ #nodeOwnFields(value: unknown): Record<string, unknown> {
+  /*#__PURE__*/ #nodeOwnFields(
+    value: unknown,
+    context: LogBuildContext,
+  ): Record<string, unknown> {
     if (!BaseError.#sameRealm(value)) {
       return {};
     }
@@ -874,7 +768,7 @@ export class BaseError<T extends string> extends Error {
       // getter on it throws, a Proxy trap on it throws, and reading its keys
       // or its prototype throws. All of that stays inside this one try, so a
       // hostile record costs these fields and never the node.
-      const fields: unknown = value.#ownLogFields();
+      const fields: unknown = value.buildOwnLogFields();
       if (
         typeof fields !== "object" ||
         fields === null ||
@@ -887,20 +781,19 @@ export class BaseError<T extends string> extends Error {
       for (const key of readOwnEnumerableKeys(
         record,
         MAX_OWN_LOG_FIELDS_READ,
-        BaseError.#logBudget,
+        context.budget,
       )) {
         if (taken >= MAX_OWN_LOG_FIELDS) break;
-        if (BaseError.#RESERVED_NODE_KEYS.has(key)) continue;
+        if (RESERVED_NODE_KEYS.has(key)) continue;
         // Read through the guarded reader, so one throwing getter costs its
         // own key and leaves every sibling already collected in place.
         const item = readProperty(record, key);
-        // An error here re-enters the log build through `toJSON`, with no
-        // depth and no seen set, so `{ self: this }` grows without bound. The
-        // contract already forbids it; this is where it is enforced.
+        // Own fields describe the node. Error relationships belong in cause.
+        // Nested data errors use a shallow diagnostic view in serializeLogData.
         if (BaseError.#sameRealm(item) || BaseError.#isNativeError(item)) {
           continue;
         }
-        const data = this.#serializeData(item);
+        const data = serializeLogData(item, context);
         if (data === undefined) continue;
         out[key] = data;
         taken++;
@@ -911,21 +804,11 @@ export class BaseError<T extends string> extends Error {
     return out;
   }
 
-  /**
-   * The complete log object before redaction: the envelope the subclass chain
-   * assembled, copied into an owned record with this error's own log fields.
-   * Never write into a foreign target: even a successful setter can revoke it.
-   */
-  /*#__PURE__*/ #buildLogObjectTotal(): Record<string, unknown> {
-    const assembled = this.#assembleLogObject();
-    return Object.assign(assembled, this.#nodeOwnFields(this));
-  }
-
   /** Copy once, in source order, with safe own writes even for __proto__. */
   #copyLogRecord(
     record: Record<string, unknown>,
   ): Record<string, unknown> | undefined {
-    const envelopeKeys = [...BaseError.#ROOT_ENVELOPE_KEYS, "errors"];
+    const envelopeKeys = [...ROOT_ENVELOPE_KEYS, "errors"];
     const keys = Array.from(
       readOwnEnumerableKeys(
         record,
@@ -964,9 +847,13 @@ export class BaseError<T extends string> extends Error {
    * When that envelope throws as well, a field of the instance
    * is hostile, and only the guarded triage envelope remains.
    */
-  /*#__PURE__*/ #assembleLogObject(): Record<string, unknown> {
+  /*#__PURE__*/ #assembleLogObject(
+    context: LogBuildContext,
+  ): Record<string, unknown> {
     try {
-      const built: unknown = this.buildLogObject();
+      const built: unknown = this.buildLogObject(() =>
+        this.#baseLogObject(context),
+      );
       // An override can return the wrong shape as easily as it can throw: a
       // missing `return` yields undefined, and a primitive would be handed
       // to a caller whose contract says record. Both count as a failure.
@@ -989,17 +876,17 @@ export class BaseError<T extends string> extends Error {
       // fields a subclass declares are read from the instance, exactly as the
       // triage envelope below reads them. Without this the milder failure
       // loses the machine-readable code that the worse one keeps.
-      const base = BaseError.prototype.buildLogObject.call(this);
+      const base = this.#baseLogObject(context);
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
         if (base[key] !== undefined) continue;
-        const value = this.#serializeData(readProperty(this, key));
+        const value = serializeLogData(readProperty(this, key), context);
         if (value !== undefined) base[key] = value;
       }
       return base;
     } catch {
       // A field of the instance itself throws. Read the rest defensively.
     }
-    return this.#triageLogObject();
+    return this.#triageLogObject(context);
   }
 
   /**
@@ -1008,10 +895,12 @@ export class BaseError<T extends string> extends Error {
    * value is copied as data, so this cannot throw and cannot hand a consumer's
    * `JSON.stringify` a value it refuses.
    */
-  /*#__PURE__*/ #triageLogObject(): Record<string, unknown> {
+  /*#__PURE__*/ #triageLogObject(
+    context: LogBuildContext,
+  ): Record<string, unknown> {
     const triage: Record<string, unknown> = { message: "[log build failed]" };
     for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-      const value = this.#serializeData(readProperty(this, key));
+      const value = serializeLogData(readProperty(this, key), context);
       if (value !== undefined) {
         triage[key] = value;
       }
@@ -1062,9 +951,8 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * The sticky redactor of `value`, when `value` is a BaseError of this realm.
-   * The private field is the brand: a cross-realm instance and a Proxy fail
-   * it, and so does a value whose prototype check throws, so each of them
-   * reads as an error without a policy and is logged like a foreign error.
+   * A foreign instance or Proxy lacks this class's private brand and carries
+   * no reachable policy. The brand check does not inspect prototypes.
    */
   /*#__PURE__*/ static #redactorOf(
     value: unknown,
@@ -1409,7 +1297,7 @@ export class BaseError<T extends string> extends Error {
   /**
    * Intelligently serializes the cause for JSON output.
    * Preserves stack traces, StructuredError fields, and nested data. Every
-   * field taken off a native error is copied as data (see #serializeData),
+   * field taken off a native error is copied as data (see serializeLogData),
    * so the log object shares no reference with the cause and the consumer's
    * `JSON.stringify` never meets a bigint or a cycle the cause carried.
    * Uses a seen set to detect circular cause chains, and a depth bound so an
@@ -1430,9 +1318,10 @@ export class BaseError<T extends string> extends Error {
     depth: number,
     holder: object,
     key: string,
+    context: LogBuildContext,
   ): unknown {
     try {
-      return this.#serializeCauseNode(cause, seen, depth, holder, key);
+      return this.#serializeCauseNode(cause, seen, depth, holder, key, context);
     } catch {
       return BaseError.#markSerializerMarker(
         holder,
@@ -1448,14 +1337,17 @@ export class BaseError<T extends string> extends Error {
     depth: number,
     holder: object,
     key: string,
+    context: LogBuildContext,
   ): unknown {
     if (cause === undefined || cause === null) {
       return cause;
     }
 
-    if (!BaseError.#takeLogNode()) {
+    if (context.budget.nodes >= MAX_LOG_NODES) {
       return BaseError.#markSerializerMarker(holder, key, MAX_LOG_SIZE_MARKER);
     }
+
+    context.budget.nodes++;
 
     if (depth >= MAX_CAUSE_DEPTH) {
       return BaseError.#markSerializerMarker(
@@ -1477,20 +1369,20 @@ export class BaseError<T extends string> extends Error {
 
       // Every field is a foreign read: a cause is whatever the caller threw,
       // and this runs in a catch path, so a throwing getter reads as absent.
-      // Every value is copied as data (see #serializeData): the log object
+      // Every value is copied as data (see serializeLogData): the log object
       // must not share a reference with the cause, and the consumer's
       // JSON.stringify must not meet a bigint or a cycle the cause carried.
       const serialized: Record<string, unknown> = {
-        name: this.#serializeData(readProperty(cause, "name")),
-        message: this.#serializeData(readProperty(cause, "message")),
-        stack: this.#serializeData(readProperty(cause, "stack")),
+        name: serializeLogData(readProperty(cause, "name"), context),
+        message: serializeLogData(readProperty(cause, "message"), context),
+        stack: serializeLogData(readProperty(cause, "stack"), context),
       };
 
       // Preserve StructuredError fields if present (duck-typing). This is the
       // only route for a foreign cause: a plain `Error` carrying these fields,
       // a cross-realm instance and a Proxy have no reachable hook to ask.
       for (const key of ["code", "category", "retryable", "details"]) {
-        const value = this.#serializeData(readProperty(cause, key));
+        const value = serializeLogData(readProperty(cause, key), context);
         if (value !== undefined) serialized[key] = value;
       }
 
@@ -1498,7 +1390,7 @@ export class BaseError<T extends string> extends Error {
       // roster cannot replace. The library's own key names win, so a hook
       // cannot forge an envelope field or a bounded link, and every value is
       // copied as data like the rest of the node.
-      Object.assign(serialized, this.#nodeOwnFields(cause));
+      Object.assign(serialized, this.#nodeOwnFields(cause, context));
 
       // An aggregate's members (`AggregateError.errors`, and any error-like
       // value carrying the same shape) are own but **non-enumerable** on every
@@ -1513,6 +1405,7 @@ export class BaseError<T extends string> extends Error {
           aggregate,
           seen,
           depth + 1,
+          context,
         );
       }
 
@@ -1525,6 +1418,7 @@ export class BaseError<T extends string> extends Error {
           depth + 1,
           serialized,
           "cause",
+          context,
         );
       }
 
@@ -1540,187 +1434,7 @@ export class BaseError<T extends string> extends Error {
     }
 
     // A cause that is not an error is data.
-    return this.#serializeData(cause, "cause", depth);
-  }
-
-  /** JSON unboxes by internal brand; a consumer tag cannot grant or hide it. */
-  static #unboxData(value: object): unknown {
-    const tag = readObjectTag(value);
-    const tagged =
-      tag === undefined ||
-      readProperty(value, Symbol.toStringTag) !== undefined;
-    let primitive: unknown = value;
-    if (tag === "[object Number]" || tagged) {
-      try {
-        primitive = Number.prototype.valueOf.call(value);
-      } catch {
-        /* No number brand. */
-      }
-    }
-    if (primitive === value && (tag === "[object String]" || tagged)) {
-      try {
-        primitive = String.prototype.valueOf.call(value);
-      } catch {
-        /* No string brand. */
-      }
-    }
-    if (primitive === value && (tag === "[object Boolean]" || tagged)) {
-      try {
-        primitive = Boolean.prototype.valueOf.call(value);
-      } catch {
-        /* No boolean brand. */
-      }
-    }
-    if (primitive === value && (tag === "[object BigInt]" || tagged)) {
-      try {
-        primitive = BigInt.prototype.valueOf.call(value);
-      } catch {
-        /* No bigint brand. */
-      }
-    }
-    // Number and string wrappers run conversion hooks; booleans use their slot.
-    if (typeof primitive === "number") return +(value as unknown as number);
-    if (typeof primitive === "string") return String(value);
-    return primitive;
-  }
-
-  static #takeLogNode(): boolean {
-    const budget = BaseError.#logBudget;
-    if (budget === undefined) return true;
-    if (budget.nodes >= MAX_LOG_NODES) return false;
-    budget.nodes++;
-    return true;
-  }
-
-  /**
-   * A foreign value as the log object carries it: decoupled from its source
-   * and safe for the consumer's `JSON.stringify`. One rule for a plain-object
-   * cause and for every field copied off a native error (`details`, `code`,
-   * an object under `stack`), so both branches carry the same guarantees.
-   *
-   * A primitive passes as-is, except a bigint, which has no JSON form and is
-   * written as its decimal string, at every depth. A function or symbol has
-   * no JSON form either and reads as absent. A bounded walker copies objects,
-   * honors `toJSON`, and applies JSON value conversions. Foreign reads and
-   * descriptor inspections are guarded and charged before expansion. A cycle
-   * or a throwing `toJSON` uses the legacy
-   * circular-object fallback. Budget exhaustion uses the log-size marker.
-   * Nothing in here throws.
-   *
-   * Cause depth and data depth count separately, with the redaction regions.
-   * At a depth cap, the copy keeps an empty container and reads no children.
-   */
-  /*#__PURE__*/ #serializeData(
-    value: unknown,
-    region: RedactRegion = "data",
-    spine = 0,
-  ): unknown {
-    if (
-      value === undefined ||
-      typeof value === "function" ||
-      typeof value === "symbol"
-    )
-      return undefined;
-    const budget = BaseError.#logBudget ?? { nodes: 0, limit: MAX_LOG_NODES };
-    if (budget.nodes >= MAX_LOG_NODES) return MAX_LOG_SIZE_MARKER;
-    if (typeof value === "object" && value !== null) {
-      const serializing = BaseError.#serializingData;
-      BaseError.#serializingData = true;
-      const seen = new Set<object>();
-      const copy = (
-        input: unknown,
-        key: string,
-        parent?: WalkPosition,
-        arrayParent = false,
-      ): unknown => {
-        if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
-        budget.nodes++;
-        let item = input;
-        const toJSON = readToJSON(item);
-        if (toJSON === UNREADABLE_TO_JSON) throw new Error("unreadable toJSON");
-        if (typeof toJSON === "function")
-          item = Reflect.apply(toJSON, item, [key]);
-        if (item !== null && typeof item === "object") {
-          item = BaseError.#unboxData(item);
-        }
-        if (typeof item === "bigint") return item.toString();
-        if (typeof item === "number")
-          return Number.isFinite(item) ? item : null;
-        if (typeof item === "function" || typeof item === "symbol")
-          return undefined;
-        if (item === null || typeof item !== "object") return item;
-        const array = Array.isArray(item);
-        const position =
-          parent === undefined
-            ? {
-                region,
-                depth: 0,
-                spine: spine + (region === "cause" && !array ? 1 : 0),
-              }
-            : BaseError.#childPosition(parent, arrayParent, key, item);
-        if (
-          position.depth >= MAX_DATA_DEPTH ||
-          position.spine > MAX_CAUSE_DEPTH
-        )
-          return array ? [] : {};
-        if (seen.has(item)) throw new Error("circular data");
-        seen.add(item);
-        try {
-          if (array) {
-            const length = readProperty(item, "length");
-            const count =
-              typeof length === "number" &&
-              Number.isSafeInteger(length) &&
-              length >= 0
-                ? length
-                : 0;
-            const out: unknown[] = [];
-            for (let index = 0; index < count; index++) {
-              if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
-              out.push(
-                copy(
-                  readProperty(item, String(index)),
-                  String(index),
-                  position,
-                  true,
-                ) ?? null,
-              );
-            }
-            return out;
-          }
-          const out = Object.create(null) as Record<string, unknown>;
-          const keys = readOwnEnumerableKeys(item, MAX_LOG_NODES, budget);
-          let entry = keys.next();
-          while (!entry.done) {
-            if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
-            const key = entry.value;
-            const field = copy(readProperty(item, key), key, position);
-            if (field !== undefined) out[key] = field;
-            entry = keys.next();
-          }
-          if (!entry.value) throw new Error("unreadable data keys");
-          // A cut can fall on a non-enumerable key and yield no field.
-          if (budget.nodes >= MAX_LOG_NODES) throw BaseError.#sizeCut;
-          return { ...out };
-        } finally {
-          seen.delete(item);
-        }
-      };
-      try {
-        const result = copy(value, "");
-        return result === undefined
-          ? this.#serializeCircularObject(value)
-          : result;
-      } catch (error) {
-        if (error === BaseError.#sizeCut) return MAX_LOG_SIZE_MARKER;
-        return this.#serializeCircularObject(value);
-      } finally {
-        BaseError.#serializingData = serializing;
-      }
-    }
-    budget.nodes++;
-    if (typeof value === "bigint") return value.toString();
-    return value;
+    return serializeLogData(cause, context, "cause", depth);
   }
 
   /**
@@ -1734,10 +1448,11 @@ export class BaseError<T extends string> extends Error {
     aggregate: AggregateMembers,
     seen: Set<unknown>,
     depth: number,
+    context: LogBuildContext,
   ): unknown[] {
     const serialized: unknown[] = [];
     for (const error of aggregate.members) {
-      if ((BaseError.#logBudget?.nodes ?? 0) >= MAX_LOG_NODES) {
+      if (context.budget.nodes >= MAX_LOG_NODES) {
         serialized.push(
           BaseError.#markSerializerMarker(
             serialized,
@@ -1754,6 +1469,7 @@ export class BaseError<T extends string> extends Error {
           depth,
           serialized,
           String(serialized.length),
+          context,
         ),
       );
     }
@@ -1769,28 +1485,6 @@ export class BaseError<T extends string> extends Error {
       );
     }
     return serialized;
-  }
-
-  /**
-   * Creates a more useful representation of circular objects for debugging.
-   * Instead of just "[object Object]", it extracts key information. Total:
-   * the constructor and key reads are foreign, and a Proxy whose traps throw
-   * gets the bare marker instead of an exception.
-   */
-  /*#__PURE__*/ #serializeCircularObject(obj: object): string {
-    try {
-      const type = readConstructorName(obj) || "Object";
-      const keys = Array.from(
-        readOwnEnumerableKeys(obj, 6, BaseError.#logBudget),
-      );
-      const keyInfo =
-        keys.length > 0 ? ` with keys: [${keys.slice(0, 5).join(", ")}]` : "";
-      const moreKeys = keys.length > 5 ? "..." : "";
-
-      return `[Circular ${type}${keyInfo}${moreKeys}]`;
-    } catch {
-      return "[Circular Object]";
-    }
   }
 
   /**
