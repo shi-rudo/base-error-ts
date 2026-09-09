@@ -15,7 +15,8 @@ class OwnFieldsError extends BaseError<"OwnFieldsError"> {
 }
 
 describe("log build guards", () => {
-  it("omits a throwing code getter installed by a failed redactor", () => {
+  it("recovers the original code without reading a failed redactor's getter", () => {
+    let reads = 0;
     const error = new StructuredError({
       code: "PERMANENT",
       category: "VALIDATION",
@@ -24,6 +25,7 @@ describe("log build guards", () => {
     }).redactWith((raw) => {
       Object.defineProperty(raw, "code", {
         get() {
+          reads++;
           throw new Error("unreadable");
         },
       });
@@ -37,11 +39,12 @@ describe("log build guards", () => {
       category: "VALIDATION",
       retryable: false,
     });
-    expect(log).not.toHaveProperty("code");
+    expect(log.code).toBe("PERMANENT");
+    expect(reads).toBe(0);
     expect(JSON.stringify(log)).not.toContain("SECRET");
   });
 
-  it("does not recover an inherited code installed by a failed redactor", () => {
+  it("recovers the original code instead of a failed redactor's inherited code", () => {
     const error = new StructuredError({
       code: "PERMANENT",
       category: "VALIDATION",
@@ -60,7 +63,7 @@ describe("log build guards", () => {
       category: "VALIDATION",
       retryable: false,
     });
-    expect(log).not.toHaveProperty("code");
+    expect(log.code).toBe("PERMANENT");
     expect(JSON.stringify(log)).not.toContain("FORGED");
   });
 

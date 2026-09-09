@@ -79,6 +79,23 @@ This stricter handling of oversized redaction input belongs to the next major re
 Deny-list masking of message text in stack headers uses values captured during the copy.
 It does not read source getters or cause-array indices a second time.
 
+### Custom redactor failures
+
+`redactWith` keeps its synchronous `Record<string, unknown>` callback signature.
+Successful returns retain their existing behavior and require no migration.
+The consumer owns output shape, JSON safety, sensitive content, and callback termination.
+
+A thrown callback now recovers diagnostic fields captured before invocation.
+For example, the failure record retains `code: "PERMANENT"` and `retryable: false`
+even if the callback overwrites those values and then throws.
+Deleting `code` or replacing it with a throwing getter no longer removes the original readable code from recovery.
+Recovery omits payload, stack, and links and keeps the existing failure message.
+Callback mutations to shared objects, including root `details`, are not rolled back.
+
+Do not rely on partially transformed metadata after an exception.
+Return a complete record for a successful transformation.
+See the [custom redactor contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md#custom-redactor-contract).
+
 ## v7 to v8
 
 v8 removes the `@shirudo/base-error/presentation` and

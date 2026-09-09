@@ -56,7 +56,12 @@ PII redaction scrubs the **log** path (see
 | ----------------------------- | -------------------------------------------------------------- |
 | `redact(keys, options?)`      | Sticky deny-list: mask the given keys (deep) in log output     |
 | `redactAllow(keys, options?)` | Sticky allow-list: mask every data leaf except the listed ones |
-| `redactWith(fn)`              | Arbitrary transform of the log object (composition seam)       |
+| `redactWith(fn)`              | Trusted synchronous transform of the complete log record       |
+
+Successful custom output is consumer-controlled. The library does not validate
+or mask it again. A thrown callback uses diagnostic fields captured before
+invocation. See the [custom redactor contract](./observability#custom-redactor-contract)
+for mutation, JSON safety, policy order, and recursion limits.
 
 ## Serialization
 

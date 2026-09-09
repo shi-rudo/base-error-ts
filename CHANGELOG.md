@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- **Failed redactors preserve the original diagnostic fields.** Recovery captures own, correctly typed metadata before invoking a policy. A callback that changes `code` or `retryable` and then throws cannot change those fields in the failure record. Moving message text into `code` before throwing no longer exposes that text through recovery. Successful custom output remains trusted and consumer-controlled. See the custom redactor contract and migration guide.
+
 - **Changing stack getters cannot expose denied message text.** Stack-header masking uses the name, message, and stack values captured during the redaction copy. It no longer walks the raw cause graph a second time. A 60,000-member array returned by a cause policy needs 60,000 index reads instead of 120,000.
 
 - **Budget exhaustion preserves scalar cause decisions.** Already-read envelope values such as `code: 0` and `retryable: false` retain their value and type. Non-scalar envelope fields are omitted after exhaustion without further expansion.

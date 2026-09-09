@@ -671,8 +671,16 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Sets a custom redactor applied to the full log object. Use for allow-lists
-   * or scrubbing the technical `message`. Sticky; the last redactor wins.
+   * Sets a trusted, synchronous transform of the complete log record.
+   * Sticky; the last policy wins, replacing any earlier built-in policy.
+   * The callback can mutate its input or return another record.
+   * Successful output is not validated, copied, or implicitly redacted again.
+   * The consumer owns its shape, JSON safety, and sensitive content.
+   * A synchronous throw returns the pre-call diagnostic fields without payload.
+   * Shared input mutations, including root `details`, are not rolled back.
+   * Public logging calls inside the callback start independent builds.
+   * The consumer must bound those calls and terminate the callback.
+   *
    * Consumer copies do not transfer serializer-marker provenance. An outer
    * redactor treats copied marker strings as data under its normal key policy.
    *
@@ -680,6 +688,7 @@ export class BaseError<T extends string> extends Error {
    * mapped onto the one-line {@link toString} render, so `toString`,
    * `err.stack`, and `console.log(err)` inspection keep the raw technical
    * message even when the redactor scrubs it from the log.
+   * Changing the log's `message` does not automatically scrub its `stack`.
    */
   public redactWith(
     redactor: (log: Record<string, unknown>) => Record<string, unknown>,
@@ -903,46 +912,38 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Runs a redactor over a log object. Fail-closed: a broken redactor must
-   * neither crash the logging path nor leak the unredacted payload, so a
-   * throw replaces the object with the triage envelope (message, stack,
-   * details, and cause are dropped; only the non-sensitive structural fields
-   * survive). Read exhaustion uses the redaction-size message instead of a
-   * failure diagnosis. Shared by the root log object and by every cause node that
-   * carries its own policy, so one node's broken redactor costs that node
-   * and nothing above it.
+   * Captures diagnostic fields before consumer code can corrupt them.
+   * A synchronous throw drops payload, stack, and links from this node.
+   * Read exhaustion retains its distinct redaction-size message.
+   * Successful custom output remains consumer-controlled.
    */
   /*#__PURE__*/ static #redactFailClosed(
     redactor: (log: Record<string, unknown>) => Record<string, unknown>,
     raw: Record<string, unknown>,
   ): Record<string, unknown> {
+    const safe: Record<string, unknown> = {
+      message: "[log redaction failed]",
+    };
+    for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
+      const value = readOwnProperty(raw, key);
+      const type =
+        key === "retryable"
+          ? "boolean"
+          : key === "timestamp"
+            ? "number"
+            : "string";
+      if (
+        typeof value !== type &&
+        !(key === "code" && typeof value === "number")
+      )
+        continue;
+      if (typeof value === "number" && !Number.isFinite(value)) continue;
+      safe[key] = value;
+    }
     try {
       return redactor(raw);
     } catch (error) {
-      const safe: Record<string, unknown> = {
-        message:
-          error === REDACTION_READ_CUT
-            ? REDACTION_SIZE_MARKER
-            : "[log redaction failed]",
-      };
-      // A custom redactor can mutate `raw` before throwing, so a getter on it
-      // can throw, and this is the one path that must never throw.
-      for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-        const value = readOwnProperty(raw, key);
-        const type =
-          key === "retryable"
-            ? "boolean"
-            : key === "timestamp"
-              ? "number"
-              : "string";
-        if (
-          typeof value !== type &&
-          !(key === "code" && typeof value === "number")
-        )
-          continue;
-        if (typeof value === "number" && !Number.isFinite(value)) continue;
-        safe[key] = value;
-      }
+      if (error === REDACTION_READ_CUT) safe.message = REDACTION_SIZE_MARKER;
       return safe;
     }
   }
@@ -959,10 +960,8 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Non-sensitive structural fields preserved in the fail-closed redaction
-   * marker. Only the fields the log object actually
-   * carries are copied, through the guarded reader, so `code`/`category`/`retryable` appear
-   * for a `StructuredError` but are simply absent for a plain `BaseError`.
+   * Structural fields captured for redaction recovery. Consumers must keep
+   * their original values free of secrets.
    */
   static readonly #SAFE_TRIAGE_KEYS = [
     "name",
