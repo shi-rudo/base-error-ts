@@ -44,6 +44,18 @@ A consumer can invoke such work repeatedly, just as it can call a getter or anot
 The budget covers library traversal, not arbitrary work initiated by consumer code.
 BaseError and StructuredError forward the continuation throughout the library-owned path.
 
+## Redaction read allowance
+
+Each built-in policy walk has one explicit allowance for classification, key inspections, and value reads.
+The guard and the copy loop share it, including non-enumerable keys and cause-array indices.
+The limit uses the existing 100,000 data allowance and can precede the separate value-node limit.
+After exhaustion, the existing fail-closed boundary retains correctly typed non-sensitive envelope fields.
+Its message names a redaction-size cut. It omits payload, stack, and links.
+An uninspected object cannot become an opaque leaf and expose inherited serialization callbacks.
+Message masking records envelope header values during the bounded copy and then updates only the copied targets.
+There is no second raw traversal. Changing getters cannot invalidate the masking of a previously copied stack.
+Consumer callbacks and reflection traps must terminate. The library cannot interrupt their internal work.
+
 ## Contract diagnostics
 
 `inspectOwnLogFields` is an explicit consumer-test function.

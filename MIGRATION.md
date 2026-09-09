@@ -79,6 +79,15 @@ The checker inspects up to 1,000 root keys and reports more than 100 valid data 
 Skipped keys do not count toward that retention limit.
 The checker never runs implicitly in the log path and adds no log fields.
 
+Built-in redaction now limits classification, key inspections, and value reads together to 100,000 operations per walk.
+This can stop a walk before its existing data-node limit.
+On exhaustion, the result contains the safe envelope with `message: "[Max redaction size exceeded]"`.
+Correctly typed non-sensitive fields, including `code` and `retryable`, retain their values.
+Payload, stack, and links are omitted. Uninspected objects never pass through as opaque leaves.
+This stricter handling of oversized redaction input belongs to the next major release.
+Deny-list masking of message text in stack headers uses values captured during the copy.
+It does not read source getters or cause-array indices a second time.
+
 ## v7 to v8
 
 v8 removes the `@shirudo/base-error/presentation` and

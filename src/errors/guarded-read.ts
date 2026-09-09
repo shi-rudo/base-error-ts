@@ -20,6 +20,21 @@ export function readProperty(value: unknown, key: string | symbol): unknown {
   }
 }
 
+/** Distinguish a failed read from an undefined value at fail-closed boundaries. */
+export function readPropertyResult(
+  value: object,
+  key: string | symbol,
+): { readable: true; value: unknown } | { readable: false } {
+  try {
+    return {
+      readable: true,
+      value: (value as Record<string | symbol, unknown>)[key],
+    };
+  } catch {
+    return { readable: false };
+  }
+}
+
 /** Reads an own property. An inherited or unreadable property reads as absent. */
 export function readOwnProperty(value: unknown, key: string): unknown {
   if (typeof value !== "object" || value === null) return undefined;

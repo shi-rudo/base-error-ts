@@ -40,10 +40,9 @@ export const MAX_AGGREGATE_MEMBERS = 100;
  * Largest number of own fields one serialized node carries, at the root and on
  * a cause alike. The envelope is written by this library and is fixed, but a
  * subclass contributes its own fields through `buildOwnLogFields`, so the key
- * count of a node is consumer-controlled and is the one width a walker cannot
- * otherwise bound: the redaction node budget is charged in the data region
- * only, so a node's own leaves cost it nothing. Past the cap the reader
- * stops silently.
+ * count of a node is consumer-controlled. This retention cap limits each
+ * node independently of the shared build and redaction allowances.
+ * Past the cap the reader stops silently.
  * A diagnostic key here could collide with consumer fields.
  */
 export const MAX_OWN_LOG_FIELDS = 100;
@@ -78,7 +77,7 @@ export const MAX_DATA_DEPTH = 100;
  * allowance with the whole build (MAX_LOG_NODES). The unit is one visited
  * value, a container or a leaf, in these
  * walkers; the redaction walker charges the values of its data regions only,
- * because the root and cause envelopes are bounded by the spine caps.
+ * while the shared read allowance covers every redaction region.
  * The depth cap bounds depth, not width, and shared (DAG) references
  * are cloned once per reference, so a small input can legally expand
  * exponentially (`{a, b}` doubling per level). Past the budget the walk
@@ -86,6 +85,13 @@ export const MAX_DATA_DEPTH = 100;
  * completion. The budget sits far above any sane log or wire payload.
  */
 export const MAX_DATA_NODES = 100_000;
+
+/**
+ * Shared foreign-read allowance for redaction, using the data walk's cap.
+ * Classification, own-key enumeration, descriptors, and values each cost one.
+ * Exhaustion keeps only the safe envelope with the redaction-size message.
+ */
+export const MAX_REDACTION_READS: number = MAX_DATA_NODES;
 
 /**
  * Shared allowance for one synchronous log build, including cause nodes and

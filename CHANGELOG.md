@@ -24,9 +24,13 @@
 
 ### Breaking changes (next major)
 
+- **Built-in redaction shares a 100,000-read allowance across classification and traversal.** It charges key inspections and value reads before performing them, including non-enumerable keys and legacy cause-array indices. Exhaustion returns the safe envelope with `[Max redaction size exceeded]` as its message. Correctly typed decision fields keep their values. This can stop oversized input before the data-node limit.
+
 - **Oversized legacy log records report inspection cuts in `message`.** A nonempty string message receives ` [Max log size exceeded]`. Other message values become that marker without coercion. Fixed decision fields retain their values. If only recovered envelope fields remain after the custom inspection limit, no notice is added. The notice reports stopped inspection, including uninspected unsupported keys.
 
 ### Fixed
+
+- **Changing stack getters cannot expose denied message text.** Stack-header masking uses the name, message, and stack values captured during the redaction copy. It no longer walks the raw cause graph a second time. A 60,000-member legacy array now needs 60,000 index reads instead of 120,000.
 
 - **Budget exhaustion preserves scalar cause decisions.** Already-read envelope values such as `code: 0` and `retryable: false` retain their value and type. Non-scalar envelope fields are omitted after exhaustion without further expansion.
 - **Contract inspection separates read width from retained fields.** It inspects up to 1,000 root keys, including reserved names after index 100. Skipped keys do not cause a false 100-field width report.

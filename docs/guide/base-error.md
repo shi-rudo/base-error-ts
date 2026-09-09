@@ -183,6 +183,18 @@ text gets no exception. The fixed root envelope copy has its own bounded key
 allowance. JavaScript key enumeration is eager, and consumer callbacks cannot be
 interrupted; the budget limits the library's subsequent reads and expansion.
 
+Built-in redaction has a separate 100,000-read allowance per walk
+(`MAX_REDACTION_READS`). It covers container classification, key inspections,
+and value reads in every region. Symbols and non-enumerable keys consume it.
+A value can require multiple reads, so this limit can precede the data-node limit.
+After exhaustion, the policy returns only its safe envelope with
+`message: "[Max redaction size exceeded]"`. Correctly typed non-sensitive fields,
+including `code` and `retryable`, keep their values. Payload, stack, and links are omitted.
+The library never passes an uninspected object through as a leaf.
+Work inside a consumer callback or reflection trap remains outside this allowance.
+Deny-list masking of message text in stack headers uses values captured during the copy.
+It does not repeat the source reads. Changing getters cannot expose a previously copied message.
+
 Everything returned here is logged wherever this error is logged. It is the
 place for identifiers, not for payloads. A redaction policy still applies:
 under `redactAllow` these fields are data and are masked unless listed.

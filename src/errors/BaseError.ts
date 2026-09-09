@@ -19,11 +19,13 @@ import {
 import {
   readMembers,
   readOwnKeys,
+  readPrototype,
   readOwnPropertyDescriptor,
   UNREADABLE_REFLECTION,
   readOwnEnumerableKeys,
   readOwnProperty,
   readProperty,
+  readPropertyResult,
   type AggregateMembers,
 } from "./guarded-read.js";
 import type { JsonSafeValue } from "./json-safe.js";
@@ -40,6 +42,7 @@ import {
   MAX_DATA_DEPTH,
   MAX_DATA_NODES,
   MAX_LOG_OBJECT_KEYS_READ,
+  MAX_REDACTION_READS,
   MAX_LOG_NODES,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
@@ -79,6 +82,14 @@ export type RedactMask = string | ((value: unknown, key: string) => unknown);
 const REDACTION_DEPTH_MARKER = "[Max redaction depth exceeded]";
 const REDACTION_CYCLE_MARKER = "[Circular reference]";
 const REDACTION_SIZE_MARKER = "[Max redaction size exceeded]";
+const REDACTION_READ_CUT = Symbol("redaction.read.cut");
+
+type RedactionStackHeader = {
+  target: Record<string, unknown>;
+  name?: unknown;
+  message?: unknown;
+  stack?: unknown;
+};
 
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
@@ -228,6 +239,15 @@ export class BaseError<T extends string> extends Error {
     // needed only for a denied `message` on its own.
     const maskStackHeaders = denied.has("message") && !denied.has("stack");
     this.#redactor = (log) => {
+      const headers: RedactionStackHeader[] | undefined = maskStackHeaders
+        ? []
+        : undefined;
+      const state = {
+        nodes: 0,
+        seen: new Set<object>(),
+        reads: { nodes: 0 },
+        headers,
+      };
       const masked = BaseError.#redactWalk(
         log,
         (key, value) =>
@@ -235,9 +255,18 @@ export class BaseError<T extends string> extends Error {
             ? BaseError.#applyMask(mask, value, key)
             : BaseError.#RECURSE,
         "root",
+        0,
+        state,
       ) as Record<string, unknown>;
-      if (maskStackHeaders) {
-        BaseError.#maskStackHeaders(log, masked, mask);
+      for (const header of headers ?? []) {
+        if (typeof header.stack === "string") {
+          header.target.stack = BaseError.#maskStackHeader(
+            header.stack,
+            header.name,
+            header.message,
+            mask,
+          );
+        }
       }
       return masked;
     };
@@ -281,12 +310,20 @@ export class BaseError<T extends string> extends Error {
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
     this.#messageMask = undefined;
-    this.#redactor = (log) =>
-      BaseError.#redactWalk(
+    this.#redactor = (log) => {
+      const state = {
+        nodes: 0,
+        seen: new Set<object>(),
+        reads: { nodes: 0 },
+      };
+      return BaseError.#redactWalk(
         log,
         (key, value, region: RedactRegion) => {
           // Always recurse into containers so nested allowed leaves survive.
-          if (Array.isArray(value) || BaseError.#isWalkable(value)) {
+          if (
+            Array.isArray(value) ||
+            BaseError.#isWalkable(value, state.reads)
+          ) {
             return BaseError.#RECURSE;
           }
           // Leaf. Keep iff the region permits this key.
@@ -297,7 +334,10 @@ export class BaseError<T extends string> extends Error {
           return kept ? value : BaseError.#applyMask(mask, value, key);
         },
         "root",
+        0,
+        state,
       ) as Record<string, unknown>;
+    };
     return this;
   }
 
@@ -323,19 +363,42 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ static #isWalkable(
     value: unknown,
+    reads: { nodes: number },
   ): value is Record<string, unknown> {
     if (value === null || typeof value !== "object" || Array.isArray(value)) {
       return false;
     }
-    const proto = Object.getPrototypeOf(value) as unknown;
+    if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
+    reads.nodes++;
+    const proto = readPrototype(value);
+    if (proto === UNREADABLE_REFLECTION) throw UNREADABLE_REFLECTION;
     if (proto === Object.prototype || proto === null) return true;
-    return Object.keys(value).length > 0;
+    return !BaseError.#redactionKeys(value, reads).next().done;
+  }
+
+  /** Guard classification and copying with the same inspection allowance. */
+  static *#redactionKeys(
+    value: object,
+    reads: { nodes: number },
+  ): Generator<string> {
+    if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
+    reads.nodes++;
+    const keys = readOwnKeys(value);
+    if (keys === UNREADABLE_REFLECTION) throw UNREADABLE_REFLECTION;
+    for (const key of keys) {
+      if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
+      reads.nodes++;
+      if (typeof key !== "string") continue;
+      const descriptor = readOwnPropertyDescriptor(value, key);
+      if (descriptor === UNREADABLE_REFLECTION) throw UNREADABLE_REFLECTION;
+      if (descriptor?.enumerable) yield key;
+    }
   }
 
   /**
    * Single deep-clone walker for redaction. Recurses into arrays and objects
    * that carry own enumerable keys (see {@link BaseError.#isWalkable}); every
-   * other value (string, `Date`, `Map`, empty object, …) is a leaf.
+   * other value (string, `Date`, `Map`, …) is a leaf.
    * `decide(key, value, region)` returns the replacement for a key, or
    * `#RECURSE` to descend into a container / keep a leaf unchanged.
    *
@@ -362,13 +425,15 @@ export class BaseError<T extends string> extends Error {
    * {@link MAX_CAUSE_DEPTH}) count separately. On the spine an object is one
    * hop, a list is free and each of its container elements is one hop, so a
    * `cause` object, a member of `errors`, and each level of a nested list
-   * cost the same. A cause node starts its data budget afresh, so a deep chain
+   * cost the same. Data depth restarts at each cause node, so a deep chain
    * cannot marker-truncate a shallow `details` on a deep cause, and a spine
    * that a subclass supplies past the serializer's cap ends in a marker.
    * The node budget ({@link MAX_DATA_NODES})
    * counts every value the walk visits in a data region, a container or a
-   * leaf, so it bounds total work and width alike; the root and cause
-   * envelopes are bounded by the spine caps and are never cut by size. When
+   * leaf. The separate read allowance ({@link MAX_REDACTION_READS}) covers
+   * classification, key inspections, and value reads across every region.
+   * Its exhaustion uses the safe envelope with the redaction-size message.
+   * An uninspected object is never treated as an opaque leaf. When
    * the budget runs out, the data container being walked ends with one size
    * marker in place of the rest, in key order, and every data container not
    * yet entered is the marker. `state.seen` holds the containers on the
@@ -380,15 +445,17 @@ export class BaseError<T extends string> extends Error {
     value: unknown,
     decide: (key: string, value: unknown, region: RedactRegion) => unknown,
     region: RedactRegion,
-    depth = 0,
-    state: { nodes: number; readonly seen: Set<object> } = {
-      nodes: 0,
-      seen: new Set<object>(),
+    depth: number,
+    state: {
+      nodes: number;
+      readonly seen: Set<object>;
+      readonly reads: { nodes: number };
+      readonly headers?: RedactionStackHeader[];
     },
     key = "",
     spine = 0,
   ): unknown {
-    if (!Array.isArray(value) && !BaseError.#isWalkable(value)) {
+    if (!Array.isArray(value) && !BaseError.#isWalkable(value, state.reads)) {
       return value;
     }
     // Preserve serializer cuts; otherwise the redactor diagnoses its own cap.
@@ -401,8 +468,8 @@ export class BaseError<T extends string> extends Error {
     if (state.seen.has(value)) {
       return REDACTION_CYCLE_MARKER;
     }
-    // The node budget is a data-tree budget: the root and cause envelopes are
-    // bounded by the spine caps and are never cut by size.
+    // The node budget counts data values. The separate read allowance also
+    // bounds root and cause envelope inspection.
     if (region === "data") {
       if (state.nodes >= MAX_DATA_NODES) {
         return REDACTION_SIZE_MARKER;
@@ -425,13 +492,29 @@ export class BaseError<T extends string> extends Error {
         // Built index by index into a fresh plain array, so the walk can stop
         // at the budget with one marker in place of the rest.
         const items: unknown[] = [];
-        for (let index = 0; index < value.length; index++) {
+        if (state.reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
+        state.reads.nodes++;
+        const lengthRead = readPropertyResult(value, "length");
+        if (!lengthRead.readable) throw UNREADABLE_REFLECTION;
+        const length = lengthRead.value;
+        const count =
+          typeof length === "number" &&
+          Number.isSafeInteger(length) &&
+          length >= 0
+            ? length
+            : 0;
+        for (let index = 0; index < count; index++) {
           if (region === "data" && state.nodes >= MAX_DATA_NODES) {
             items.push(REDACTION_SIZE_MARKER);
             break;
           }
-          const item: unknown = value[index];
-          if (Array.isArray(item) || BaseError.#isWalkable(item)) {
+          if (state.reads.nodes >= MAX_REDACTION_READS)
+            throw REDACTION_READ_CUT;
+          state.reads.nodes++;
+          const itemRead = readPropertyResult(value, String(index));
+          if (!itemRead.readable) throw UNREADABLE_REFLECTION;
+          const item = itemRead.value;
+          if (Array.isArray(item) || BaseError.#isWalkable(item, state.reads)) {
             items.push(
               BaseError.#redactWalk(
                 item,
@@ -476,10 +559,26 @@ export class BaseError<T extends string> extends Error {
       // the null-prototype clones used by the public-error catalog and transport
       // stage. (OWASP Prototype Pollution Prevention.)
       const out = Object.create(null) as Record<string, unknown>;
-      for (const [key, val] of Object.entries(value)) {
+      const header: RedactionStackHeader | undefined =
+        region !== "data" && state.headers !== undefined
+          ? { target: out }
+          : undefined;
+      if (header !== undefined) state.headers?.push(header);
+      for (const key of BaseError.#redactionKeys(value, state.reads)) {
         if (region === "data" && state.nodes >= MAX_DATA_NODES) {
           out[key] = REDACTION_SIZE_MARKER;
           break;
+        }
+        if (state.reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
+        state.reads.nodes++;
+        const fieldRead = readPropertyResult(value, key);
+        if (!fieldRead.readable) throw UNREADABLE_REFLECTION;
+        const val = fieldRead.value;
+        if (
+          header !== undefined &&
+          (key === "name" || key === "message" || key === "stack")
+        ) {
+          header[key] = val;
         }
         if (typeof val === "function") continue;
         if (
@@ -495,7 +594,7 @@ export class BaseError<T extends string> extends Error {
         // top-level `cause: undefined`).
         const decision = decide(key, val, region);
         if (decision === BaseError.#RECURSE) {
-          if (Array.isArray(val) || BaseError.#isWalkable(val)) {
+          if (Array.isArray(val) || BaseError.#isWalkable(val, state.reads)) {
             const position = childPosition(
               { region, depth, spine },
               false,
@@ -951,7 +1050,8 @@ export class BaseError<T extends string> extends Error {
    * neither crash the logging path nor leak the unredacted payload, so a
    * throw replaces the object with the triage envelope (message, stack,
    * details, and cause are dropped; only the non-sensitive structural fields
-   * survive). Shared by the root log object and by every cause node that
+   * survive). Read exhaustion uses the redaction-size message instead of a
+   * failure diagnosis. Shared by the root log object and by every cause node that
    * carries its own policy, so one node's broken redactor costs that node
    * and nothing above it.
    */
@@ -961,9 +1061,12 @@ export class BaseError<T extends string> extends Error {
   ): Record<string, unknown> {
     try {
       return redactor(raw);
-    } catch {
+    } catch (error) {
       const safe: Record<string, unknown> = {
-        message: "[log redaction failed]",
+        message:
+          error === REDACTION_READ_CUT
+            ? REDACTION_SIZE_MARKER
+            : "[log redaction failed]",
       };
       // Guarded reads: `raw` came from a subclass override, so a getter on it
       // can throw, and this is the one path that must never throw.
@@ -1234,48 +1337,6 @@ export class BaseError<T extends string> extends Error {
       );
     } catch {
       return "[REDACTED]";
-    }
-  }
-
-  /**
-   * Masks a deny-listed message where a `stack` repeats it: in the header of
-   * the root, of every `cause`, and of every aggregate member. Walks the raw
-   * log object and its masked clone in lockstep and writes into the clone
-   * only, because a subclass's `buildLogObject` can hand in shared objects.
-   * The clone is the bound: the redaction walk has already cut its depth and
-   * size with markers, and this pass stops where the clone holds a marker
-   * instead of a node.
-   */
-  /*#__PURE__*/ static #maskStackHeaders(
-    raw: unknown,
-    masked: unknown,
-    mask: RedactMask,
-  ): void {
-    let rawNode: unknown = raw;
-    let maskedNode: unknown = masked;
-    while (BaseError.#isWalkable(maskedNode)) {
-      const stack = readProperty(rawNode, "stack");
-      if (typeof stack === "string") {
-        maskedNode.stack = BaseError.#maskStackHeader(
-          stack,
-          readProperty(rawNode, "name"),
-          readProperty(rawNode, "message"),
-          mask,
-        );
-      }
-      const rawMembers = readProperty(rawNode, "errors");
-      const maskedMembers = maskedNode.errors;
-      if (Array.isArray(rawMembers) && Array.isArray(maskedMembers)) {
-        for (let index = 0; index < maskedMembers.length; index++) {
-          BaseError.#maskStackHeaders(
-            rawMembers[index],
-            maskedMembers[index],
-            mask,
-          );
-        }
-      }
-      rawNode = readProperty(rawNode, "cause");
-      maskedNode = maskedNode.cause;
     }
   }
 

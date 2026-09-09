@@ -71,6 +71,33 @@ The larger cases differ by about 0.5–2.5% in this run. Their sample ranges ove
 These timings do not establish a statistically significant change or a workerd CPU guarantee.
 Access-count regressions remain the evidence for inspection and expansion limits.
 
+## Bounded redaction reads
+
+A quiet paired run compares `d653be5` with the shared redaction read allowance
+and captured stack headers. Both bundles again use the same explicit tsconfig
+and esbuild settings.
+
+| Input | Sticky root policy | `d653be5` | Bounded redaction reads |
+| --- | --- | ---: | ---: |
+| Shallow cause with details | none | 4.86 | 4.70 |
+| Shallow cause with details | deny secret | 9.18 | 10.36 |
+| 100-member aggregate | none | 211.13 | 213.47 |
+| 100-member aggregate | deny secret | 452.73 | 541.22 |
+| 100-node cause chain | none | 213.30 | 213.60 |
+| 100-node cause chain | deny secret | 458.48 | 546.71 |
+
+The larger redacted cases cost about 19–20% more in this run, with disjoint
+sample ranges. The shallow redacted median rises about 13%. The larger
+unredacted cases differ by about 0.1–1.1%, with overlapping ranges.
+The guarded descriptor and value reads add measurable cost to ordinary redaction.
+They bound work that the previous eager copy performed before its budget check.
+
+These scenarios deny `secret`, not `message`, so they do not measure the removal
+of the second stack-header pass. A separate regression counts that work: a
+60,000-member legacy aggregate needs 60,000 index reads instead of 120,000
+when masking messages. The changing-stack-getter regression verifies that the
+copied secret is masked without rereading its source.
+
 ## Reproduce
 
 The scenario and timing code is
