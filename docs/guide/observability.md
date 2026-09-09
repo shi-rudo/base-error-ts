@@ -211,8 +211,35 @@ merely _resembles_ a structured error can't smuggle siblings through. The
 envelope fields are primitives: an **object or array under an envelope name**
 (`stack: { message: "…" }`, `code: { … }`) is data too, at the top level and on
 a cause, so a leaf inside it is masked whatever it is called. The
-classification is by position, not by shape, so there is nothing to spoof. (The
+classification is by position, not by shape. (The
 technical `message` is structural here; scrub free text in it with `redactWith`.)
+
+### Serializer marker provenance
+
+The serializer keeps its own cause markers readable through redaction.
+The exception requires a recorded output container, property or array index,
+and unchanged marker value. Matching text alone does not qualify.
+
+```ts
+new BaseError("outer", {
+  cause: "[Unserializable cause]",
+  errors: ["[4111111111111111 more aggregated errors]"],
+  secret: "S",
+}).redactAllow([]).toLogObject().cause;
+// { cause: "[REDACTED]", errors: ["[REDACTED]"], secret: "[REDACTED]" }
+```
+
+The built-in redactors preserve provenance when they copy an unchanged marker.
+Private metadata adds no fields or symbols to the log object.
+Consumer copies, including JSON round-trips, do not transfer provenance.
+An outer redactor treats those copied strings as data unless their key is
+allowed by its policy. Changing a recorded marker value also removes its
+exemption. A custom redactor that keeps the original container and value
+retains their provenance.
+
+This exception applies on the cause spine. It does not exempt own log fields
+or values in `details`. The fixed root envelope keeps its existing policy.
+`StructuredError.fromJSON()` reconstructs data, not marker provenance.
 
 ### What key redaction can't do
 

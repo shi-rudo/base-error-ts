@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- **Consumer strings cannot impersonate serializer markers on the cause spine.** Redaction checks private provenance for the output container, property or array index, and unchanged value. A plain-object cause's own `cause` or `errors` entries receive normal data masking, including forged aggregate markers with consumer-controlled digits. Genuine emitted markers remain readable through built-in redaction copies and nested sticky policies. Consumer copies do not transfer provenance; changed marker values also lose the exemption. The wire format and marker vocabulary are unchanged. Fixes `base-error-ts-9ff`.
+
 - **Log guards retain their bounds on foreign records.** Log assembly copies subclass output without invoking its setters. Record probes and copies have key limits. Failed redaction retains only own, correctly typed triage fields. A scalar `errors` field remains data even when it matches a serializer marker.
 
   A nested log call during data serialization returns an empty record. Data copies limit cause depth and data depth separately. At the depth cap, a copy keeps an empty container without reading its children. Each field retains its own node budget.

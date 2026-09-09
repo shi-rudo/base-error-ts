@@ -11,7 +11,6 @@ import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
   MAX_CAUSE_DEPTH_MARKER,
   UNSERIALIZABLE_CAUSE_MARKER,
-  isSerializerMarker,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
 import {
@@ -476,12 +475,17 @@ export class BaseError<T extends string> extends Error {
           // it promises: an aggregate's members are arbitrary values (a
           // `Promise.allSettled` reason need not be an `Error`), and `errors` is
           // not an envelope key, so a string member is data like any other.
-          if (BaseError.#isStructuralMarker(item, region, key)) {
-            items.push(item);
-            continue;
+          const slot = String(index);
+          const decision =
+            region === "cause" &&
+            BaseError.#hasSerializerMarker(value, slot, item)
+              ? BaseError.#RECURSE
+              : decide(key, item, region);
+          const redacted = decision === BaseError.#RECURSE ? item : decision;
+          if (redacted === item) {
+            BaseError.#copySerializerMarker(value, items, slot, item);
           }
-          const decision = decide(key, item, region);
-          items.push(decision === BaseError.#RECURSE ? item : decision);
+          items.push(redacted);
         }
         return items;
       }
@@ -498,10 +502,10 @@ export class BaseError<T extends string> extends Error {
         }
         if (typeof val === "function") continue;
         if (
-          key === "cause" &&
-          BaseError.#isStructuralMarker(val, region, key)
+          region === "cause" &&
+          BaseError.#hasSerializerMarker(value, key, val)
         ) {
-          out[key] = val;
+          out[key] = BaseError.#markSerializerMarker(out, key, val);
           continue;
         }
         // A leaf's keep/mask decision is made in the region it *lives in* (the
@@ -541,6 +545,9 @@ export class BaseError<T extends string> extends Error {
           if (region === "data") state.nodes++;
           out[key] = decision;
         }
+        if (out[key] === val) {
+          BaseError.#copySerializerMarker(value, out, key, val);
+        }
       }
       return out;
     } finally {
@@ -548,29 +555,47 @@ export class BaseError<T extends string> extends Error {
     }
   }
 
-  /**
-   * Whether `value` is one of the serializer's own markers **in a place the
-   * serializer writes them**: the cause spine. There a marker is the
-   * library's word (a `cause` cut by the cycle or depth cap, an aggregate
-   * tail, a node it could not serialize) and stays readable through any
-   * redaction. In a data region an exact lookalike is user data and must not
-   * slip past a deny- or allow-list. One predicate owns both halves of the
-   * rule, so a walker branch cannot apply one without the other.
-   */
-  /*#__PURE__*/ static #isStructuralMarker(
-    value: unknown,
-    region: RedactRegion,
+  // Strings cannot carry provenance. Track the emitted slot and exact value
+  // privately, so a consumer's matching string or changed slot is still data.
+  static readonly #serializerMarkers = new WeakMap<
+    object,
+    Map<string, string>
+  >();
+
+  /*#__PURE__*/ static #hasSerializerMarker(
+    holder: object,
     key: string,
-  ): boolean {
-    // A marker is the library's word only where the library writes one, and
-    // it writes them under `cause` and as members of `errors`. A hook field
-    // sits at a cause node's top level too, so without the key a consumer
-    // value that merely matches a marker string would survive an allow-list.
+    value: unknown,
+  ): value is string {
     return (
-      region === "cause" &&
-      (key === "cause" || key === "errors") &&
-      isSerializerMarker(value)
+      typeof value === "string" &&
+      BaseError.#serializerMarkers.get(holder)?.get(key) === value
     );
+  }
+
+  /*#__PURE__*/ static #markSerializerMarker(
+    holder: object,
+    key: string,
+    marker: string,
+  ): string {
+    let markers = BaseError.#serializerMarkers.get(holder);
+    if (markers === undefined) {
+      markers = new Map();
+      BaseError.#serializerMarkers.set(holder, markers);
+    }
+    markers.set(key, marker);
+    return marker;
+  }
+
+  /*#__PURE__*/ static #copySerializerMarker(
+    source: object,
+    target: object,
+    key: string,
+    value: unknown,
+  ): void {
+    if (BaseError.#hasSerializerMarker(source, key, value)) {
+      BaseError.#markSerializerMarker(target, key, value);
+    }
   }
 
   /**
@@ -608,6 +633,8 @@ export class BaseError<T extends string> extends Error {
   /**
    * Sets a custom redactor applied to the full log object. Use for allow-lists
    * or scrubbing the technical `message`. Sticky; the last redactor wins.
+   * Consumer copies do not transfer serializer-marker provenance. An outer
+   * redactor treats copied marker strings as data under its normal key policy.
    *
    * ⚠️ Scope: applies to the **log object** only. A custom redactor cannot be
    * mapped onto the one-line {@link toString} render, so `toString`,
@@ -643,8 +670,8 @@ export class BaseError<T extends string> extends Error {
       timestamp,
       timestampIso,
       stack,
-      cause: this.#serializeCause(cause, new Set(), 0),
     };
+    json.cause = this.#serializeCause(cause, new Set(), 0, json, "cause");
 
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
@@ -845,7 +872,10 @@ export class BaseError<T extends string> extends Error {
     const merged: Record<string, unknown> = {};
     for (const key of BaseError.#ROOT_ENVELOPE_KEYS) {
       const value = readOwnProperty(assembled, key);
-      if (value !== undefined) merged[key] = value;
+      if (value !== undefined) {
+        merged[key] = value;
+        BaseError.#copySerializerMarker(assembled, merged, key, value);
+      }
     }
     const errors = readOwnProperty(assembled, "errors");
     if (errors !== undefined) merged.errors = errors;
@@ -1357,11 +1387,17 @@ export class BaseError<T extends string> extends Error {
     cause: unknown,
     seen: Set<unknown>,
     depth: number,
+    holder: object,
+    key: string,
   ): unknown {
     try {
-      return this.#serializeCauseNode(cause, seen, depth);
+      return this.#serializeCauseNode(cause, seen, depth, holder, key);
     } catch {
-      return UNSERIALIZABLE_CAUSE_MARKER;
+      return BaseError.#markSerializerMarker(
+        holder,
+        key,
+        UNSERIALIZABLE_CAUSE_MARKER,
+      );
     }
   }
 
@@ -1369,18 +1405,28 @@ export class BaseError<T extends string> extends Error {
     cause: unknown,
     seen: Set<unknown>,
     depth: number,
+    holder: object,
+    key: string,
   ): unknown {
     if (cause === undefined || cause === null) {
       return cause;
     }
 
     if (depth >= MAX_CAUSE_DEPTH) {
-      return MAX_CAUSE_DEPTH_MARKER;
+      return BaseError.#markSerializerMarker(
+        holder,
+        key,
+        MAX_CAUSE_DEPTH_MARKER,
+      );
     }
 
     if (BaseError.#isNativeError(cause)) {
       if (seen.has(cause)) {
-        return CIRCULAR_CAUSE_CHAIN_MARKER;
+        return BaseError.#markSerializerMarker(
+          holder,
+          key,
+          CIRCULAR_CAUSE_CHAIN_MARKER,
+        );
       }
       seen.add(cause);
 
@@ -1428,7 +1474,13 @@ export class BaseError<T extends string> extends Error {
       // Recursively serialize nested causes
       const nested = readProperty(cause, "cause");
       if (nested !== undefined) {
-        serialized.cause = this.#serializeCause(nested, seen, depth + 1);
+        serialized.cause = this.#serializeCause(
+          nested,
+          seen,
+          depth + 1,
+          serialized,
+          "cause",
+        );
       }
 
       // The cause's own sticky policy runs last, over the node and the subtree
@@ -1551,13 +1603,28 @@ export class BaseError<T extends string> extends Error {
     seen: Set<unknown>,
     depth: number,
   ): unknown[] {
-    const serialized: unknown[] = aggregate.members.map((error) =>
-      this.#serializeCause(error, seen, depth),
-    );
+    const serialized: unknown[] = [];
+    for (const error of aggregate.members) {
+      serialized.push(
+        this.#serializeCause(
+          error,
+          seen,
+          depth,
+          serialized,
+          String(serialized.length),
+        ),
+      );
+    }
 
     const dropped = aggregate.total - serialized.length;
     if (dropped > 0) {
-      serialized.push(moreAggregatedErrorsMarker(dropped));
+      serialized.push(
+        BaseError.#markSerializerMarker(
+          serialized,
+          String(serialized.length),
+          moreAggregatedErrorsMarker(dropped),
+        ),
+      );
     }
     return serialized;
   }
