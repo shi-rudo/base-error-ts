@@ -196,7 +196,7 @@ After exhaustion, the policy returns only its safe envelope with
 including `code` and `retryable`, keep their values. Payload, stack, and links are omitted.
 The library never passes an uninspected object through as a leaf.
 Work inside a consumer callback or reflection trap remains outside this allowance.
-Deny-list masking of message text in stack headers uses values captured during the copy.
+Deny-list masking of names and messages in stack headers uses values captured during the copy.
 It does not repeat the source reads. Changing getters cannot expose a previously copied message.
 
 Everything returned here is logged wherever this error is logged. It is the

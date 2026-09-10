@@ -217,13 +217,13 @@ export class BaseError<T extends string> extends Error {
    * {@link toLogObject}).
    *
    * ⚠️ Scope: redaction rewrites the **log object**, not every string render.
-   * When `keys` includes `"message"`, the `stack` fields of the log object
+   * When `keys` includes `"name"` or `"message"`, the log's `stack` fields
    * are covered too: on the root, on every `cause`, and on every aggregate
    * member, a header that repeats the node's own `name: message` is rewritten
-   * with the masked message and keeps its frames, and a stack that does not
+   * with the masked fields and keeps its frames, and a stack that does not
    * start with that header is handed to the mask as a whole. {@link toString}
-   * masks the technical message as well. The `err.stack` property and Node's
-   * `console.log(err)` inspection (which prints that property) stay
+   * masks a deny-listed technical message as well. The `err.stack` property
+   * and Node's `console.log(err)` inspection (which prints that property) stay
    * unredacted. When redaction matters, log errors only through a structured
    * serializer that hits `toJSON`, never via string interpolation.
    *
@@ -235,8 +235,9 @@ export class BaseError<T extends string> extends Error {
     const denied = new Set(keys);
     this.#messageMask = denied.has("message") ? mask : undefined;
     // A denied `stack` is masked whole by the walk, so the header pass is
-    // needed only for a denied `message` on its own.
-    const maskStackHeaders = denied.has("message") && !denied.has("stack");
+    // needed only when a header component is denied without `stack`.
+    const maskStackHeaders =
+      (denied.has("name") || denied.has("message")) && !denied.has("stack");
     this.#redactor = (log) => {
       const headers: RedactionStackHeader[] | undefined = maskStackHeaders
         ? []
@@ -263,6 +264,7 @@ export class BaseError<T extends string> extends Error {
             header.stack,
             header.name,
             header.message,
+            header.target,
             mask,
           );
         }
@@ -1197,11 +1199,11 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * The `stack` of one node whose message is deny-listed. A header that is
-   * the node's own `name: message` (or the bare `name` that V8 writes for an
-   * empty message) is replaced by the masked message, and the frames after
+   * The `stack` of one node whose name or message is deny-listed. A header
+   * that is the node's own `name: message` (or the bare `name` that V8 writes
+   * for an empty message) is rebuilt from the masked fields, and the frames after
    * it stay. Any other stack goes to the mask as a whole, under the key
-   * `stack`, because the library cannot prove that the message is absent
+   * `stack`, because the library cannot prove that the denied text is absent
    * from it: a foreign error can carry a header from an earlier name or
    * message, and some engines write no header at all.
    */
@@ -1209,6 +1211,7 @@ export class BaseError<T extends string> extends Error {
     stack: string,
     name: unknown,
     message: unknown,
+    masked: Record<string, unknown>,
     mask: RedactMask,
   ): unknown {
     if (typeof name === "string" && typeof message === "string") {
@@ -1216,10 +1219,12 @@ export class BaseError<T extends string> extends Error {
         message === "" ? [`${name}: `, name] : [`${name}: ${message}`];
       for (const header of headers) {
         if (stack === header || stack.startsWith(`${header}\n`)) {
-          const maskedMessage = String(
-            BaseError.#applyMask(mask, message, "message"),
-          );
-          return `${name}: ${maskedMessage}${stack.slice(header.length)}`;
+          try {
+            return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
+          } catch {
+            // A custom mask can return a value that cannot render as text.
+            return "[REDACTED]";
+          }
         }
       }
     }
