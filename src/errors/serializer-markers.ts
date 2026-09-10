@@ -1,9 +1,8 @@
 /**
  * The serializer's marker vocabulary: the strings the library itself writes in
- * place of a value it refused to expand. They are the library's own words,
- * never user data, so redaction keeps them readable on the cause spine. This
- * module is the single owner of the strings and of the predicate that
- * recognizes them; an emit site and the predicate can never drift apart.
+ * place of a value it refused to expand. Matching text alone proves no origin.
+ * BaseError records emitted slots privately and preserves their provenance
+ * through its redaction copies. This module owns only the marker text.
  */
 
 /** A node already serialized higher up in the same walk. */
@@ -20,27 +19,5 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
-function escapeForRegExp(literal: string): string {
-  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-const SERIALIZER_MARKER = new RegExp(
-  `^(?:${[
-    CIRCULAR_CAUSE_CHAIN_MARKER,
-    MAX_CAUSE_DEPTH_MARKER,
-    UNSERIALIZABLE_CAUSE_MARKER,
-  ]
-    .map(escapeForRegExp)
-    .join("|")}|${escapeForRegExp(moreAggregatedErrorsMarker(0)).replace(
-    "0",
-    "\\d+",
-  )})$`,
-);
-
-/**
- * Whether `value` is one of the serializer's own markers, matched exactly, so
- * a value that merely resembles one is still treated as data.
- */
-export function isSerializerMarker(value: unknown): boolean {
-  return typeof value === "string" && SERIALIZER_MARKER.test(value);
-}
+/** Work omitted because the shared log-build allowance is exhausted. */
+export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";

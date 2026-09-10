@@ -3,17 +3,13 @@ import { BaseError, StructuredAggregateError, partialMask } from "../index.js";
 
 class TestError extends BaseError<"TestError"> {}
 
-/** A subclass whose log object carries a hand-built cause. */
-class ForgedCauseError extends BaseError<"ForgedCauseError"> {
-  readonly #forgedCause: unknown;
-
-  constructor(message: string, forgedCause: unknown) {
-    super(message);
-    this.#forgedCause = forgedCause;
-  }
-
-  protected override buildLogObject(): Record<string, unknown> {
-    return { ...super.buildLogObject(), cause: this.#forgedCause };
+/** A custom cause policy may return a shared, unprocessed record. */
+class RedactedCauseError extends BaseError<"RedactedCauseError"> {
+  constructor(message: string, record: Record<string, unknown>) {
+    super(
+      message,
+      new BaseError("inner").redactWith(() => record),
+    );
   }
 }
 
@@ -246,13 +242,13 @@ describe("redact: a deny-listed message is masked in the stack of the log object
     expect(log.stack).toBe("[REDACTED]");
   });
 
-  it("does not rewrite a cause object that a subclass hands in", () => {
+  it("does not rewrite a cause object that a cause policy returns", () => {
     const shared = {
       name: "E",
       message: "shared secret",
       stack: "E: shared secret\n    at shared (file:1:1)",
     };
-    const err = new ForgedCauseError(SECRET, shared).redact(["message"]);
+    const err = new RedactedCauseError(SECRET, shared).redact(["message"]);
 
     const log = err.toLogObject();
 
@@ -277,7 +273,7 @@ describe("redact: a deny-listed message is masked in the stack of the log object
         cause: chain,
       };
     }
-    const err = new ForgedCauseError(SECRET, chain).redact(["message"]);
+    const err = new RedactedCauseError(SECRET, chain).redact(["message"]);
 
     const json = JSON.stringify(err);
 
@@ -294,7 +290,7 @@ describe("redact: a deny-listed message is masked in the stack of the log object
     const middle = { ...leaf, errors: new Array<unknown>(50).fill(leaf) };
     const top = { ...leaf, errors: new Array<unknown>(50).fill(middle) };
     const forged = { ...leaf, errors: new Array<unknown>(50).fill(top) };
-    const err = new ForgedCauseError(SECRET, forged).redact(["message"]);
+    const err = new RedactedCauseError(SECRET, forged).redact(["message"]);
 
     const json = JSON.stringify(err);
 

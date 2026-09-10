@@ -64,7 +64,7 @@ describe("walker node budgets (shared-reference blowup)", () => {
     ).toThrow(/metadata must be JSON-safe/);
   });
 
-  it("log redaction degrades a DAG details subtree to a size marker instead of expanding it", () => {
+  it("log redaction keeps the safe envelope when a DAG exhausts the read allowance", () => {
     const err = new StructuredError({
       code: "DAG",
       category: "C",
@@ -75,17 +75,14 @@ describe("walker node budgets (shared-reference blowup)", () => {
 
     const log = err.toLogObject();
 
-    // Not fail-closed: the envelope and the masking before the blowup stand.
-    expect(log.code).toBe("DAG");
-    expect(log.message).toBe("dag details");
-    const details = log.details as Record<string, unknown>;
-    expect(details.ssn).toBe("[REDACTED]");
-    // The blowup is cut off by a marker rather than walked to completion, and
-    // what follows it in the data tree is the marker, never the raw value.
-    expect(JSON.stringify(details.nested)).toContain(
-      "[Max redaction size exceeded]",
-    );
-    expect(details.after).toBe("[Max redaction size exceeded]");
+    expect(log).toMatchObject({
+      code: "DAG",
+      category: "C",
+      retryable: false,
+      message: "[Max redaction size exceeded]",
+    });
+    expect(log).not.toHaveProperty("details");
+    expect(JSON.stringify(log)).not.toContain("secret");
   });
 });
 
@@ -230,16 +227,18 @@ describe("walker node budget counts every value", () => {
     }
   }
 
-  it("ends a data tree of more than 100 000 values at the size marker under a redactor", () => {
+  it("keeps safe decisions when a wide data tree exhausts redaction reads", () => {
     const error = new WideError().redact(["password"]);
 
     const log = error.toLogObject();
 
-    const logged = (log.details as { ids: unknown[] }).ids;
-    expect(logged.length).toBeLessThanOrEqual(100_001);
-    expect(logged[logged.length - 1]).toBe(SIZE_MARKER);
-    expect(logged[0]).toBe(0);
-    expect(log.message).toBe("wide");
+    expect(log).toMatchObject({
+      code: "WIDE",
+      category: "TEST",
+      retryable: false,
+      message: SIZE_MARKER,
+    });
+    expect(log).not.toHaveProperty("details");
   });
 
   it("keeps the raw details untouched without a redactor", () => {

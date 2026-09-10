@@ -411,21 +411,4 @@ export class StructuredError<
     // Any other object: opaque data, kept as-is.
     return value;
   }
-
-  /**
-   * Extends BaseError's raw log object with code, category, retryable, and
-   * details. Redaction (if configured) is applied by the inherited
-   * {@link toLogObject} to the complete assembled object.
-   */
-  protected override buildLogObject(): Record<string, unknown> {
-    const baseJson = super.buildLogObject();
-
-    return {
-      ...baseJson,
-      code: this.code,
-      category: this.category,
-      retryable: this.retryable,
-      ...(this.details !== undefined && { details: this.details }),
-    };
-  }
 }

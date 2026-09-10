@@ -113,14 +113,17 @@ class OuterError extends StructuredError<"OUTER", "TEST", Log> {
   }
 }
 
-/** Puts arbitrary objects on the spine and in a foreign field, past the serializer. */
-class HandRolledLogError extends BaseError<"HandRolledLogError"> {
-  constructor(private readonly extra: Log) {
-    super("hand-rolled");
-  }
-
-  protected override buildLogObject(): Log {
-    return { ...super.buildLogObject(), ...this.extra };
+/** A cause policy can return data that has not passed through the serializer. */
+class PolicyOutputError extends BaseError<"PolicyOutputError"> {
+  constructor(extra: Log) {
+    super(
+      "outer",
+      new BaseError("inner").redactWith(() => ({
+        message: "policy output",
+        stack: "policy output",
+        ...extra,
+      })),
+    );
   }
 }
 
@@ -133,29 +136,29 @@ describe("redaction walker: the cause spine is depth-capped", () => {
     expect(log.message).toBe("outer");
     expect(typeof log.stack).toBe("string");
     expect(spineHops(log)).toBeLessThanOrEqual(101);
-    expect(innermost(log).cause).toBe(DEPTH_MARKER);
+    expect(innermost(log)).toEqual({});
   });
 
-  it("caps a deep cause object that a subclass puts on the spine itself", () => {
-    const error = new HandRolledLogError({
+  it("caps a deep cause object that a cause policy puts on the spine", () => {
+    const error = new PolicyOutputError({
       cause: plainCauseChain(3000),
     }).redact(["password"]);
 
-    const log = error.toLogObject();
+    const log = error.toLogObject().cause as Log;
 
-    expect(log.message).toBe("hand-rolled");
+    expect(log.message).toBe("policy output");
     expect(spineHops(log)).toBeLessThanOrEqual(101);
     expect(innermost(log).cause).toBe(DEPTH_MARKER);
   });
 
   it("caps a deep chain hanging off an aggregate member on the spine", () => {
-    const error = new HandRolledLogError({
+    const error = new PolicyOutputError({
       errors: [plainCauseChain(3000), "flat member"],
     }).redact(["password"]);
 
-    const log = error.toLogObject();
+    const log = error.toLogObject().cause as Log;
 
-    expect(log.message).toBe("hand-rolled");
+    expect(log.message).toBe("policy output");
     const members = log.errors as unknown[];
     expect(members).toHaveLength(2);
     expect(spineHops(members[0] as Log)).toBeLessThanOrEqual(101);
@@ -293,14 +296,14 @@ describe("redaction walker: hostile foreign fields degrade to a marker, not to t
     expect(JSON.stringify(log).length).toBeLessThan(5_000);
   });
 
-  it("caps a deep foreign field that a subclass adds at the root in the data depth", () => {
-    const error = new HandRolledLogError({
+  it("caps a deep foreign field that a cause policy adds in the data depth", () => {
+    const error = new PolicyOutputError({
       trace: nestedObjects(3000),
     }).redact(["password"]);
 
-    const log = error.toLogObject();
+    const log = error.toLogObject().cause as Log;
 
-    expect(log.message).toBe("hand-rolled");
+    expect(log.message).toBe("policy output");
     expect(JSON.stringify(log.trace)).toContain(DEPTH_MARKER);
   });
 });
@@ -313,17 +316,21 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
 
     expect(log.message).toBe("outer");
     expect(errorsObjectDepth(log.cause)).toBeLessThanOrEqual(101);
-    expect(JSON.stringify(log.cause)).toContain(DEPTH_MARKER);
+    let terminal = log.cause as Log;
+    while (typeof terminal.errors === "object" && terminal.errors !== null) {
+      terminal = terminal.errors as Log;
+    }
+    expect(terminal).toEqual({});
   });
 
   it("does not drop the log for an errors object chain deeper than the host stack", () => {
-    const error = new HandRolledLogError({
+    const error = new PolicyOutputError({
       errors: nestedErrorsObjects(5000),
     }).redact(["password"]);
 
-    const log = error.toLogObject();
+    const log = error.toLogObject().cause as Log;
 
-    expect(log.message).toBe("hand-rolled");
+    expect(log.message).toBe("policy output");
     expect(typeof log.stack).toBe("string");
     expect(errorsObjectDepth(log)).toBeLessThanOrEqual(101);
     expect(JSON.stringify(log.errors)).toContain(DEPTH_MARKER);
@@ -348,18 +355,27 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
     const objectLog = objectLinked.toLogObject();
 
     expect(listSpineHops(listLog)).toBe(spineHops(objectLog));
-    expect(listSpineHops(listLog)).toBe(100);
-    expect(JSON.stringify(listLog)).toContain(DEPTH_MARKER);
+    expect(listSpineHops(listLog)).toBe(101);
+    let terminal: unknown = listLog.cause;
+    while (typeof terminal === "object" && terminal !== null) {
+      const next: unknown = Array.isArray(terminal)
+        ? terminal[0]
+        : (terminal as Log).cause;
+      if (next === undefined) break;
+      terminal = next;
+    }
+    expect(terminal).toEqual({});
+    expect(innermost(objectLog)).toEqual({});
   });
 
   it("charges every nesting level of a list under cause one hop", () => {
-    const error = new HandRolledLogError({
+    const error = new PolicyOutputError({
       cause: nestedArrays(5000),
     }).redact(["password"]);
 
-    const log = error.toLogObject();
+    const log = error.toLogObject().cause as Log;
 
-    expect(log.message).toBe("hand-rolled");
+    expect(log.message).toBe("policy output");
     let depth = 0;
     let node: unknown = log.cause;
     while (Array.isArray(node)) {
@@ -371,14 +387,14 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
   });
 
   it("charges an aggregate member one hop from the node that holds it", () => {
-    const error = new HandRolledLogError({
-      errors: [plainCauseChain(99)],
+    const error = new PolicyOutputError({
+      errors: [plainCauseChain(98)],
     }).redact(["password"]);
 
-    const log = error.toLogObject();
+    const log = error.toLogObject().cause as Log;
 
     const member = (log.errors as Log[])[0] as Log;
-    expect(spineHops(member)).toBe(99);
+    expect(spineHops(member)).toBe(98);
     expect(innermost(member).message).toBe("leaf");
     expect(JSON.stringify(log)).not.toContain(DEPTH_MARKER);
   });

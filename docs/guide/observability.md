@@ -211,37 +211,89 @@ merely _resembles_ a structured error can't smuggle siblings through. The
 envelope fields are primitives: an **object or array under an envelope name**
 (`stack: { message: "…" }`, `code: { … }`) is data too, at the top level and on
 a cause, so a leaf inside it is masked whatever it is called. The
-classification is by position, not by shape, so there is nothing to spoof. (The
+classification is by position, not by shape. (The
 technical `message` is structural here; scrub free text in it with `redactWith`.)
 
-### What key redaction can't do
+### Serializer marker provenance
 
-Key-based redaction masks the **value at a key**; it cannot catch PII embedded
-in free text, e.g. inside the technical `message` (`"user a@b.com not found"`)
-or a string detail value. For those, use the function form:
-
-```ts
-err.redactWith((log) => ({ ...log, message: scrub(log.message as string) }));
-```
-
-`redactWith` is also the composition seam for a **dedicated redaction library**
-when you need patterns, wildcards or regex-based PII detection. This library
-intentionally stays minimal and delegates that power:
+The serializer keeps its own cause markers readable through redaction.
+The exception requires a recorded output container, property or array index,
+and unchanged marker value. Matching text alone does not qualify.
 
 ```ts
-import { redact as deepRedact } from "@visulima/redact";
-
-err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
+new BaseError("outer", {
+  cause: "[Unserializable cause]",
+  errors: ["[4111111111111111 more aggregated errors]"],
+  secret: "S",
+}).redactAllow([]).toLogObject().cause;
+// { cause: "[REDACTED]", errors: ["[REDACTED]"], secret: "[REDACTED]" }
 ```
+
+The built-in redactors preserve provenance when they copy an unchanged marker.
+Private metadata adds no fields or symbols to the log object.
+Consumer copies, including JSON round-trips, do not transfer provenance.
+An outer redactor treats those copied strings as data unless their key is
+allowed by its policy. Changing a recorded marker value also removes its
+exemption. A custom redactor that keeps the original container and value
+retains their provenance.
+
+This exception applies on the cause spine. It does not exempt own log fields
+or values in `details`. The fixed root envelope keeps its existing policy.
+`StructuredError.fromJSON()` reconstructs data, not marker provenance.
+
+### Custom redactor contract
+
+Key-based redaction cannot identify sensitive fragments inside free text.
+`redactWith` accepts a **trusted, synchronous transformation** of the complete log record.
+The consumer can adapt a dedicated redaction library through this callback.
+The callback owns the shape, JSON safety, and sensitive content of its output.
+
+```ts
+// An explicit projection can discard all technical fields.
+err.redactWith(() => ({ message: "Request failed" }));
+```
+
+The callback can mutate its input or return another record, including `{}`.
+Its return value passes through without validation, copying, freezing, or another implicit redaction policy.
+The TypeScript signature requires a record and rejects promises.
+It does not prove that the record is safe for JSON or contains no secrets.
+Cycles, bigint values, getters, and `toJSON` callbacks can still make later JSON serialization throw.
+
+Policy registration is last-wins.
+`err.redactAllow([]).redactWith(fn)` replaces the allow-list instead of composing with it.
+A successful callback can replace `code`, change `retryable`, or reintroduce sensitive data.
+An enclosing error's built-in policy still processes a cause's custom output.
+Custom output from errors inside copied data still passes through the data copier.
+Consumer copies do not transfer serializer-marker provenance.
+
+The input can contain shared references.
+In particular, root `details` retains its original in-process value.
+Callback mutations can affect that value even if the callback subsequently throws.
+The library does not roll back consumer state.
+
+If the callback throws, recovery uses diagnostic fields captured **before** invocation.
+It retains readable own `name`, `code`, `category`, `retryable`, `timestamp`, and `timestampIso` values with their expected primitive types.
+Numeric `code` and `timestamp` values must be finite.
+The failure record adds `message: "[log redaction failed]"` and omits payload, stack, and links.
+Callback mutations cannot replace those captured values.
+Original structural strings remain consumer data and must contain no secrets.
+
+Custom changes to `message` do not automatically scrub stack headers or nested causes.
+The callback does not affect `toString()`, `err.stack`, or runtime inspection.
+Explicit public logging calls inside the callback start independent builds.
+The consumer must bound those calls and terminate synchronously.
+The library cannot interrupt arbitrary callback work or contain later exceptions from returned getters.
 
 ### Notes
 
 - **Log object only, not every string render**: redaction rewrites
-  `toLogObject()` / `toJSON()`. A deny-listed `"message"` is also masked in
-  the `stack` field of every node in the log object: a header that repeats
-  the node's own `name: message` keeps the masked message and its frames,
+  `toLogObject()` / `toJSON()`. A deny-listed `"name"` or `"message"` is also masked in
+  the `stack` field of the root, each cause, and each aggregate member: a header that repeats
+  the node's own `name: message` uses the already-masked fields and keeps its frames,
   and a stack that does not start with that header is masked as a whole.
-  `toString()` honors it too. The `err.stack` property (whose header carries
+  The header uses each field's mask result without calling the mask again.
+  If a result cannot convert to text, the stack becomes `"[REDACTED]"`.
+  `toString()` honors message masking too. The `err.stack` property (whose header carries
   the raw message) and Node's `console.log(err)` inspection (which prints
   that property) stay unredacted. When redaction matters, log errors through
   a structured serializer that hits `toJSON` (`logger.error({ err })`), never
@@ -251,10 +303,10 @@ err.redactWith((log) => deepRedact(log, ["password", "*.email", "ssn"]));
 - **Defense-in-depth at the source**, not a replacement for logger-level
   redaction (pino `redact`, winston formatters); for blanket app-wide policy,
   prefer the logger.
-- **Fail-closed**: if a redactor throws, `toLogObject()` does not crash the
-  logging path and does not emit the unredacted payload. It keeps only the
-  non-sensitive structural fields (`name`/`code`/`category`/`retryable`/
-  timestamps) plus a `[log redaction failed]` marker.
+- **Fail-closed invocation**: a synchronous redactor exception returns the
+  captured diagnostic fields and a `[log redaction failed]` message.
+  Payload, stack, and links are omitted. Successful custom output follows the
+  [custom redactor contract](#custom-redactor-contract).
 
 ## Sentry / OpenTelemetry
 

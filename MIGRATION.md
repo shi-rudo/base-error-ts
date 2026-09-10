@@ -1,5 +1,101 @@
 # Migration Guide
 
+## Next major: log field hooks
+
+`buildLogObject()` is removed from `BaseError` and `StructuredError`.
+Overrides and `super.buildLogObject()` calls no longer compile.
+JavaScript methods with that name are no longer called by the library.
+
+Move additional fields to `buildOwnLogFields()`:
+
+```ts
+// Before
+protected override buildLogObject(): Record<string, unknown> {
+  return { ...super.buildLogObject(), requestId: this.requestId };
+}
+
+// After: import type { OwnLogFields } from "@shirudo/base-error";
+// requestId may be optional; use null when it is absent.
+protected override buildOwnLogFields(): OwnLogFields {
+  return { requestId: this.requestId ?? null };
+}
+```
+
+`OwnLogFields` checks for data values at compile time. It describes a readonly
+record whose values are JSON primitives, readonly arrays, or nested records.
+JSON primitives include `null`. Convert dates and bigints to
+strings explicitly. Convert collections to arrays or plain records. Omit
+absent fields or use `null`. Do not return getters or serialization callbacks.
+The type does not prove runtime safety; the library still applies its guards.
+The base hook retains `Record<string, unknown>` for source compatibility.
+
+The library owns the envelope and cause traversal. New fields survive when
+the error becomes a cause and receive the same redaction as other consumer data.
+`StructuredError` keeps `code`, `category`, `retryable`, and `details` separately.
+Do not move those fields into the hook. If a parent contributes own fields,
+compose them with `super.buildOwnLogFields()`.
+
+An envelope override has no direct replacement hook. Move log layout changes
+to the consumer's logging adapter, after `toLogObject()` applies redaction.
+Do not restore fields from the raw error after redaction.
+
+The narrow hook copies values; the removed hook passed nested values through.
+Review conversions when migrating. See the
+[log field contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/base-error.md#adding-your-own-log-fields)
+for limits and fallback behavior.
+
+The library now reads its fixed envelope directly from the instance through guarded reads.
+A getter that throws costs its own field; other diagnostics and the cause survive.
+There is no legacy record inspection, inspection-cut suffix, or fallback assembly.
+Undefined or unreadable root fields are omitted, except for the own `cause` slot.
+The readable fields retain their order. `StructuredError` still adds `details` only when present.
+Root `details` keeps its existing in-process value semantics and is walked by redaction when configured.
+
+Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
+An exhausted budget emits `[Max log size exceeded]`, including at a later
+data field the reader could not expand. It never labels that cut as a cycle.
+Already-read scalar envelope fields survive exhaustion, including `code` and `retryable: false`.
+After exhaustion, non-scalar envelope fields are omitted without expansion.
+Redaction preserves the empty containers that the serializer produced at its depth cap.
+A `BaseError` nested in copied data retains primitive diagnostic fields and its
+sticky redaction policy. It does not restart hooks or expand its details or links.
+Use the `cause` chain when the full nested diagnosis is required.
+
+Public `toLogObject()` calls retain their full behavior inside consumer callbacks.
+The library projects nested data errors directly without invoking their `toJSON` overrides.
+Use the exported `inspectOwnLogFields(record)` in consumer tests to detect
+reserved names such as `details`, unsupported values, getters, cycles, and limits.
+It returns issues with `path` and `reason`; valid records return `[]`.
+The checker inspects up to 1,000 root keys and reports more than 100 valid data fields as a width limit.
+Skipped keys do not count toward that retention limit.
+The checker never runs implicitly in the log path and adds no log fields.
+
+Built-in redaction now limits classification, key inspections, and value reads together to 100,000 operations per walk.
+This can stop a walk before its existing data-node limit.
+On exhaustion, the result contains the safe envelope with `message: "[Max redaction size exceeded]"`.
+Correctly typed non-sensitive fields, including `code` and `retryable`, retain their values.
+Payload, stack, and links are omitted. Uninspected objects never pass through as opaque leaves.
+This stricter handling of oversized redaction input belongs to the next major release.
+Deny-list masking of message text in stack headers uses values captured during the copy.
+It does not read source getters or cause-array indices a second time.
+
+### Custom redactor failures
+
+`redactWith` keeps its synchronous `Record<string, unknown>` callback signature.
+Successful returns retain their existing behavior and require no migration.
+The consumer owns output shape, JSON safety, sensitive content, and callback termination.
+
+A thrown callback now recovers diagnostic fields captured before invocation.
+For example, the failure record retains `code: "PERMANENT"` and `retryable: false`
+even if the callback overwrites those values and then throws.
+Deleting `code` or replacing it with a throwing getter no longer removes the original readable code from recovery.
+Recovery omits payload, stack, and links and keeps the existing failure message.
+Callback mutations to shared objects, including root `details`, are not rolled back.
+
+Do not rely on partially transformed metadata after an exception.
+Return a complete record for a successful transformation.
+See the [custom redactor contract](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md#custom-redactor-contract).
+
 ## v7 to v8
 
 v8 removes the `@shirudo/base-error/presentation` and
