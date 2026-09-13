@@ -165,8 +165,8 @@ describe.each<Mode>(["allow", "deny"])(
       ).toLogObject();
 
       expect(reads).toBeLessThanOrEqual(100_000);
-      expect(log).toEqual({
-        message: "[Max redaction size exceeded]",
+      expect(log).toMatchObject({
+        message: "outer",
         name: "WithDecisions",
         timestamp: error.timestamp,
         timestampIso: error.timestampIso,
@@ -174,6 +174,13 @@ describe.each<Mode>(["allow", "deny"])(
         category: "PERMANENT",
         retryable: false,
       });
+      expect(log.stack).toEqual(expect.any(String));
+      const retained = (log.cause as { errors: unknown[] }).errors;
+      expect(retained[0]).toBe(mode === "allow" ? "[REDACTED]" : null);
+      expect(retained[retained.length - 1]).toBe(
+        "[Max redaction size exceeded]",
+      );
+      expect(retained.length).toBeLessThan(errors.length);
     });
   },
 );

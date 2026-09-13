@@ -123,7 +123,7 @@ export function readMembers(
 }
 
 /** `Array.isArray` itself throws on a revoked Proxy; such a value is no array. */
-function isArrayValue(value: unknown): boolean {
+export function isArrayValue(value: unknown): boolean {
   try {
     return Array.isArray(value);
   } catch {

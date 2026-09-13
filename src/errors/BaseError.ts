@@ -17,6 +17,7 @@ import {
   type LogRegion as RedactRegion,
 } from "./log-position.js";
 import {
+  isArrayValue,
   readMembers,
   readOwnKeys,
   readPrototype,
@@ -397,6 +398,54 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
+   * Inspect envelope scalars before expanding objects, and causes before data.
+   * A large early field cannot consume the reads needed by later diagnostics.
+   * Each queued value costs a descriptor and value read from the shared cap.
+   * Placeholders preserve key order without putting raw references in output.
+   */
+  static *#redactionFields(
+    value: object,
+    region: RedactRegion,
+    reads: { nodes: number },
+    out: Record<string, unknown>,
+  ): Generator<readonly [string, unknown]> {
+    const causes: (readonly [string, unknown])[] = [];
+    const data: (readonly [string, unknown])[] = [];
+    try {
+      for (const key of BaseError.#redactionKeys(value, reads)) {
+        if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
+        reads.nodes++;
+        const field = readPropertyResult(value, key);
+        if (!field.readable) throw UNREADABLE_REFLECTION;
+        const entry = [key, field.value] as const;
+        if (
+          region !== "data" &&
+          field.value !== null &&
+          typeof field.value === "object"
+        ) {
+          out[key] = REDACTION_SIZE_MARKER;
+          // Failed classification defers the value to the policy; a denied
+          // field does not need traversal and must still be maskable.
+          if (
+            key === "cause" ||
+            (key === "errors" && isArrayValue(field.value))
+          ) {
+            causes.push(entry);
+          } else {
+            data.push(entry);
+          }
+        } else {
+          yield entry;
+        }
+      }
+    } catch (error) {
+      if (error !== REDACTION_READ_CUT || region === "data") throw error;
+    }
+    yield* causes;
+    yield* data;
+  }
+
+  /**
    * Single deep-clone walker for redaction. Recurses into arrays and objects
    * that carry own enumerable keys (see {@link BaseError.#isWalkable}); every
    * other value (string, `Date`, `Map`, …) is a leaf.
@@ -433,7 +482,8 @@ export class BaseError<T extends string> extends Error {
    * counts every value the walk visits in a data region, a container or a
    * leaf. The separate read allowance ({@link MAX_REDACTION_READS}) covers
    * classification, key inspections, and value reads across every region.
-   * Its exhaustion uses the safe envelope with the redaction-size message.
+   * Read exhaustion cuts the current subtree instead of replacing the log.
+   * Envelope scalars precede object expansion; cause links precede data.
    * An uninspected object is never treated as an opaque leaf. When
    * the budget runs out, the data container being walked ends with one size
    * marker in place of the rest, in key order, and every data container not
@@ -456,8 +506,13 @@ export class BaseError<T extends string> extends Error {
     key = "",
     spine = 0,
   ): unknown {
-    if (!Array.isArray(value) && !BaseError.#isWalkable(value, state.reads)) {
-      return value;
+    try {
+      if (!Array.isArray(value) && !BaseError.#isWalkable(value, state.reads)) {
+        return value;
+      }
+    } catch (error) {
+      if (error === REDACTION_READ_CUT) return REDACTION_SIZE_MARKER;
+      throw error;
     }
     // Preserve serializer cuts; otherwise the redactor diagnoses its own cap.
     // Leaves never recurse, so shallow data is intact.
@@ -509,48 +564,59 @@ export class BaseError<T extends string> extends Error {
             items.push(REDACTION_SIZE_MARKER);
             break;
           }
-          if (state.reads.nodes >= MAX_REDACTION_READS)
-            throw REDACTION_READ_CUT;
+          if (state.reads.nodes >= MAX_REDACTION_READS) {
+            items.push(REDACTION_SIZE_MARKER);
+            break;
+          }
           state.reads.nodes++;
           const itemRead = readPropertyResult(value, String(index));
           if (!itemRead.readable) throw UNREADABLE_REFLECTION;
           const item = itemRead.value;
-          if (Array.isArray(item) || BaseError.#isWalkable(item, state.reads)) {
-            items.push(
-              BaseError.#redactWalk(
-                item,
-                decide,
-                region,
-                position.depth,
-                state,
-                key,
-                position.spine,
-              ),
-            );
-            continue;
+          try {
+            if (
+              Array.isArray(item) ||
+              BaseError.#isWalkable(item, state.reads)
+            ) {
+              items.push(
+                BaseError.#redactWalk(
+                  item,
+                  decide,
+                  region,
+                  position.depth,
+                  state,
+                  key,
+                  position.spine,
+                ),
+              );
+              continue;
+            }
+            if (region === "data") state.nodes++;
+            if (typeof item === "function") {
+              items.push(null);
+              continue;
+            }
+            // A leaf inside an array has no key of its own, so it is judged under
+            // the key of the array that holds it, in every region. Without this an
+            // allow-list keeps every scalar element, which is the opposite of what
+            // it promises: an aggregate's members are arbitrary values (a
+            // `Promise.allSettled` reason need not be an `Error`), and `errors` is
+            // not an envelope key, so a string member is data like any other.
+            const slot = String(index);
+            const decision =
+              region === "cause" &&
+              BaseError.#hasSerializerMarker(value, slot, item)
+                ? BaseError.#RECURSE
+                : decide(key, item, region);
+            const redacted = decision === BaseError.#RECURSE ? item : decision;
+            if (redacted === item) {
+              BaseError.#copySerializerMarker(value, items, slot, item);
+            }
+            items.push(redacted);
+          } catch (error) {
+            if (error !== REDACTION_READ_CUT) throw error;
+            items.push(REDACTION_SIZE_MARKER);
+            break;
           }
-          if (region === "data") state.nodes++;
-          if (typeof item === "function") {
-            items.push(null);
-            continue;
-          }
-          // A leaf inside an array has no key of its own, so it is judged under
-          // the key of the array that holds it, in every region. Without this an
-          // allow-list keeps every scalar element, which is the opposite of what
-          // it promises: an aggregate's members are arbitrary values (a
-          // `Promise.allSettled` reason need not be an `Error`), and `errors` is
-          // not an envelope key, so a string member is data like any other.
-          const slot = String(index);
-          const decision =
-            region === "cause" &&
-            BaseError.#hasSerializerMarker(value, slot, item)
-              ? BaseError.#RECURSE
-              : decide(key, item, region);
-          const redacted = decision === BaseError.#RECURSE ? item : decision;
-          if (redacted === item) {
-            BaseError.#copySerializerMarker(value, items, slot, item);
-          }
-          items.push(redacted);
         }
         return copyLogDataDepthCut(value, items);
       }
@@ -565,16 +631,16 @@ export class BaseError<T extends string> extends Error {
           ? { target: out }
           : undefined;
       if (header !== undefined) state.headers?.push(header);
-      for (const key of BaseError.#redactionKeys(value, state.reads)) {
+      for (const [key, val] of BaseError.#redactionFields(
+        value,
+        region,
+        state.reads,
+        out,
+      )) {
         if (region === "data" && state.nodes >= MAX_DATA_NODES) {
           out[key] = REDACTION_SIZE_MARKER;
           break;
         }
-        if (state.reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
-        state.reads.nodes++;
-        const fieldRead = readPropertyResult(value, key);
-        if (!fieldRead.readable) throw UNREADABLE_REFLECTION;
-        const val = fieldRead.value;
         if (
           header !== undefined &&
           (key === "name" || key === "message" || key === "stack")
@@ -593,37 +659,45 @@ export class BaseError<T extends string> extends Error {
         // parent); the child region only governs recursion. Conflating the two
         // wrongly masks a region-transition key that holds a leaf (e.g. a
         // top-level `cause: undefined`).
-        const decision = decide(key, val, region);
-        if (decision === BaseError.#RECURSE) {
-          if (Array.isArray(val) || BaseError.#isWalkable(val, state.reads)) {
-            const position = childPosition(
-              { region, depth, spine },
-              false,
-              key,
-              val,
-            );
-            out[key] = BaseError.#redactWalk(
-              val,
-              decide,
-              position.region,
-              position.depth,
-              state,
-              key,
-              position.spine,
-            );
+        try {
+          const decision = decide(key, val, region);
+          if (decision === BaseError.#RECURSE) {
+            if (Array.isArray(val) || BaseError.#isWalkable(val, state.reads)) {
+              const position = childPosition(
+                { region, depth, spine },
+                false,
+                key,
+                val,
+              );
+              out[key] = BaseError.#redactWalk(
+                val,
+                decide,
+                position.region,
+                position.depth,
+                state,
+                key,
+                position.spine,
+              );
+            } else {
+              if (region === "data") state.nodes++;
+              out[key] = val;
+            }
           } else {
             if (region === "data") state.nodes++;
-            out[key] = val;
+            out[key] = decision;
           }
-        } else {
-          if (region === "data") state.nodes++;
-          out[key] = decision;
-        }
-        if (out[key] === val) {
-          BaseError.#copySerializerMarker(value, out, key, val);
+          if (out[key] === val) {
+            BaseError.#copySerializerMarker(value, out, key, val);
+          }
+        } catch (error) {
+          if (error !== REDACTION_READ_CUT) throw error;
+          out[key] = REDACTION_SIZE_MARKER;
         }
       }
       return copyLogDataDepthCut(value, out);
+    } catch (error) {
+      if (error === REDACTION_READ_CUT) return REDACTION_SIZE_MARKER;
+      throw error;
     } finally {
       state.seen.delete(value);
     }
@@ -916,7 +990,7 @@ export class BaseError<T extends string> extends Error {
   /**
    * Captures diagnostic fields before consumer code can corrupt them.
    * A synchronous throw drops payload, stack, and links from this node.
-   * Read exhaustion retains its distinct redaction-size message.
+   * Built-in size cuts are handled locally before this recovery boundary.
    * Successful custom output remains consumer-controlled.
    */
   /*#__PURE__*/ static #redactFailClosed(
@@ -944,8 +1018,7 @@ export class BaseError<T extends string> extends Error {
     }
     try {
       return redactor(raw);
-    } catch (error) {
-      if (error === REDACTION_READ_CUT) safe.message = REDACTION_SIZE_MARKER;
+    } catch {
       return safe;
     }
   }

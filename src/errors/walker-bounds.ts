@@ -81,9 +81,12 @@ export const MAX_DATA_DEPTH = 100;
 export const MAX_DATA_NODES = 100_000;
 
 /**
- * Shared foreign-read allowance for redaction, using the data walk's cap.
+ * Shared foreign-read allowance for redaction, with the same numeric cap as
+ * the data walk but a different unit: a value can require several reads.
  * Classification, own-key enumeration, descriptors, and values each cost one.
- * Exhaustion keeps only the safe envelope with the redaction-size message.
+ * Hidden descriptors consume reads without visiting data nodes, so no fixed
+ * reads-per-node factor can align these independent bounds. Read exhaustion
+ * cuts the current subtree; already-masked envelope scalars remain intact.
  */
 export const MAX_REDACTION_READS: number = MAX_DATA_NODES;
 

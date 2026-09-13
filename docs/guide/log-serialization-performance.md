@@ -121,6 +121,27 @@ redacting a large cause graph. The main reduction is structural: five methods
 and a net 175 production lines are removed, including the legacy record copier,
 continuation, inspection-cut notice, and multi-stage fallback.
 
+## Local redaction size cuts
+
+A paired run on Node 24.11.1, macOS arm64, compares `ab77351` with the local
+read-cut fix for `base-error-ts-b9p`. Both bundles use the same explicit tsconfig
+and esbuild settings. Values are median microseconds per `toLogObject()` call.
+
+| Input | Sticky root policy | `ab77351` | Local size cuts |
+| --- | --- | ---: | ---: |
+| Shallow cause with details | none | 3.24 | 3.16 |
+| Shallow cause with details | deny secret | 9.30 | 10.45 |
+| 100-member aggregate | none | 212.50 | 209.30 |
+| 100-member aggregate | deny secret | 544.41 | 610.02 |
+| 100-node cause chain | none | 209.62 | 209.96 |
+| 100-node cause chain | deny secret | 529.59 | 591.08 |
+
+The redacted medians rise about 12%; unredacted medians differ by less than 3%.
+Envelope fields now pass through a bounded queue so scalar diagnostics and
+cause links precede data expansion. The shared allowance stays at 100,000
+foreign reads. Regression tests count accesses separately from this timing
+measurement. These host measurements do not establish workerd throughput.
+
 ## Reproduce
 
 The scenario and timing code is

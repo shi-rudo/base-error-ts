@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Large data no longer replaces the entire redacted log with a size-failure record. Redaction processes envelope scalars before object expansion and cause links before data. Local size cuts retain the masked diagnosis and scalar decision fields, including `retryable: false`. The shared allowance remains 100,000 foreign reads. Output key order stays unchanged; getter and mask callback order can change. Denied `errors` fields remain maskable when array classification fails.
+
 - Deny-listed `name` values no longer survive in log stack headers. Root, cause, and aggregate headers use the already-masked name and message without calling the mask again. Recognized headers retain their frames; unrecognized headers are masked as a whole. A mask result that cannot convert to text replaces the stack with `[REDACTED]` and preserves the other fields.
 
 - **Failed redactors preserve the original diagnostic fields.** Recovery captures own, correctly typed metadata before invoking a policy. A callback that changes `code` or `retryable` and then throws cannot change those fields in the failure record. Moving message text into `code` before throwing no longer exposes that text through recovery. Successful custom output remains trusted and consumer-controlled. See the custom redactor contract and migration guide.

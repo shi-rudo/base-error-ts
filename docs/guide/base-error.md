@@ -191,9 +191,14 @@ Built-in redaction has a separate 100,000-read allowance per walk
 (`MAX_REDACTION_READS`). It covers container classification, key inspections,
 and value reads in every region. Symbols and non-enumerable keys consume it.
 A value can require multiple reads, so this limit can precede the data-node limit.
-After exhaustion, the policy returns only its safe envelope with
-`message: "[Max redaction size exceeded]"`. Correctly typed non-sensitive fields,
-including `code` and `retryable`, keep their values. Payload, stack, and links are omitted.
+Before expanding objects in a root or cause envelope, the policy reads and masks
+its scalar fields. It then follows cause links before data fields. Output key
+order stays unchanged, but getter and mask callback order can change.
+A read cut retains those masked fields, including the message, stack, `code`,
+and `retryable`. Arrays retain a masked prefix plus `[Max redaction size exceeded]`;
+an object subtree that cannot be inspected becomes that marker. Later uninspected
+branches are cut too. Fields beyond the key-inspection allowance can be omitted.
+This priority applies only to envelopes; a data key named `code` stays data.
 The library never passes an uninspected object through as a leaf.
 Work inside a consumer callback or reflection trap remains outside this allowance.
 Deny-list masking of names and messages in stack headers uses values captured during the copy.

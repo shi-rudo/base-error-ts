@@ -64,7 +64,7 @@ describe("walker node budgets (shared-reference blowup)", () => {
     ).toThrow(/metadata must be JSON-safe/);
   });
 
-  it("log redaction keeps the safe envelope when a DAG exhausts the read allowance", () => {
+  it("log redaction cuts DAG data without replacing the diagnosis", () => {
     const err = new StructuredError({
       code: "DAG",
       category: "C",
@@ -79,9 +79,12 @@ describe("walker node budgets (shared-reference blowup)", () => {
       code: "DAG",
       category: "C",
       retryable: false,
-      message: "[Max redaction size exceeded]",
+      message: "dag details",
     });
-    expect(log).not.toHaveProperty("details");
+    expect(log.stack).toEqual(expect.any(String));
+    expect(JSON.stringify(log.details)).toContain(
+      "[Max redaction size exceeded]",
+    );
     expect(JSON.stringify(log)).not.toContain("secret");
   });
 });
@@ -227,7 +230,7 @@ describe("walker node budget counts every value", () => {
     }
   }
 
-  it("keeps safe decisions when a wide data tree exhausts redaction reads", () => {
+  it("keeps diagnosis and decisions when a wide data tree exhausts redaction reads", () => {
     const error = new WideError().redact(["password"]);
 
     const log = error.toLogObject();
@@ -236,9 +239,13 @@ describe("walker node budget counts every value", () => {
       code: "WIDE",
       category: "TEST",
       retryable: false,
-      message: SIZE_MARKER,
+      message: "wide",
     });
-    expect(log).not.toHaveProperty("details");
+    expect(log.stack).toEqual(expect.any(String));
+    const retained = (log.details as { ids: unknown[] }).ids;
+    expect(retained[0]).toBe(0);
+    expect(retained[retained.length - 1]).toBe(SIZE_MARKER);
+    expect(retained.length).toBeLessThan(ids.length);
   });
 
   it("keeps the raw details untouched without a redactor", () => {
