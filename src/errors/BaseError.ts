@@ -439,7 +439,13 @@ export class BaseError<T extends string> extends Error {
         }
       }
     } catch (error) {
-      if (error !== REDACTION_READ_CUT || region === "data") throw error;
+      if (
+        error !== REDACTION_READ_CUT ||
+        region === "data" ||
+        Object.keys(out).length === 0
+      ) {
+        throw error;
+      }
     }
     yield* causes;
     yield* data;

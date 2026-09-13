@@ -198,6 +198,8 @@ A read cut retains those masked fields, including the message, stack, `code`,
 and `retryable`. Arrays retain a masked prefix plus `[Max redaction size exceeded]`;
 an object subtree that cannot be inspected becomes that marker. Later uninspected
 branches are cut too. Fields beyond the key-inspection allowance can be omitted.
+If an envelope scan exhausts its reads before retaining any output field, the
+node becomes the size marker. A fully inspected empty node stays empty.
 This priority applies only to envelopes; a data key named `code` stays data.
 The library never passes an uninspected object through as a leaf.
 Work inside a consumer callback or reflection trap remains outside this allowance.

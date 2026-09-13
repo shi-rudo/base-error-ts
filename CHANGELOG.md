@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- An envelope scan that exhausts its redaction reads without retaining any output field now returns `[Max redaction size exceeded]` instead of `{}`. Fully inspected empty nodes and already-retained diagnostic fields keep their existing behavior.
+
 - Large data no longer replaces the entire redacted log with a size-failure record. Redaction processes envelope scalars before object expansion and cause links before data. Local size cuts retain the masked diagnosis and scalar decision fields, including `retryable: false`. The shared allowance remains 100,000 foreign reads. Output key order stays unchanged; getter and mask callback order can change. Denied `errors` fields remain maskable when array classification fails.
 
 - Deny-listed `name` values no longer survive in log stack headers. Root, cause, and aggregate headers use the already-masked name and message without calling the mask again. Recognized headers retain their frames; unrecognized headers are masked as a whole. A mask result that cannot convert to text replaces the stack with `[REDACTED]` and preserves the other fields.
