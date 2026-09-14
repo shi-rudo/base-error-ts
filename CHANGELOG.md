@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Document independent redaction of `StructuredError.name` and `code`, including their shared initial value, stack-header behavior, and the effect of masking codes on log-based matching.
+
 - Failed deny-list redaction no longer restores explicitly denied diagnostic fields. Recovery omits those fields without calling the mask again and preserves undenied typed values, including `retryable: false`. This applies at the root, on causes and aggregate members, and to errors inside copied data. A replacement policy governs subsequent calls, even when installed by a mask that throws.
 
 - Redaction read cuts preserve already-copied fields in data objects. An oversized child keeps its local size marker instead of discarding masked siblings. Fields beyond the key-inspection allowance remain omitted, and the shared read limit stays unchanged.

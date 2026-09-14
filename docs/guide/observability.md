@@ -159,6 +159,31 @@ This holds for errors of the same realm only. An error that crossed a worker
 boundary, or one that came from a second copy of the package, logs as a foreign
 error without a policy.
 
+`StructuredError` initializes `name` from `code`, so both fields contain the same value.
+Redaction selects keys, not matching values. Denying `name` masks its stack header,
+but leaves `code` unchanged. Denying `code` alone leaves `name` and its stack header unchanged.
+This also applies when the error appears as a cause.
+
+```ts
+const error = new StructuredError({
+  code: "TENANT_9931_SECRET", // Deliberately sensitive code for this example.
+  category: "INTERNAL",
+  retryable: false,
+  message: "Request failed",
+}).redact(["name"]);
+
+const log = error.toLogObject();
+log.name; // "[REDACTED]"
+log.code; // "TENANT_9931_SECRET" remains in the log.
+
+error.redact(["name", "code"]).toLogObject().code; // "[REDACTED]"
+```
+
+Use stable, non-sensitive codes such as `REQUEST_FAILED`.
+Keep tenant identifiers and other sensitive values in `details`, where a policy can mask them.
+If an existing code contains sensitive data, deny both `name` and `code` to mask both copies.
+Masking `code` can break log-based matching and alerts that depend on its original value.
+
 The mask is configurable: a string, or a **function** of `(value, key)` for
 partial masking or type preservation:
 
