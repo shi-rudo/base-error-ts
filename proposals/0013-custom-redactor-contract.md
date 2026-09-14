@@ -10,10 +10,11 @@ Its signature remains `(log: Record<string, unknown>) => Record<string, unknown>
 The consumer owns the returned record, including its shape and sensitive content.
 The library owns callback invocation and failure recovery.
 
-Before invocation, the library captures six own, correctly typed diagnostic fields.
+Before invocation, the library captures up to six own, correctly typed diagnostic fields.
 If the callback throws, recovery uses that snapshot instead of the mutated input.
 This applies at the root, on the cause spine, and to errors inside copied data.
 The built-in policies use the same recovery path.
+An active deny-list excludes its denied fields from recovery.
 
 ## Problem
 
@@ -93,6 +94,9 @@ It does not read the source error again.
 The callback cannot access the snapshot.
 Mutation, deletion, getters, and prototype changes on the input cannot change recovery fields.
 Recovery omits absent, unreadable, and incorrectly typed fields.
+For a built-in deny-list, recovery also omits explicitly denied fields without calling the mask again.
+The recovery rules belong to the invoked policy, even if its callback registers a replacement before throwing.
+The replacement governs subsequent calls.
 It adds `message: "[log redaction failed]"` and drops payload, stack, and links.
 Built-in read exhaustion retains its distinct `[Max redaction size exceeded]` message.
 The library never substitutes a size-marker string for a captured boolean decision.
@@ -104,7 +108,7 @@ Later exceptions from custom getters or serialization callbacks do not.
 
 ### Work and recursion
 
-The snapshot reads six fixed keys through the guarded reader.
+The snapshot reads up to six fixed keys through the guarded reader.
 It traverses no containers and enumerates no consumer keys.
 This fixed work is separate from the built-in redaction walk's read allowance.
 No snapshot is needed when the error has no redaction policy.

@@ -305,6 +305,9 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
   prefer the logger.
 - **Fail-closed invocation**: a synchronous redactor exception returns the
   captured diagnostic fields and a `[log redaction failed]` message.
+  A built-in deny-list also excludes explicitly denied diagnostic fields from recovery.
+  The library does not call the failed mask again.
+  Undenied typed fields, including `retryable: false`, retain their values.
   Payload, stack, and links are omitted. Successful custom output follows the
   [custom redactor contract](#custom-redactor-contract).
 

@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Failed deny-list redaction no longer restores explicitly denied diagnostic fields. Recovery omits those fields without calling the mask again and preserves undenied typed values, including `retryable: false`. This applies at the root, on causes and aggregate members, and to errors inside copied data. A replacement policy governs subsequent calls, even when installed by a mask that throws.
+
 - Redaction read cuts preserve already-copied fields in data objects. An oversized child keeps its local size marker instead of discarding masked siblings. Fields beyond the key-inspection allowance remain omitted, and the shared read limit stays unchanged.
 
 - An envelope scan that exhausts its redaction reads without retaining any output field now returns `[Max redaction size exceeded]` instead of `{}`. Fully inspected empty nodes and already-retained diagnostic fields keep their existing behavior.

@@ -239,7 +239,7 @@ export class BaseError<T extends string> extends Error {
     // needed only when a header component is denied without `stack`.
     const maskStackHeaders =
       (denied.has("name") || denied.has("message")) && !denied.has("stack");
-    this.#redactor = (log) => {
+    const redactor = (log: Record<string, unknown>) => {
       const headers: RedactionStackHeader[] | undefined = maskStackHeaders
         ? []
         : undefined;
@@ -272,6 +272,7 @@ export class BaseError<T extends string> extends Error {
       }
       return masked;
     };
+    this.#redactor = BaseError.#guardRedactor(redactor, denied);
     return this;
   }
 
@@ -312,7 +313,7 @@ export class BaseError<T extends string> extends Error {
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
     this.#messageMask = undefined;
-    this.#redactor = (log) => {
+    const redactor = (log: Record<string, unknown>) => {
       const state = {
         nodes: 0,
         seen: new Set<object>(),
@@ -340,6 +341,7 @@ export class BaseError<T extends string> extends Error {
         state,
       ) as Record<string, unknown>;
     };
+    this.#redactor = BaseError.#guardRedactor(redactor);
     return this;
   }
 
@@ -772,7 +774,7 @@ export class BaseError<T extends string> extends Error {
     redactor: (log: Record<string, unknown>) => Record<string, unknown>,
   ): this {
     this.#messageMask = undefined;
-    this.#redactor = redactor;
+    this.#redactor = BaseError.#guardRedactor(redactor);
     return this;
   }
 
@@ -856,9 +858,7 @@ export class BaseError<T extends string> extends Error {
     const context = BaseError.#newLogContext();
     const raw = this.#baseLogObject(context);
     Object.assign(raw, this.#nodeOwnFields(this, context));
-    return this.#redactor
-      ? BaseError.#redactFailClosed(this.#redactor, raw)
-      : raw;
+    return this.#redactor ? this.#redactor(raw) : raw;
   }
 
   static #newLogContext(): LogBuildContext {
@@ -880,9 +880,7 @@ export class BaseError<T extends string> extends Error {
       )
         log[key] = value;
     }
-    return this.#redactor
-      ? BaseError.#redactFailClosed(this.#redactor, log)
-      : log;
+    return this.#redactor ? this.#redactor(log) : log;
   }
 
   /**
@@ -990,39 +988,43 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Captures diagnostic fields before consumer code can corrupt them.
+   * Captures permitted diagnostic fields before consumer code can corrupt them.
+   * Recovery stays bound to this policy if its callback installs another one.
    * A synchronous throw drops payload, stack, and links from this node.
    * Built-in size cuts are handled locally before this recovery boundary.
    * Successful custom output remains consumer-controlled.
    */
-  /*#__PURE__*/ static #redactFailClosed(
+  /*#__PURE__*/ static #guardRedactor(
     redactor: (log: Record<string, unknown>) => Record<string, unknown>,
-    raw: Record<string, unknown>,
-  ): Record<string, unknown> {
-    const safe: Record<string, unknown> = {
-      message: "[log redaction failed]",
+    denied?: ReadonlySet<string>,
+  ): (raw: Record<string, unknown>) => Record<string, unknown> {
+    return (raw) => {
+      const safe: Record<string, unknown> = {
+        message: "[log redaction failed]",
+      };
+      for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
+        if (denied?.has(key)) continue;
+        const value = readOwnProperty(raw, key);
+        const type =
+          key === "retryable"
+            ? "boolean"
+            : key === "timestamp"
+              ? "number"
+              : "string";
+        if (
+          typeof value !== type &&
+          !(key === "code" && typeof value === "number")
+        )
+          continue;
+        if (typeof value === "number" && !Number.isFinite(value)) continue;
+        safe[key] = value;
+      }
+      try {
+        return redactor(raw);
+      } catch {
+        return safe;
+      }
     };
-    for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-      const value = readOwnProperty(raw, key);
-      const type =
-        key === "retryable"
-          ? "boolean"
-          : key === "timestamp"
-            ? "number"
-            : "string";
-      if (
-        typeof value !== type &&
-        !(key === "code" && typeof value === "number")
-      )
-        continue;
-      if (typeof value === "number" && !Number.isFinite(value)) continue;
-      safe[key] = value;
-    }
-    try {
-      return redactor(raw);
-    } catch {
-      return safe;
-    }
   }
 
   /**
@@ -1037,8 +1039,8 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Structural fields captured for redaction recovery. Consumers must keep
-   * their original values free of secrets.
+   * Structural fields eligible for redaction recovery unless explicitly denied.
+   * Consumers must keep undenied original values free of secrets.
    */
   static readonly #SAFE_TRIAGE_KEYS = [
     "name",
@@ -1478,9 +1480,7 @@ export class BaseError<T extends string> extends Error {
       // deeper node applied its own policy first. The enclosing error's
       // redactor walks the result afterwards.
       const redactor = BaseError.#redactorOf(cause);
-      return redactor === undefined
-        ? serialized
-        : BaseError.#redactFailClosed(redactor, serialized);
+      return redactor === undefined ? serialized : redactor(serialized);
     }
 
     // A cause that is not an error is data.

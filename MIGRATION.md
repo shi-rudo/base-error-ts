@@ -79,6 +79,12 @@ This stricter handling of oversized redaction input belongs to the next major re
 Deny-list masking of message text in stack headers uses values captured during the copy.
 It does not read source getters or cause-array indices a second time.
 
+### Deny-list failures
+
+If built-in deny-list redaction fails, recovery now omits explicitly denied diagnostic fields.
+For example, a failed mask under `redact(["name"])` no longer restores the original name.
+Recovery does not call the mask again. Undenied typed diagnostic fields retain their values.
+
 ### Custom redactor failures
 
 `redactWith` keeps its synchronous `Record<string, unknown>` callback signature.
