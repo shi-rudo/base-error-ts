@@ -26,6 +26,8 @@
 
 ### Fixed
 
+- Redaction read cuts preserve already-copied fields in data objects. An oversized child keeps its local size marker instead of discarding masked siblings. Fields beyond the key-inspection allowance remain omitted, and the shared read limit stays unchanged.
+
 - An envelope scan that exhausts its redaction reads without retaining any output field now returns `[Max redaction size exceeded]` instead of `{}`. Fully inspected empty nodes and already-retained diagnostic fields keep their existing behavior.
 
 - Large data no longer replaces the entire redacted log with a size-failure record. Redaction processes envelope scalars before object expansion and cause links before data. Local size cuts retain the masked diagnosis and scalar decision fields, including `retryable: false`. The shared allowance remains 100,000 foreign reads. Output key order stays unchanged; getter and mask callback order can change. Denied `errors` fields remain maskable when array classification fails.

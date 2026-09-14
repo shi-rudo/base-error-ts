@@ -439,11 +439,7 @@ export class BaseError<T extends string> extends Error {
         }
       }
     } catch (error) {
-      if (
-        error !== REDACTION_READ_CUT ||
-        region === "data" ||
-        Object.keys(out).length === 0
-      ) {
+      if (error !== REDACTION_READ_CUT || Object.keys(out).length === 0) {
         throw error;
       }
     }
@@ -488,12 +484,12 @@ export class BaseError<T extends string> extends Error {
    * counts every value the walk visits in a data region, a container or a
    * leaf. The separate read allowance ({@link MAX_REDACTION_READS}) covers
    * classification, key inspections, and value reads across every region.
-   * Read exhaustion cuts the current subtree instead of replacing the log.
+   * Read exhaustion retains copied fields and cuts uninspected subtrees.
    * Envelope scalars precede object expansion; cause links precede data.
-   * An uninspected object is never treated as an opaque leaf. When
-   * the budget runs out, the data container being walked ends with one size
-   * marker in place of the rest, in key order, and every data container not
-   * yet entered is the marker. `state.seen` holds the containers on the
+   * An uninspected object is never treated as an opaque leaf. Arrays append
+   * a size marker at the cut. Objects retain local field markers and omit
+   * keys beyond the inspection allowance. An object cut with no retained
+   * fields becomes the size marker. `state.seen` holds the containers on the
    * current path, so a cycle is one marker at its first repeat; a shared
    * reference without a cycle is still cloned once per reference and is
    * bounded by the node budget.
