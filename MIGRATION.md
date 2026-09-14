@@ -61,7 +61,9 @@ A `BaseError` nested in copied data retains primitive diagnostic fields and its
 sticky redaction policy. It does not restart hooks or expand its details or links.
 Use the `cause` chain when the full nested diagnosis is required.
 
-Public `toLogObject()` calls retain their full behavior inside consumer callbacks.
+During own-fields processing, nested public log calls retain diagnostics and redaction but skip own-fields hooks on all instances from this package.
+This scope includes getters and serialization callbacks while the library copies the hook result.
+Subsequent public calls run their hooks normally. Consumer callbacks still need to terminate.
 The library projects nested data errors directly without invoking their `toJSON` overrides.
 Use the exported `inspectOwnLogFields(record)` in consumer tests to detect
 reserved names such as `details`, unsupported values, getters, cycles, and limits.

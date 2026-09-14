@@ -845,6 +845,8 @@ export class BaseError<T extends string> extends Error {
    *
    * During data serialization, nested errors keep a primitive diagnostic
    * envelope and their sticky policy, without restarting hooks or traversal.
+   * During own-fields processing, explicit nested calls skip own-fields hooks
+   * across instances while retaining envelopes, causes, and redaction.
    *
    * ⚠️ This is a **log** serialization: it carries the technical message, stack,
    * cause chain and raw `details`. **Never return it to a client.** Anything that
@@ -900,6 +902,8 @@ export class BaseError<T extends string> extends Error {
    * - it takes no arguments, so an error describes itself the same way
    *   wherever it sits in a chain;
    * - it must not walk a cause chain and must not log another error;
+   * - while the hook and its returned fields are processed, nested public
+   *   log calls skip own-fields hooks on all instances from this package;
    * - every key that carries a name this library writes is dropped rather
    *   than obeyed, and {@link RESERVED_NODE_KEYS} is the list;
    * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
@@ -929,6 +933,8 @@ export class BaseError<T extends string> extends Error {
     return #redactor in value;
   }
 
+  static #ownFieldsActive = false;
+
   /**
    * The own fields a node carries: the hook's record with the library's own
    * key names removed, each value copied as data, cut at the width cap. One
@@ -939,13 +945,14 @@ export class BaseError<T extends string> extends Error {
     value: unknown,
     context: LogBuildContext,
   ): Record<string, unknown> {
-    if (!BaseError.#sameRealm(value)) {
+    if (BaseError.#ownFieldsActive || !BaseError.#sameRealm(value)) {
       return {};
     }
     // Null-prototype target, so an own `__proto__` from a hook is copied as
     // ordinary data instead of routing through a prototype setter. Matches
     // the clone target of the redaction walker.
     const out = Object.create(null) as Record<string, unknown>;
+    BaseError.#ownFieldsActive = true;
     try {
       // The record is foreign data, not just the call that produced it: a
       // getter on it throws, a Proxy trap on it throws, and reading its keys
@@ -983,6 +990,8 @@ export class BaseError<T extends string> extends Error {
       }
     } catch {
       // A throw mid-enumeration keeps whatever was already collected.
+    } finally {
+      BaseError.#ownFieldsActive = false;
     }
     return out;
   }

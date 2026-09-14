@@ -115,7 +115,8 @@ No snapshot is needed when the error has no redaction policy.
 
 Explicit public logging calls inside a callback start independent builds.
 The consumer must bound such calls and terminate the callback.
-No ambient recursion guard or callback CPU limit is added.
+No recursion guard or CPU limit is imposed on custom redactor invocation.
+If a public call occurs during own-fields processing, the hook guard suppresses its own-fields hooks, including calls from a redactor.
 A synchronous library cannot interrupt arbitrary consumer code.
 
 ## Verification

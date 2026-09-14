@@ -159,7 +159,7 @@ bounded:
 | Rule | Effect |
 | --- | --- |
 | Takes no arguments | An error describes itself the same way wherever it sits in a chain |
-| Must not walk a chain or log another error | An error returned directly as a field value is dropped. A nested `BaseError` keeps a primitive diagnostic envelope and its sticky policy; its hooks, details, and links are not expanded |
+| Must not walk a chain or log another error | During own-fields processing, nested public log calls skip own-fields hooks on all instances. Their envelopes, causes, and redaction remain available. An error returned directly as a field value is dropped; a nested data error keeps its primitive diagnostic view |
 | The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `RESERVED_NODE_KEYS` in `src/errors/log-field-keys.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
 | A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws costs its own key only |
@@ -251,8 +251,16 @@ made explicitly by a consumer callback. A `BaseError` encountered as a data
 value instead receives its primitive diagnostic view directly. Its `toJSON`
 override is not called. Cause depth and data depth count separately.
 
+While the library invokes an own-fields hook or copies its returned fields,
+nested public log calls skip every own-fields hook from this package.
+This includes other instances and their cause nodes.
+The nested log keeps its fixed envelope, bounded cause traversal, and redaction.
+A synchronous guard ends after field processing, including every failure path.
+Subsequent calls and the remaining nodes of the outer build run their hooks normally.
+
 Consumer callbacks can initiate multiple public builds. Their work remains
-outside the enclosing traversal allowance. The library stores no current-build state.
+outside the enclosing traversal allowance. Budgets remain explicit and separate.
+The hook guard prevents recursive hook expansion, but cannot interrupt a consumer loop.
 
 See [Observability & logging](./observability) and
 [Why safe by default](./safe-by-default) for the two-path model.

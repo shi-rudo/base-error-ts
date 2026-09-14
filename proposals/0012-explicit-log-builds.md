@@ -30,12 +30,15 @@ Non-scalar envelope fields are omitted without expansion. This preserves decisio
 
 Each public `toLogObject()` call creates its own context.
 Cause traversal, field inspection, and data copying receive that context explicitly.
-No current-build variable or re-entrancy switch controls another public call.
+No current-build variable shares traversal budgets between public calls.
+Own-fields processing has a separate synchronous guard: nested builds skip own-fields hooks across instances from this package.
+Their envelopes, causes, and redaction remain available.
+The guard covers hook invocation and result copying, and ends in `finally`.
 
 A BaseError encountered as data receives a shallow diagnostic view directly.
 The data copier does not call its `toJSON`, hooks, or cause traversal.
 A private-brand check recognizes local instances without traversing consumer prototypes.
-An explicit public call from consumer code retains normal public behavior.
+Outside own-fields processing, an explicit public call retains normal public behavior.
 Consumer callbacks must terminate; the library cannot interrupt their synchronous work.
 
 The build context is private to library traversal. Consumers receive no continuation.
@@ -66,7 +69,12 @@ It does not add diagnostic keys or expand marker exceptions.
 
 ## Costs and rejected alternatives
 
-This change removes ambient coupling and the legacy envelope repair path.
+This change removes ambient traversal budgets and the legacy envelope repair path.
+The hook guard introduces narrow synchronous coupling between instances.
+A context parameter cannot reach a nested public call that supplies no context.
+An instance flag cannot stop a hook that logs a fresh instance on every call.
+Suppressing nested hooks bounds that expansion while retaining the diagnostic envelope.
+The guard cannot interrupt arbitrary work inside consumer callbacks.
 It does not remove ownership of the data-copy algorithm or make the feature small.
 Native JSON cannot enforce our inspection allowance before descriptor reads.
 Narrowing runtime inputs now would change established cause-data behavior.

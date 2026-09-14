@@ -14,9 +14,8 @@ class Fields extends BaseError<"Fields"> {
 }
 
 describe("independent public log builds", () => {
-  it("keeps the full public log when called inside a data callback", () => {
+  it("keeps diagnosis without hook fields when called while copying own fields", () => {
     const nested = new Fields({ requestId: "R" }, new Error("inner"));
-    const expected = nested.toLogObject();
     let actual: unknown;
     new Fields({
       payload: {
@@ -26,13 +25,22 @@ describe("independent public log builds", () => {
         },
       },
     }).toLogObject();
-    expect(actual).toEqual(expected);
+    expect(actual).toMatchObject({
+      name: "Fields",
+      message: "fields",
+      stack: expect.any(String),
+      cause: { name: "Error", message: "inner", stack: expect.any(String) },
+    });
+    expect(actual).not.toHaveProperty("requestId");
   });
 
   it("does not spend the enclosing build's budget on an explicit nested build", () => {
-    const nested = new Fields({
-      huge: Array.from({ length: 100_001 }, () => 1),
-    });
+    const nested = new Fields(
+      {},
+      {
+        huge: Array.from({ length: 100_001 }, () => 1),
+      },
+    );
     const log = new Fields({
       payload: {
         toJSON() {

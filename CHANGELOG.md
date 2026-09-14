@@ -20,6 +20,8 @@
 
 ### Breaking changes (next major)
 
+- **Public logs created during own-fields processing skip own-fields hooks.** This applies across instances and includes callbacks while copying the hook result. Nested logs keep fixed diagnostic fields, bounded causes, and redaction. Subsequent calls run hooks normally. This prevents recursive hooks from exhausting the host stack without adding marker fields or changing traversal budgets.
+
 - **Built-in redaction shares a 100,000-read allowance across classification and traversal.** It charges key inspections and value reads before performing them, including non-enumerable keys and cause-array indices. Exhaustion returns the safe envelope with `[Max redaction size exceeded]` as its message. Correctly typed decision fields keep their values. This can stop oversized input before the data-node limit.
 
 - **`buildLogObject()` is removed from `BaseError` and `StructuredError`.** Migrate additional fields to `buildOwnLogFields()`. Move output layout into the consumer's logging adapter after redaction. TypeScript rejects old overrides and `super` calls; JavaScript methods with that name are ignored. The library builds the fixed envelope internally. The legacy record copier, continuation, inspection-cut suffix, and multi-stage fallback are removed. Undefined or unreadable root fields are omitted, except for the own `cause` slot. See `MIGRATION.md`.
@@ -46,7 +48,7 @@
 - **Contract inspection separates read width from retained fields.** It inspects up to 1,000 root keys, including reserved names after index 100. Skipped keys do not cause a false 100-field width report.
 - **Redaction preserves serializer depth cuts.** Private container provenance preserves their empty terminal containers through sticky policy copies. Data inserted into these containers cannot pass the redaction depth cap.
 
-- **Public log builds no longer depend on an ambient serialization flag.** Each call has an explicit context. Nested data errors receive their diagnostic view directly, without calling their `toJSON` override. Public calls from consumer callbacks keep full behavior and an independent allowance. The data copier has independent native-JSON compatibility and adversarial tests. Private-brand recognition avoids unbudgeted prototype traversal when copied data is inspected for nested errors.
+- **Public log builds use explicit traversal contexts.** Nested data errors receive their diagnostic view directly, without calling their `toJSON` override. Public calls retain an independent allowance; calls made during own-fields processing skip own-fields hooks. The data copier has independent native-JSON compatibility and adversarial tests. Private-brand recognition avoids unbudgeted prototype traversal when copied data is inspected for nested errors.
 
 - **One budget covers serialized causes and data fields per library-owned build.** `MAX_LOG_NODES` (100,000) bounds their combined expansion and hook key inspections. Exhaustion uses `[Max log size exceeded]` rather than a circular-object diagnosis. The aggregate reader stops with one size marker; a hook reader may mark its next field before stopping. Completed fields survive. Root details retain their existing value semantics; consumer callbacks and eager own-key enumeration cannot be interrupted. Resolves the reproduced amplification in `base-error-ts-920`.
 
@@ -56,7 +58,7 @@
 
 - **Log guards retain their bounds on foreign records.** Own-field readers limit key inspections. Failed redaction retains only own, correctly typed triage fields. A scalar `errors` field in consumer data remains data even when it matches a serializer marker.
 
-  A BaseError encountered as a data value receives a primitive diagnostic envelope without invoking its `toJSON`. Explicit public log calls retain their full behavior. Data copies limit cause depth and data depth separately. At the depth cap, a copy keeps an empty container without reading its children. All fields share the log-build node budget.
+  A BaseError encountered as a data value receives a primitive diagnostic envelope without invoking its `toJSON`. Explicit public log calls retain their full behavior outside own-fields processing. Data copies limit cause depth and data depth separately. At the depth cap, a copy keeps an empty container without reading its children. All fields share the log-build node budget.
 
 - **Throwing root property getters preserve the remaining diagnosis.** Each fixed field is read independently. An unreadable `name`, `message`, `stack`, decision field, or timestamp no longer discards other readable fields, root details, or the cause chain. A malformed own-fields contribution still cannot replace the envelope.
 
