@@ -177,6 +177,8 @@ keeps its value and `retryable: false` stays boolean `false`. After exhaustion,
 non-scalar envelope fields are omitted without expansion.
 
 Redaction preserves empty containers that the serializer produced at its depth cap.
+Both walkers start each data field at depth zero and count nesting within that field.
+The transition from an error envelope to its data field consumes no data depth.
 Private container provenance identifies these cuts. Consumer data added to a cut
 container cannot pass the redaction depth cap.
 

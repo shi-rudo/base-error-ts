@@ -46,7 +46,7 @@
 
 - **Budget exhaustion preserves scalar cause decisions.** Already-read envelope values such as `code: 0` and `retryable: false` retain their value and type. Non-scalar envelope fields are omitted after exhaustion without further expansion.
 - **Contract inspection separates read width from retained fields.** It inspects up to 1,000 root keys, including reserved names after index 100. Skipped keys do not cause a false 100-field width report.
-- **Redaction preserves serializer depth cuts.** Private container provenance preserves their empty terminal containers through sticky policy copies. Data inserted into these containers cannot pass the redaction depth cap.
+- **Redaction preserves serializer depth cuts.** Both walkers start each data field at depth zero, including fields on plain-object causes. Redaction no longer cuts copied fields one level early. Private container provenance preserves their empty terminal containers through sticky policy copies. Data inserted into these containers cannot pass the redaction depth cap.
 
 - **Public log builds use explicit traversal contexts.** Nested data errors receive their diagnostic view directly, without calling their `toJSON` override. Public calls retain an independent allowance; calls made during own-fields processing skip own-fields hooks. The data copier has independent native-JSON compatibility and adversarial tests. Private-brand recognition avoids unbudgeted prototype traversal when copied data is inspected for nested errors.
 

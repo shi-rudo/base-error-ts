@@ -7,7 +7,7 @@ export type WalkPosition = {
   spine: number;
 };
 
-/** Shared position rule for serialization and redaction. */
+/** Data starts at depth zero on leaving an envelope; only data nesting adds depth. */
 export function childPosition(
   parent: WalkPosition,
   array: boolean,
@@ -17,7 +17,7 @@ export function childPosition(
   const region = array ? parent.region : childRegion(parent.region, key, value);
   return {
     region,
-    depth: region === "cause" ? parent.depth : parent.depth + 1,
+    depth: parent.region === "data" ? parent.depth + 1 : 0,
     spine:
       parent.spine +
       (region === "cause" && (array || !Array.isArray(value)) ? 1 : 0),

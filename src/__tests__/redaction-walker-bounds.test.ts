@@ -263,8 +263,8 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
   });
 });
 
-describe("redaction walker: hostile foreign fields degrade to a marker, not to the fail-closed envelope", () => {
-  it("logs a native cause whose code is a 2000-deep array", () => {
+describe("redaction walker: hostile foreign fields retain a bounded diagnosis", () => {
+  it("preserves the serializer array cut in a native cause code", () => {
     const cause = new Error("db") as Error & { code?: unknown };
     cause.code = nestedArrays(2000);
     const error = new BaseError("x", cause).redact(["password"]);
@@ -274,7 +274,12 @@ describe("redaction walker: hostile foreign fields degrade to a marker, not to t
     expect(log.message).toBe("x");
     expect(typeof log.stack).toBe("string");
     expect((log.cause as Log).message).toBe("db");
-    expect(JSON.stringify(log.cause)).toContain(DEPTH_MARKER);
+    let terminal: unknown = (log.cause as Log).code;
+    for (let index = 0; index < 100; index++) {
+      expect(Array.isArray(terminal)).toBe(true);
+      terminal = (terminal as unknown[])[0];
+    }
+    expect(terminal).toEqual([]);
   });
 
   it("logs a native cause whose stack is a cyclic object under an allow-list", () => {

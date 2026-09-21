@@ -57,6 +57,8 @@ data field the reader could not expand. It never labels that cut as a cycle.
 Already-read scalar envelope fields survive exhaustion, including `code` and `retryable: false`.
 After exhaustion, non-scalar envelope fields are omitted without expansion.
 Redaction preserves the empty containers that the serializer produced at its depth cap.
+Both walkers start each data field at depth zero, including fields on plain-object causes.
+Redaction can retain one more data level than before; the data depth cap remains 100.
 A `BaseError` nested in copied data retains primitive diagnostic fields and its
 sticky redaction policy. It does not restart hooks or expand its details or links.
 Use the `cause` chain when the full nested diagnosis is required.
