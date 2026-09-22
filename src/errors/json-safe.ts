@@ -28,14 +28,19 @@ export function isPlainObject(
 }
 
 /**
- * Deep-clones `value` into a frozen, JSON-safe structure, or throws if any part
- * is not JSON-safe: a non-finite number (`NaN`/`Infinity`), a function, a
- * symbol, a `Date`/`Map`/`Set` or other exotic object, an `Array` subclass, a
- * symbol-keyed object, a sparse array, a circular reference, a container
- * nested deeper than {@link MAX_DATA_DEPTH} levels, or a value expanding past
- * {@link MAX_DATA_NODES} total nodes (a shared-reference blowup). The returned
- * clone is deeply frozen and decoupled from the source, so it is safe to place
- * on a wire object that may be shared or mutated afterward.
+ * Deep-clones `value` into a frozen, JSON-safe structure. It throws if any part
+ * is not JSON-safe:
+ *
+ * - a non-finite number (`NaN`/`Infinity`), a function, or a symbol;
+ * - a `Date`/`Map`/`Set` or other exotic object, or an `Array` subclass;
+ * - a symbol-keyed object or a sparse array;
+ * - a circular reference, or a container nested deeper than
+ *   {@link MAX_DATA_DEPTH} levels;
+ * - a value expanding past {@link MAX_DATA_NODES} total nodes (a
+ *   shared-reference blowup).
+ *
+ * The returned clone is deeply frozen and decoupled from the source. It is
+ * safe on a wire object that is shared or mutated afterward.
  *
  * An `undefined` property is skipped: it reads the same as an absent one, and
  * `JSON.stringify` drops it. An `undefined` list element is rejected, because

@@ -158,16 +158,18 @@ const { status, headers, body, outcome } = toProblem(errors, view, {
 `toProblem` reads `status`/`type`/`title` from the catalog by public code and
 rides the machine members from the view into a `ProblemDetails` body. It is the
 **wire boundary**: `details` and `fields` are deep-cloned into a frozen,
-JSON-safe structure (a `Date`, `BigInt`, `Array` subclass, circular reference,
-a value nested deeper than 100 levels, or other non-serializable value drops
-that member and is recorded in `outcome.omitted`,
-rather than throwing or producing a body the next serializer chokes on).
+JSON-safe structure. A value that is not JSON-safe drops its member, and
+`outcome.omitted` records it. `toProblem` does not throw, and the next
+serializer gets no value that it cannot handle. Examples are a `Date`, a
+`BigInt`, an `Array` subclass, a circular reference, and a value nested deeper
+than 100 levels.
+
 A property whose value is `undefined` is skipped, as `JSON.stringify` skips it.
 An `undefined` list element still drops the member, because JSON turns it into
-`null`. `fields` then keeps exactly `field` and `code` per fault. A `fields` value that
-is not a list, or a fault without a string `field` and `code`, drops the member
-the same way. A non-string `category` or non-boolean `retryable` is dropped at
-this boundary too.
+`null`. `fields` then keeps exactly `field` and `code` per fault. A `fields`
+value that is not a list, or a fault without a string `field` and `code`,
+drops the member the same way. A non-string `category` or non-boolean
+`retryable` is dropped at this boundary too.
 
 `title` is the localized `message` when the view was localized, otherwise the
 static developer-facing `title` from the descriptor, otherwise omitted (RFC 9457

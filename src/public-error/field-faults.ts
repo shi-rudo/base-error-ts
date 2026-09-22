@@ -4,9 +4,9 @@ import type { FieldFault } from "./types.js";
 /**
  * The closed-shape copy of a fault list: exactly `{ field, code }` per fault,
  * frozen. Each member is read once, so the value that passes the check is the
- * value that is copied. A value that is not a list, or one fault without a
- * string `field` and `code`, fails the whole list, because a partial list
- * misreports which fields failed.
+ * value that is copied. The copy fails when the value is not a list, or when
+ * one fault has no string `field` and `code`. A partial list would misreport
+ * which fields failed.
  */
 export function copyFieldFaults(
   value: unknown,
