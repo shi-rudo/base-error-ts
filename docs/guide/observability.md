@@ -382,10 +382,10 @@ carried. `hasErrorCode` and `someChainRetryable` read those fields by shape, as
 before the round trip.
 
 The walk is bounded like every other walker in this library: 100 cause hops
-deep, 100 members per aggregate, and 1000 reconstructed errors in total,
-because every reconstructed error captures a stack. Past the total, a `cause`
-drops and the remaining members of an aggregate collapse into the `[N more
-aggregated errors]` marker.
+deep, 100 members per aggregate, and 10,000 reconstructed errors in total. The
+total is small, because every reconstructed error captures a stack. Past the
+total, a `cause` drops and the remaining members of an aggregate collapse into
+the `[N more aggregated errors]` marker.
 
 It always returns a base `StructuredError`; **subclass identity is not
 restored**. A `ValidationError` round-trips to a `StructuredError` (losing
