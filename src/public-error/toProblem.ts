@@ -7,13 +7,21 @@ import {
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
 } from "../utils/problem-validation.js";
+import { copyFieldFaults } from "./field-faults.js";
+import { canonicalizeLocale } from "./locale.js";
 import type { PublicErrorCatalog, Transport } from "./PublicErrorCatalog.js";
 import type { FieldFault, LocalizedPublicError, PublicError } from "./types.js";
 
 export { PROBLEM_DETAILS_JSON };
 
-/** A dynamic body member dropped because it was not JSON-safe. */
+/**
+ * A dynamic body member that `toProblem` dropped at the wire: its value was
+ * not JSON-safe, or `fields` was not a list of faults.
+ */
 export type OmittedMember = "details" | "fields" | "extensions";
+
+/** A response header that `toProblem` dropped: its value failed validation. */
+export type OmittedHeader = "content-language";
 
 /** Body members the adapter owns; an extension may not collide with them. */
 const RESERVED_BODY_FIELDS = [
@@ -116,8 +124,14 @@ export type ProblemDetails<
 
 /** Mapping diagnostics retained outside the serialized body. */
 export type ProblemDetailsOutcome = {
-  /** Dynamic members dropped because they were not JSON-safe. */
+  /** Body members that failed the wire checks ({@link OmittedMember}). */
   readonly omitted: readonly OmittedMember[];
+  /**
+   * Headers that `toProblem` dropped because their value failed validation.
+   * `toProblem` sets this property only when it drops a header, so an outcome
+   * built by hand stays valid.
+   */
+  readonly omittedHeaders?: readonly OmittedHeader[];
 };
 
 /** Framework-neutral status, headers, body, and diagnostics. */
@@ -144,11 +158,14 @@ export type ProblemDetailsResult<
  * view. A `title` and a `content-language` header appear only when the view was
  * localized, so the structure-only path is a first-class, RFC-valid response.
  *
- * This is the wire boundary: `details` and `fields` are deep-cloned into a
- * frozen, JSON-safe structure (a `Date`, `BigInt`, circular reference, a value
- * nested deeper than 100 levels, or other non-serializable value drops that
- * member and records it in `outcome.omitted`
- * rather than throwing or leaking a value the next serializer would choke on).
+ * This is the wire boundary. `details` is deep-cloned into a frozen, JSON-safe
+ * structure. For a value that is not JSON-safe, `toProblem` drops the member
+ * and records it in `outcome.omitted`. It does not throw for such a value, and
+ * the next serializer gets no value that it cannot handle. Examples are a
+ * `Date`, a `BigInt`, a circular reference, and a value nested deeper than 100
+ * levels. `fields` keeps exactly `{ field, code }` per fault. `toProblem` drops
+ * it the same way when the value is not a list, or when a fault has no string
+ * `field` and `code`.
  */
 export function toProblem<
   TDetails,
@@ -167,6 +184,11 @@ export function toProblem<
     : assertValidTransport(source);
   const localized = hasMessage(view) ? view : undefined;
   const omitted: OmittedMember[] = [];
+  const omittedHeaders: OmittedHeader[] = [];
+  const contentLanguage =
+    localized !== undefined
+      ? languageTagOrOmit(localized.locale, omittedHeaders)
+      : undefined;
 
   // A localized end-user message wins; otherwise the static developer-facing
   // title. RFC 9457 title is optional, so a client-localizing app that sets
@@ -182,12 +204,7 @@ export function toProblem<
       : undefined;
 
   const details = jsonSafeOrOmit(view.details, "details", omitted);
-  // Match project(): an empty fields array is not a member.
-  const rawFields =
-    view.fields !== undefined && view.fields.length > 0
-      ? view.fields
-      : undefined;
-  const fields = jsonSafeOrOmit(rawFields, "fields", omitted);
+  const fields = safeFields(view.fields, omitted);
   const extensions = safeExtensions(context?.extensions, omitted);
 
   const body = Object.freeze(
@@ -218,12 +235,17 @@ export function toProblem<
 
   const headers = Object.freeze({
     "content-type": PROBLEM_DETAILS_JSON,
-    ...(localized !== undefined && { "content-language": localized.locale }),
+    ...(contentLanguage !== undefined && {
+      "content-language": contentLanguage,
+    }),
     ...(retryAfter !== undefined && { "retry-after": String(retryAfter) }),
   });
 
   const outcome: ProblemDetailsOutcome = Object.freeze({
     omitted: Object.freeze(omitted),
+    ...(omittedHeaders.length > 0 && {
+      omittedHeaders: Object.freeze(omittedHeaders),
+    }),
   });
 
   return Object.freeze({ status: transport.status, headers, body, outcome });
@@ -241,6 +263,24 @@ function jsonSafeOrOmit(
     omitted.push(member);
     return undefined;
   }
+}
+
+/**
+ * The closed-shape copy of `fields`. Only `field` and `code` reach the wire,
+ * and both are strings, so the member needs no JSON-safe clone. Another key of
+ * a fault cannot cost the list. An empty list is not a member, as in project().
+ */
+function safeFields(
+  raw: unknown,
+  omitted: OmittedMember[],
+): readonly FieldFault[] | undefined {
+  if (raw === undefined) return undefined;
+  const faults = copyFieldFaults(raw);
+  if (faults === undefined) {
+    omitted.push("fields");
+    return undefined;
+  }
+  return faults.length > 0 ? faults : undefined;
 }
 
 /**
@@ -274,6 +314,21 @@ function safeExtensions(
     omitted.push("extensions");
     return undefined;
   }
+}
+
+/**
+ * The view's locale as a `content-language` value, or `undefined` when it is
+ * not a language tag. Only `localize()` guarantees a canonical tag. A
+ * hand-built view can carry any string, and the host rejects a header value
+ * with a line break inside the error middleware.
+ */
+function languageTagOrOmit(
+  locale: string,
+  omittedHeaders: OmittedHeader[],
+): string | undefined {
+  if (canonicalizeLocale(locale) !== undefined) return locale;
+  omittedHeaders.push("content-language");
+  return undefined;
 }
 
 function hasMessage<TDetails, TCode extends string>(

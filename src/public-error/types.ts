@@ -123,13 +123,16 @@ export type ProjectionStatus = "none" | "succeeded" | "failed";
  * What a `project` did, for fire-and-forget observability: whether the error
  * matched a descriptor (and how) or fell back, plus the projection status. A
  * fallback caused by a throwing matcher is `matcher_failed`, distinct from a
- * genuine `no_match`.
+ * genuine `no_match`. A match after a throwing matcher carries
+ * `matcherThrew: true`, so a broken predicate stays visible when a later
+ * entry matches.
  */
 export type ProjectionOutcome =
   | {
       readonly kind: "matched";
       readonly via: "code" | "predicate";
       readonly projection: ProjectionStatus;
+      readonly matcherThrew?: true;
     }
   | {
       readonly kind: "fallback";

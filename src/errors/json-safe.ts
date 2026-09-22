@@ -28,14 +28,23 @@ export function isPlainObject(
 }
 
 /**
- * Deep-clones `value` into a frozen, JSON-safe structure, or throws if any part
- * is not JSON-safe: a non-finite number (`NaN`/`Infinity`), a function, a
- * symbol, a `Date`/`Map`/`Set` or other exotic object, a symbol-keyed object, a
- * sparse array, a circular reference, a container nested deeper than
- * {@link MAX_DATA_DEPTH} levels, or a value expanding past
- * {@link MAX_DATA_NODES} total nodes (a shared-reference blowup). The returned
- * clone is deeply frozen and decoupled from the source, so it is safe to place
- * on a wire object that may be shared or mutated afterward.
+ * Deep-clones `value` into a frozen, JSON-safe structure. It throws if any part
+ * is not JSON-safe:
+ *
+ * - a non-finite number (`NaN`/`Infinity`), a function, or a symbol;
+ * - a `Date`/`Map`/`Set` or other exotic object, or an `Array` subclass;
+ * - a symbol-keyed object or a sparse array;
+ * - a circular reference, or a container nested deeper than
+ *   {@link MAX_DATA_DEPTH} levels;
+ * - a value expanding past {@link MAX_DATA_NODES} total nodes (a
+ *   shared-reference blowup).
+ *
+ * The returned clone is deeply frozen and decoupled from the source. It is
+ * safe on a wire object that is shared or mutated afterward.
+ *
+ * The clone skips an `undefined` property: it reads the same as an absent one,
+ * and `JSON.stringify` drops it. The clone rejects an `undefined` list element,
+ * because JSON turns it into `null`.
  *
  * `errorMessage` replaces the default rejection message, so each boundary
  * keeps its own error contract over the one shared walker.
@@ -89,16 +98,23 @@ function cloneInto(
   seen.add(value);
   try {
     if (Array.isArray(value)) {
+      // Every realm's `Array.prototype` is itself an array, and a subclass
+      // prototype is not, so this rejects a subclass and keeps a foreign list.
+      if (!Array.isArray(Object.getPrototypeOf(value))) {
+        throw new Error(errorMessage);
+      }
+      // Built index by index: `map` would construct the result through the
+      // source's `Symbol.species`, which an own `constructor` key controls.
+      const clone: JsonSafeValue[] = [];
       for (let index = 0; index < value.length; index++) {
         if (!Object.prototype.hasOwnProperty.call(value, index)) {
           throw new Error(errorMessage);
         }
+        clone.push(
+          cloneInto(value[index], depth + 1, seen, state, errorMessage),
+        );
       }
-      return Object.freeze(
-        value.map((item) =>
-          cloneInto(item, depth + 1, seen, state, errorMessage),
-        ),
-      ) as readonly JsonSafeValue[];
+      return Object.freeze(clone);
     }
 
     if (
@@ -109,6 +125,7 @@ function cloneInto(
     }
     const clone = Object.create(null) as Record<string, JsonSafeValue>;
     for (const [key, item] of Object.entries(value)) {
+      if (item === undefined) continue;
       clone[key] = cloneInto(item, depth + 1, seen, state, errorMessage);
     }
     return Object.freeze(clone);

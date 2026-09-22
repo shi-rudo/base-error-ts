@@ -80,6 +80,52 @@ describe("onProject: one central observability point", () => {
     });
   });
 
+  it("reports a throwing matcher when a later predicate matches", () => {
+    const seen: ProjectionOutcome[] = [];
+    const catalog = definePublicErrors({
+      fallback: { publicCode: "internal_error", status: 500, retryable: false },
+      onProject: (_error, _view, outcome) => seen.push(outcome),
+    })
+      .register({
+        match: (_e: unknown): _e is never => {
+          throw new Error("matcher blew up");
+        },
+        descriptor: { publicCode: "never", status: 500 },
+      })
+      .register({
+        match: isTimeout,
+        descriptor: { publicCode: "upstream_timeout", status: 504 },
+      });
+
+    project(catalog, { kind: "timeout" });
+
+    expect(seen).toEqual([
+      {
+        kind: "matched",
+        via: "predicate",
+        projection: "none",
+        matcherThrew: true,
+      },
+    ]);
+  });
+
+  it("omits matcherThrew from a predicate match that no matcher disturbed", () => {
+    const seen: ProjectionOutcome[] = [];
+    const catalog = definePublicErrors({
+      fallback: { publicCode: "internal_error", status: 500, retryable: false },
+      onProject: (_error, _view, outcome) => seen.push(outcome),
+    }).register({
+      match: isTimeout,
+      descriptor: { publicCode: "upstream_timeout", status: 504 },
+    });
+
+    project(catalog, { kind: "timeout" });
+
+    expect(seen).toEqual([
+      { kind: "matched", via: "predicate", projection: "none" },
+    ]);
+  });
+
   it("surfaces projection success and failure for debugging", () => {
     const seen: ProjectionOutcome[] = [];
     const catalog = definePublicErrors({

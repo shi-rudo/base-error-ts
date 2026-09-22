@@ -362,6 +362,22 @@ describe("defineErrors", () => {
     expect(Object.prototype).not.toHaveProperty("polluted");
   });
 
+  it("skips an undefined metadata property, as JSON.stringify does", () => {
+    const metadata: { httpStatus: number; docsUrl?: string } = {
+      httpStatus: 404,
+      docsUrl: undefined,
+    };
+
+    const errors = defineErrors({
+      NOT_FOUND: { category: "NOT_FOUND", retryable: false, metadata },
+    });
+
+    expect(errors.meta("NOT_FOUND").metadata).toEqual({ httpStatus: 404 });
+    expect(Object.keys(errors.meta("NOT_FOUND").metadata)).toEqual([
+      "httpStatus",
+    ]);
+  });
+
   it("rejects sparse metadata arrays as non-JSON-safe input", () => {
     const sparse: string[] = [];
     sparse.length = 1;
@@ -408,9 +424,13 @@ describe("defineErrors", () => {
     cyclic.self = cyclic;
     const symbolProperty = { valid: true } as Record<PropertyKey, unknown>;
     symbolProperty[Symbol("hidden")] = true;
+    class RewritingList extends Array<number> {
+      toJSON(): string {
+        return "rewritten";
+      }
+    }
 
     const invalidValues: unknown[] = [
-      undefined,
       1n,
       Symbol("value"),
       Number.NaN,
@@ -418,6 +438,7 @@ describe("defineErrors", () => {
       new Date(),
       cyclic,
       symbolProperty,
+      RewritingList.from([1]),
     ];
 
     for (const value of invalidValues) {

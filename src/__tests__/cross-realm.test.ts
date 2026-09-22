@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import vm from "node:vm";
 
 import { BaseError, toStructuredError } from "../index.js";
+import { toProblem } from "../public-error/index.js";
 
 /**
  * An Error built by another realm: a real native error whose prototype chain
@@ -92,5 +93,19 @@ describe("a cause from another realm", () => {
 
     expect(error.message).toBe("foreign msg");
     expect((error as unknown as { cause: unknown }).cause).toBe(foreign);
+  });
+});
+
+describe("a list from another realm on the wire", () => {
+  it("keeps the list in toProblem details, like a local array", () => {
+    const list = vm.runInNewContext('["o-1", "o-2"]') as unknown;
+
+    const result = toProblem({ status: 400 }, {
+      code: "x",
+      details: { list },
+    } as never);
+
+    expect(result.body.details).toEqual({ list: ["o-1", "o-2"] });
+    expect(result.outcome.omitted).toEqual([]);
   });
 });

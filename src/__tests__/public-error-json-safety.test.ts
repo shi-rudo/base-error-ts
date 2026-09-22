@@ -97,6 +97,80 @@ describe("toProblem: JSON-safe details", () => {
   });
 });
 
+describe("toProblem: undefined in details", () => {
+  function handBuiltView(details: unknown): ReturnType<typeof project> {
+    return { code: "unprocessable", details } as unknown as ReturnType<
+      typeof project
+    >;
+  }
+
+  it("skips an undefined property, as JSON.stringify does", () => {
+    const result = toProblem(
+      catalog(),
+      handBuiltView({ id: "o-1", hint: undefined }),
+    );
+
+    expect(result.body.details).toEqual({ id: "o-1" });
+    expect(Object.keys(result.body.details as object)).toEqual(["id"]);
+    expect(result.outcome.omitted).toEqual([]);
+  });
+
+  it("still omits details that hold an undefined list element", () => {
+    const result = toProblem(
+      catalog(),
+      handBuiltView({ ids: ["o-1", undefined] }),
+    );
+
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["details"]);
+  });
+});
+
+describe("toProblem: lists in details", () => {
+  function handBuiltView(details: unknown): ReturnType<typeof project> {
+    return { code: "unprocessable", details } as unknown as ReturnType<
+      typeof project
+    >;
+  }
+
+  it("omits details that hold an Array subclass instead of calling its toJSON", () => {
+    class RewritingList extends Array<number> {
+      toJSON(): string {
+        return "pwned";
+      }
+    }
+
+    const result = toProblem(
+      catalog(),
+      handBuiltView({ list: RewritingList.from([1, 2]) }),
+    );
+
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["details"]);
+    expect(JSON.stringify(result.body)).not.toContain("pwned");
+  });
+
+  it("clones a list into a plain array whatever its species", () => {
+    const list: unknown[] = ["o-1"];
+    Object.defineProperty(list, "constructor", {
+      value: {
+        [Symbol.species]: function HijackingSpecies() {
+          return { toJSON: () => "hijacked" };
+        },
+      },
+    });
+
+    const result = toProblem(catalog(), handBuiltView({ list }));
+
+    const cloned = (result.body.details as { list: unknown }).list;
+    expect(Array.isArray(cloned)).toBe(true);
+    expect(Object.getPrototypeOf(cloned)).toBe(Array.prototype);
+    expect(cloned).toEqual(["o-1"]);
+    expect(Object.isFrozen(cloned)).toBe(true);
+    expect(JSON.stringify(result.body)).not.toContain("hijacked");
+  });
+});
+
 describe("toProblem: JSON-safe fields", () => {
   it("clones JSON-safe field faults and freezes them", () => {
     const view = project(catalog(), {
@@ -110,18 +184,67 @@ describe("toProblem: JSON-safe fields", () => {
     expect(result.outcome.omitted).toEqual([]);
   });
 
-  it("omits fields when an entry is not JSON-safe", () => {
-    // project() normalizes faults to { field, code }, so a non-JSON-safe entry
-    // can only reach toProblem via a hand-built view; the wire boundary still
-    // has to catch it.
+  it("keeps the faults when a key outside the fault shape is not JSON-safe", () => {
     const view = {
       code: "unprocessable",
       fields: [{ field: "email", code: "required", at: new Date() }],
     } as unknown as ReturnType<typeof project>;
 
     const result = toProblem(catalog(), view);
+
+    expect(result.body.fields).toEqual([{ field: "email", code: "required" }]);
+    expect(result.outcome.omitted).toEqual([]);
+  });
+});
+
+describe("toProblem: the closed fault shape", () => {
+  function handBuiltView(fields: unknown): ReturnType<typeof project> {
+    return { code: "unprocessable", fields } as unknown as ReturnType<
+      typeof project
+    >;
+  }
+
+  it("omits a null fields member instead of throwing", () => {
+    const result = toProblem(catalog(), handBuiltView(null));
+
     expect("fields" in result.body).toBe(false);
-    expect(result.outcome.omitted).toContain("fields");
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+
+  it("omits a fields member that is not a list", () => {
+    const result = toProblem(catalog(), handBuiltView("abc"));
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+
+  it("copies only field and code from each fault", () => {
+    const view = handBuiltView([
+      {
+        field: "email",
+        code: "invalid",
+        received: "alice@corp.internal",
+        path: ["user", "email"],
+      },
+    ]);
+
+    const result = toProblem(catalog(), view);
+
+    expect(result.body.fields).toEqual([{ field: "email", code: "invalid" }]);
+    expect(JSON.stringify(result.body)).not.toContain("alice@corp.internal");
+    expect(result.outcome.omitted).toEqual([]);
+  });
+
+  it("omits the fields member when a fault lacks a string field or code", () => {
+    const view = handBuiltView([
+      { field: "email", code: "invalid" },
+      { field: 42, code: "invalid" },
+    ]);
+
+    const result = toProblem(catalog(), view);
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
   });
 });
 

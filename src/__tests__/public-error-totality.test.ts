@@ -8,6 +8,7 @@ import {
 import { project } from "../public-error/project.js";
 import { toProblem } from "../public-error/toProblem.js";
 import type { FieldFault, PublicError } from "../public-error/types.js";
+import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 
 type TimeoutLike = { kind: "timeout" };
 const isTimeout = (error: unknown): error is TimeoutLike =>
@@ -196,6 +197,67 @@ describe("projected fields are curated copies", () => {
     expect(view.fields?.[0]?.code).toBe("required");
     expect(Object.isFrozen(view.fields)).toBe(true);
     expect(Object.isFrozen(view.fields?.[0])).toBe(true);
+  });
+
+  it("copies the field and code values that passed the check", () => {
+    let fieldReads = 0;
+    const fault = {
+      get field(): unknown {
+        fieldReads++;
+        return fieldReads === 1 ? "email" : 42;
+      },
+      code: "required",
+    } as unknown as FieldFault;
+
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: [fault],
+    });
+
+    expect(view.fields).toEqual([{ field: "email", code: "required" }]);
+    expect(fieldReads).toBe(1);
+  });
+
+  it("drops fields when the returned list reports a length that is not a count", () => {
+    const lyingList = new Proxy([{ field: "email", code: "required" }], {
+      get: (target, key, receiver): unknown =>
+        key === "length" ? -1 : Reflect.get(target, key, receiver),
+    });
+
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: lyingList,
+    });
+
+    expect(view.fields).toBeUndefined();
+  });
+
+  it("drops fields when the returned list is longer than the data-node budget", () => {
+    const longList = new Proxy([], {
+      get: (target, key, receiver): unknown => {
+        if (key === "length") return MAX_DATA_NODES + 1;
+        if (typeof key === "string" && /^\d+$/.test(key)) {
+          return { field: "email", code: "required" };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: longList,
+    });
+
+    expect(view.fields).toBeUndefined();
+  });
+
+  it("keeps each copied fault a plain object", () => {
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: [{ field: "email", code: "required" }],
+    });
+
+    expect(Object.getPrototypeOf(view.fields?.[0])).toBe(Object.prototype);
   });
 
   it("keeps details by reference: the in-process view may hold rich values (documented contract)", () => {

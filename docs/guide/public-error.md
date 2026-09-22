@@ -157,16 +157,27 @@ const { status, headers, body, outcome } = toProblem(errors, view, {
 
 `toProblem` reads `status`/`type`/`title` from the catalog by public code and
 rides the machine members from the view into a `ProblemDetails` body. It is the
-**wire boundary**: `details` and `fields` are deep-cloned into a frozen,
-JSON-safe structure (a `Date`, `BigInt`, circular reference, a value nested
-deeper than 100 levels, or other non-serializable value drops that member and
-is recorded in `outcome.omitted`,
-rather than throwing or producing a body the next serializer chokes on). A
-non-string `category` or non-boolean `retryable` is dropped at this boundary too.
+**wire boundary**: `details` is deep-cloned into a frozen, JSON-safe
+structure. For a value that is not JSON-safe, `toProblem` drops the member and
+records it in `outcome.omitted`. It does not throw for such a value, and the
+next serializer gets no value that it cannot handle. Examples are a `Date`, a
+`BigInt`, an `Array` subclass, a circular reference, and a value nested deeper
+than 100 levels.
+
+`toProblem` skips a property whose value is `undefined`, as `JSON.stringify`
+does. An `undefined` list element still drops the member, because JSON turns
+it into `null`. For `fields`, `toProblem` keeps exactly `field` and `code` per
+fault, so another key of a fault never reaches the wire. It drops `fields` the
+same way when the value is not a list, or when a fault has no string `field`
+and `code`. It also drops a non-string `category` and a
+non-boolean `retryable`.
 
 `title` is the localized `message` when the view was localized, otherwise the
 static developer-facing `title` from the descriptor, otherwise omitted (RFC 9457
-makes it optional). `content-language` is set only when the view was localized.
+makes it optional). `content-language` is set only when the view was localized
+and its `locale` is a BCP 47 language tag. For a hand-built view with any other
+`locale` string, `toProblem` keeps the `title`, drops the header, and records
+it in `outcome.omittedHeaders`.
 A `retryAfter` (from `projectRetryAfter` or the context) becomes both the
 `Retry-After` header and a body member.
 
@@ -268,7 +279,8 @@ definePublicErrors({
 
 The outcome distinguishes a `matched` result (`via: "code" | "predicate"`) from a
 `fallback` (`reason: "no_match" | "matcher_failed"`), and reports the projection
-status, so a silently missing `details` or a broken matcher is visible. The hook
+status, so a silently missing `details` or a broken matcher is visible. A
+`matched` result after a throwing matcher carries `matcherThrew: true`. The hook
 is fire-and-forget: a throwing observer is swallowed. The technical message never
 crosses the wire; bridge a client-visible response to your log with a correlation
 id in `context.instance`.
