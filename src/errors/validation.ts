@@ -23,7 +23,10 @@ export type PublicIssue = {
   path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
   /** Included only when the source issue carried one. */
   code?: string;
-  /** Derived string path (e.g. "address.zip") for HTTP clients. */
+  /**
+   * The path segments joined with dots (e.g. "address.zip"), for HTTP clients.
+   * Not an RFC 6901 JSON Pointer ("/address/zip").
+   */
   pointer?: string;
 };
 
