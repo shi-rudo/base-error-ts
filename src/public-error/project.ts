@@ -31,7 +31,12 @@ export function project<TPublicCode extends string>(
   const { view, projection } = projectCore(descriptor, error);
 
   const outcome: ProjectionOutcome = resolution.found
-    ? { kind: "matched", via: resolution.via, projection }
+    ? {
+        kind: "matched",
+        via: resolution.via,
+        projection,
+        ...(resolution.matcherThrew && { matcherThrew: true }),
+      }
     : {
         kind: "fallback",
         reason: resolution.matcherThrew ? "matcher_failed" : "no_match",

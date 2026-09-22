@@ -276,7 +276,8 @@ definePublicErrors({
 
 The outcome distinguishes a `matched` result (`via: "code" | "predicate"`) from a
 `fallback` (`reason: "no_match" | "matcher_failed"`), and reports the projection
-status, so a silently missing `details` or a broken matcher is visible. The hook
+status, so a silently missing `details` or a broken matcher is visible. A
+`matched` result after a throwing matcher carries `matcherThrew: true`. The hook
 is fire-and-forget: a throwing observer is swallowed. The technical message never
 crosses the wire; bridge a client-visible response to your log with a correlation
 id in `context.instance`.
