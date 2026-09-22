@@ -1,5 +1,5 @@
 import { isRetryAfterSeconds } from "../utils/problem-validation.js";
-import { readProperty } from "../errors/guarded-read.js";
+import { copyFieldFaults } from "./field-faults.js";
 import type { PublicErrorCatalog } from "./PublicErrorCatalog.js";
 import type {
   FieldFault,
@@ -142,31 +142,15 @@ function safeFields(
   onThrow: () => void,
 ): readonly FieldFault[] | undefined {
   try {
-    const fields = fn(error as never);
+    // A copy decouples the view from the projector's objects, so later
+    // mutation of internal state cannot reach it.
+    const faults = copyFieldFaults(fn(error as never));
     // A non-array or a malformed entry is a projector bug, not "no faults":
     // drop the member and mark the projection failed for telemetry.
-    if (!Array.isArray(fields) || !fields.every(isFieldFault)) {
-      onThrow();
-      return undefined;
-    }
-    // Curated copy: exactly { field, code } per fault, frozen. Strips foreign
-    // extras a projector passed through by reference (a fault is a closed
-    // shape, unlike details) and decouples the view from the projector's
-    // objects, so later mutation of internal state cannot reach it.
-    return Object.freeze(
-      fields.map((fault) =>
-        Object.freeze({ field: fault.field, code: fault.code }),
-      ),
-    );
+    if (faults === undefined) onThrow();
+    return faults;
   } catch {
     onThrow();
     return undefined;
   }
-}
-
-function isFieldFault(value: unknown): value is FieldFault {
-  return (
-    typeof readProperty(value, "field") === "string" &&
-    typeof readProperty(value, "code") === "string"
-  );
 }

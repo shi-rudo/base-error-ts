@@ -198,6 +198,34 @@ describe("projected fields are curated copies", () => {
     expect(Object.isFrozen(view.fields?.[0])).toBe(true);
   });
 
+  it("copies the field and code values that passed the check", () => {
+    let fieldReads = 0;
+    const fault = {
+      get field(): unknown {
+        fieldReads++;
+        return fieldReads === 1 ? "email" : 42;
+      },
+      code: "required",
+    } as unknown as FieldFault;
+
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: [fault],
+    });
+
+    expect(view.fields).toEqual([{ field: "email", code: "required" }]);
+    expect(fieldReads).toBe(1);
+  });
+
+  it("keeps each copied fault a plain object", () => {
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: [{ field: "email", code: "required" }],
+    });
+
+    expect(Object.getPrototypeOf(view.fields?.[0])).toBe(Object.prototype);
+  });
+
   it("keeps details by reference: the in-process view may hold rich values (documented contract)", () => {
     // details are deliberately NOT cloned at this stage: the view is an
     // in-process value and may carry e.g. a Date; toProblem is the wire
