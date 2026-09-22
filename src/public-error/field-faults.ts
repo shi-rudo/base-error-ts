@@ -1,4 +1,5 @@
 import { isArrayValue, readProperty } from "../errors/guarded-read.js";
+import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 import type { FieldFault } from "./types.js";
 
 /**
@@ -6,7 +7,8 @@ import type { FieldFault } from "./types.js";
  * frozen. Each member is read once, so the value that passes the check is the
  * value that is copied. The copy fails when the value is not a list, or when
  * one fault has no string `field` and `code`. A partial list would misreport
- * which fields failed.
+ * which fields failed. A list longer than {@link MAX_DATA_NODES} fails as
+ * well, so the copy stays bounded when the list is a Proxy.
  */
 export function copyFieldFaults(
   value: unknown,
@@ -16,7 +18,8 @@ export function copyFieldFaults(
   if (
     typeof length !== "number" ||
     !Number.isSafeInteger(length) ||
-    length < 0
+    length < 0 ||
+    length > MAX_DATA_NODES
   ) {
     return undefined;
   }

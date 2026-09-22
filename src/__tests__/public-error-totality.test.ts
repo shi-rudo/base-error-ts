@@ -8,6 +8,7 @@ import {
 import { project } from "../public-error/project.js";
 import { toProblem } from "../public-error/toProblem.js";
 import type { FieldFault, PublicError } from "../public-error/types.js";
+import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 
 type TimeoutLike = { kind: "timeout" };
 const isTimeout = (error: unknown): error is TimeoutLike =>
@@ -226,6 +227,25 @@ describe("projected fields are curated copies", () => {
     const view = project(faultsCatalog(), {
       code: "form.invalid",
       faults: lyingList,
+    });
+
+    expect(view.fields).toBeUndefined();
+  });
+
+  it("drops fields when the returned list is longer than the data-node budget", () => {
+    const longList = new Proxy([], {
+      get: (target, key, receiver): unknown => {
+        if (key === "length") return MAX_DATA_NODES + 1;
+        if (typeof key === "string" && /^\d+$/.test(key)) {
+          return { field: "email", code: "required" };
+        }
+        return Reflect.get(target, key, receiver);
+      },
+    });
+
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: longList,
     });
 
     expect(view.fields).toBeUndefined();
