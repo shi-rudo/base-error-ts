@@ -7,6 +7,7 @@ import {
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
 } from "../utils/problem-validation.js";
+import { copyFieldFaults } from "./field-faults.js";
 import type { PublicErrorCatalog, Transport } from "./PublicErrorCatalog.js";
 import type { FieldFault, LocalizedPublicError, PublicError } from "./types.js";
 
@@ -149,6 +150,9 @@ export type ProblemDetailsResult<
  * nested deeper than 100 levels, or other non-serializable value drops that
  * member and records it in `outcome.omitted`
  * rather than throwing or leaking a value the next serializer would choke on).
+ * `fields` then keeps exactly `{ field, code }` per fault. A `fields` value
+ * that is not a list, or a fault without a string `field` and `code`, drops
+ * the member the same way.
  */
 export function toProblem<
   TDetails,
@@ -182,12 +186,7 @@ export function toProblem<
       : undefined;
 
   const details = jsonSafeOrOmit(view.details, "details", omitted);
-  // Match project(): an empty fields array is not a member.
-  const rawFields =
-    view.fields !== undefined && view.fields.length > 0
-      ? view.fields
-      : undefined;
-  const fields = jsonSafeOrOmit(rawFields, "fields", omitted);
+  const fields = safeFields(view.fields, omitted);
   const extensions = safeExtensions(context?.extensions, omitted);
 
   const body = Object.freeze(
@@ -241,6 +240,25 @@ function jsonSafeOrOmit(
     omitted.push(member);
     return undefined;
   }
+}
+
+/**
+ * The JSON-safe clone of `fields`, reduced to the closed fault shape. The
+ * clone runs first, so its node budget bounds the shape check too. An empty
+ * list is not a member, as in project().
+ */
+function safeFields(
+  raw: unknown,
+  omitted: OmittedMember[],
+): readonly FieldFault[] | undefined {
+  const clone = jsonSafeOrOmit(raw, "fields", omitted);
+  if (clone === undefined) return undefined;
+  const faults = copyFieldFaults(clone);
+  if (faults === undefined) {
+    omitted.push("fields");
+    return undefined;
+  }
+  return faults.length > 0 ? faults : undefined;
 }
 
 /**

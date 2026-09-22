@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- **`toProblem` puts only `{ field, code }` per fault on the wire.** A hand-built or revived view reached the body unchecked. A fault forwarded every own key, for example the rejected value. `fields: null` threw inside the error middleware, and a string reached the body. The member now keeps exactly `field` and `code` per fault, as `project()` already does. A `fields` value that is not a list, or a fault without a string `field` and `code`, drops the member and records it in `outcome.omitted`.
+
 - Redaction classifies each object occurrence once, preserving more of its read allowance for data. Denied fields remain maskable before inspection, and later visits to shared references observe mutations. Cause and aggregate traversal use the build context's budget limit. Data copying no longer allocates a second object for each completed object node.
 
 - Copied log numbers now use the same JSON conversion at every depth and in scalar envelopes after budget exhaustion: `NaN` and positive or negative `Infinity` become `null`, and `-0` becomes `0`. Other finite numbers and boolean decisions remain unchanged. Raw root `details` and successful custom-redactor output retain their separate contracts.

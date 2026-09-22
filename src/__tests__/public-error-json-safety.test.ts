@@ -125,6 +125,57 @@ describe("toProblem: JSON-safe fields", () => {
   });
 });
 
+describe("toProblem: the closed fault shape", () => {
+  function handBuiltView(fields: unknown): ReturnType<typeof project> {
+    return { code: "unprocessable", fields } as unknown as ReturnType<
+      typeof project
+    >;
+  }
+
+  it("omits a null fields member instead of throwing", () => {
+    const result = toProblem(catalog(), handBuiltView(null));
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+
+  it("omits a fields member that is not a list", () => {
+    const result = toProblem(catalog(), handBuiltView("abc"));
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+
+  it("copies only field and code from each fault", () => {
+    const view = handBuiltView([
+      {
+        field: "email",
+        code: "invalid",
+        received: "alice@corp.internal",
+        path: ["user", "email"],
+      },
+    ]);
+
+    const result = toProblem(catalog(), view);
+
+    expect(result.body.fields).toEqual([{ field: "email", code: "invalid" }]);
+    expect(JSON.stringify(result.body)).not.toContain("alice@corp.internal");
+    expect(result.outcome.omitted).toEqual([]);
+  });
+
+  it("omits the fields member when a fault lacks a string field or code", () => {
+    const view = handBuiltView([
+      { field: "email", code: "invalid" },
+      { field: 42, code: "invalid" },
+    ]);
+
+    const result = toProblem(catalog(), view);
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+});
+
 describe("toProblem: frozen result", () => {
   it("freezes the result, headers, body, and outcome", () => {
     const view = project(catalog(), {
