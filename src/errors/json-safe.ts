@@ -98,7 +98,9 @@ function cloneInto(
   seen.add(value);
   try {
     if (Array.isArray(value)) {
-      if (Object.getPrototypeOf(value) !== Array.prototype) {
+      // Every realm's `Array.prototype` is itself an array, and a subclass
+      // prototype is not, so this rejects a subclass and keeps a foreign list.
+      if (!Array.isArray(Object.getPrototypeOf(value))) {
         throw new Error(errorMessage);
       }
       // Built index by index: `map` would construct the result through the
