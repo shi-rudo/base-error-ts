@@ -66,12 +66,10 @@ export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 export const MAX_DATA_DEPTH = 100;
 
 /**
- * Total-node budget for one walk over a data tree: a redaction walk, the JSON
- * copy of log data, and one `cloneJsonSafe` call. Log data shares its
- * allowance with the whole build (MAX_LOG_NODES). The unit is one visited
- * value, a container or a leaf, in these
- * walkers; the redaction walker charges the values of its data regions only,
- * while the shared read allowance covers every redaction region.
+ * Total-node budget for one data copy or `cloneJsonSafe` call. Log data
+ * shares its allowance with the whole build (MAX_LOG_NODES). The unit is
+ * one visited value, a container or a leaf. Redaction uses the stricter
+ * foreign-read allowance below, which also bounds its visited values.
  * The depth cap bounds depth, not width, and shared (DAG) references
  * are cloned once per reference, so a small input can legally expand
  * exponentially (`{a, b}` doubling per level). Past the budget the walk

@@ -2,8 +2,8 @@
  * Bounded conversion of log data to detached values. This module owns the
  * JSON compatibility rules; it does not own errors, redaction, or envelopes.
  * The caller supplies error projection and a budget shared with its traversal.
- * Unlike a JSON text round-trip, negative zero and top-level non-finite
- * numbers retain their JavaScript values. Bigints become decimal strings.
+ * Numbers follow JSON conversion at every depth: non-finite values become
+ * null and negative zero becomes zero. Bigints become decimal strings.
  */
 import {
   readObjectTag,
@@ -33,6 +33,11 @@ import {
 
 const SIZE_CUT = Symbol("log.size");
 const depthCuts = new WeakSet<object>();
+
+export function normalizeLogNumber(value: number): number | null {
+  if (!Number.isFinite(value)) return null;
+  return value === 0 ? 0 : value;
+}
 
 /** A serializer cut must not acquire a different diagnosis during redaction. */
 export function isLogDataDepthCut(value: object): boolean {
@@ -93,7 +98,7 @@ function unboxData(value: object): unknown {
  * cause and for every field copied off a native error (`details`, `code`,
  * an object under `stack`), so both branches carry the same guarantees.
  *
- * A primitive passes as-is, except a bigint, which has no JSON form and is
+ * Numbers follow JSON conversion; a bigint, which has no JSON form, is
  * written as its decimal string, at every depth. A function or symbol has
  * no JSON form either and reads as absent. A bounded walker copies objects,
  * honors `toJSON`, and applies JSON value conversions. Foreign reads and
@@ -153,7 +158,7 @@ export function serializeLogData(
         return UNSERIALIZABLE_VALUE_MARKER;
       }
       if (typeof item === "bigint") return item.toString();
-      if (typeof item === "number") return Number.isFinite(item) ? item : null;
+      if (typeof item === "number") return normalizeLogNumber(item);
       if (typeof item === "function" || typeof item === "symbol")
         return undefined;
       if (item === null || typeof item !== "object") return item;
@@ -220,7 +225,7 @@ export function serializeLogData(
         if (!entry.value) return UNSERIALIZABLE_VALUE_MARKER;
         // A cut can fall on a non-enumerable key and yield no field.
         if (budget.nodes >= budget.limit) throw SIZE_CUT;
-        return { ...out };
+        return Object.setPrototypeOf(out, Object.prototype);
       } finally {
         seen.delete(item);
       }
@@ -233,6 +238,7 @@ export function serializeLogData(
     }
   }
   budget.nodes++;
+  if (typeof value === "number") return normalizeLogNumber(value);
   if (typeof value === "bigint") return value.toString();
   return value;
 }

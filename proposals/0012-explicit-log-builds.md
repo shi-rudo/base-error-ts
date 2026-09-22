@@ -18,7 +18,8 @@ It is not a general JSON serializer and is not a new package export.
 Its compatibility contract includes JSON conversions, callbacks, and boxed primitives already supported by this package.
 Direct tests compare that contract against native JSON and pin intentional differences:
 bigint strings, bounded cuts, failure markers, and primitive diagnostic views of nested errors.
-Top-level nonfinite numbers and negative zero retain the existing JavaScript-value behavior.
+Numbers use JSON conversion at every copied position: non-finite values become `null`, and negative zero becomes `0`.
+This also applies to scalar envelope fields retained after budget exhaustion.
 Foreign reads remain guarded. Descriptor inspections and copied values consume an explicit allowance.
 Redaction and serialization share one position rule in `log-position.ts`.
 Private container provenance preserves serializer depth cuts through redaction copies.
