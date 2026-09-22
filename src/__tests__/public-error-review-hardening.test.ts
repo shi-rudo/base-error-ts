@@ -112,7 +112,7 @@ describe("content-language carries only a language tag", () => {
     const result = toProblem({ status: 400 }, view);
 
     expect(result.headers["content-language"]).toBe("de-CH");
-    expect(result.outcome.omittedHeaders).toEqual([]);
+    expect(result.outcome).toEqual({ omitted: [] });
   });
 });
 

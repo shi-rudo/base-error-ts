@@ -123,8 +123,11 @@ export type ProblemDetails<
 export type ProblemDetailsOutcome = {
   /** Dynamic members dropped because they were not JSON-safe. */
   readonly omitted: readonly OmittedMember[];
-  /** Headers dropped because their value failed validation. */
-  readonly omittedHeaders: readonly OmittedHeader[];
+  /**
+   * Headers dropped because their value failed validation. Present only when
+   * a header was dropped, so an outcome built by hand stays valid.
+   */
+  readonly omittedHeaders?: readonly OmittedHeader[];
 };
 
 /** Framework-neutral status, headers, body, and diagnostics. */
@@ -236,7 +239,9 @@ export function toProblem<
 
   const outcome: ProblemDetailsOutcome = Object.freeze({
     omitted: Object.freeze(omitted),
-    omittedHeaders: Object.freeze(omittedHeaders),
+    ...(omittedHeaders.length > 0 && {
+      omittedHeaders: Object.freeze(omittedHeaders),
+    }),
   });
 
   return Object.freeze({ status: transport.status, headers, body, outcome });
