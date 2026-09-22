@@ -126,6 +126,51 @@ describe("toProblem: undefined in details", () => {
   });
 });
 
+describe("toProblem: lists in details", () => {
+  function handBuiltView(details: unknown): ReturnType<typeof project> {
+    return { code: "unprocessable", details } as unknown as ReturnType<
+      typeof project
+    >;
+  }
+
+  it("omits details that hold an Array subclass instead of calling its toJSON", () => {
+    class RewritingList extends Array<number> {
+      toJSON(): string {
+        return "pwned";
+      }
+    }
+
+    const result = toProblem(
+      catalog(),
+      handBuiltView({ list: RewritingList.from([1, 2]) }),
+    );
+
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["details"]);
+    expect(JSON.stringify(result.body)).not.toContain("pwned");
+  });
+
+  it("clones a list into a plain array whatever its species", () => {
+    const list: unknown[] = ["o-1"];
+    Object.defineProperty(list, "constructor", {
+      value: {
+        [Symbol.species]: function HijackingSpecies() {
+          return { toJSON: () => "hijacked" };
+        },
+      },
+    });
+
+    const result = toProblem(catalog(), handBuiltView({ list }));
+
+    const cloned = (result.body.details as { list: unknown }).list;
+    expect(Array.isArray(cloned)).toBe(true);
+    expect(Object.getPrototypeOf(cloned)).toBe(Array.prototype);
+    expect(cloned).toEqual(["o-1"]);
+    expect(Object.isFrozen(cloned)).toBe(true);
+    expect(JSON.stringify(result.body)).not.toContain("hijacked");
+  });
+});
+
 describe("toProblem: JSON-safe fields", () => {
   it("clones JSON-safe field faults and freezes them", () => {
     const view = project(catalog(), {

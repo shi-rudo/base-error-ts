@@ -424,6 +424,11 @@ describe("defineErrors", () => {
     cyclic.self = cyclic;
     const symbolProperty = { valid: true } as Record<PropertyKey, unknown>;
     symbolProperty[Symbol("hidden")] = true;
+    class RewritingList extends Array<number> {
+      toJSON(): string {
+        return "rewritten";
+      }
+    }
 
     const invalidValues: unknown[] = [
       1n,
@@ -433,6 +438,7 @@ describe("defineErrors", () => {
       new Date(),
       cyclic,
       symbolProperty,
+      RewritingList.from([1]),
     ];
 
     for (const value of invalidValues) {
