@@ -51,6 +51,10 @@ Undefined or unreadable root fields are omitted, except for the own `cause` slot
 The readable fields retain their order. `StructuredError` still adds `details` only when present.
 Root `details` keeps its existing in-process value semantics and is walked by redaction when configured.
 
+Copied log numbers follow JSON conversion at every depth: `NaN` and positive or negative `Infinity` become `null`; `-0` becomes `0`.
+This includes own fields, cause data, and fixed numeric envelope fields, even after budget exhaustion.
+Finite numbers retain their values. Raw root `details` and successful custom-redactor output keep their separate contracts.
+
 Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
 data field the reader could not expand. It never labels that cut as a cycle.

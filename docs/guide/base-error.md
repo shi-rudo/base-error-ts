@@ -173,8 +173,17 @@ field becomes `[Max log size exceeded]`. A later field can carry the same marker
 before the hook reader stops; an aggregate ends with one size marker. This names
 a size cut, never a cycle. Earlier completed fields remain intact.
 Already-read scalar envelope fields survive exhaustion. In particular, `code`
-keeps its value and `retryable: false` stays boolean `false`. After exhaustion,
+keeps its normalized value and `retryable: false` stays boolean `false`. After exhaustion,
 non-scalar envelope fields are omitted without expansion.
+
+Redaction bounds inspection and visited values with one shared read allowance.
+Each child visit requires a charged value read. Each object occurrence is classified once,
+so repeated references are inspected again and reflect any intervening mutation.
+
+Copied log numbers use JSON conversion at every depth: `NaN` and positive or negative
+`Infinity` become `null`; `-0` becomes `0`. This includes fixed numeric envelope fields,
+even after budget exhaustion. Other finite numbers keep their values.
+Raw root `details` and successful custom-redactor output keep their separate contracts.
 
 Redaction preserves empty containers that the serializer produced at its depth cap.
 Both walkers start each data field at depth zero and count nesting within that field.

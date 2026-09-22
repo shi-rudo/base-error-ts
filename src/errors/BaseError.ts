@@ -9,6 +9,7 @@ import {
 } from "./log-build-context.js";
 import {
   serializeLogData,
+  normalizeLogNumber,
   isLogDataDepthCut,
   copyLogDataDepthCut,
 } from "./log-data.js";
@@ -42,9 +43,7 @@ import {
   MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
-  MAX_DATA_NODES,
   MAX_REDACTION_READS,
-  MAX_LOG_NODES,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
@@ -245,7 +244,6 @@ export class BaseError<T extends string> extends Error {
         ? []
         : undefined;
       const state = {
-        nodes: 0,
         seen: new Set<object>(),
         reads: { nodes: 0 },
         headers,
@@ -316,20 +314,13 @@ export class BaseError<T extends string> extends Error {
     this.#messageMask = undefined;
     const redactor = (log: Record<string, unknown>) => {
       const state = {
-        nodes: 0,
         seen: new Set<object>(),
         reads: { nodes: 0 },
       };
       return BaseError.#redactWalk(
         log,
-        (key, value, region: RedactRegion) => {
-          // Always recurse into containers so nested allowed leaves survive.
-          if (
-            Array.isArray(value) ||
-            BaseError.#isWalkable(value, state.reads)
-          ) {
-            return BaseError.#RECURSE;
-          }
+        (key, value, region: RedactRegion, leaf) => {
+          if (!leaf) return BaseError.#RECURSE;
           // Leaf. Keep iff the region permits this key.
           const kept =
             (region === "root" && ROOT_ENVELOPE_KEYS.has(key)) ||
@@ -454,8 +445,10 @@ export class BaseError<T extends string> extends Error {
    * Single deep-clone walker for redaction. Recurses into arrays and objects
    * that carry own enumerable keys (see {@link BaseError.#isWalkable}); every
    * other value (string, `Date`, `Map`, …) is a leaf.
-   * `decide(key, value, region)` returns the replacement for a key, or
-   * `#RECURSE` to descend into a container / keep a leaf unchanged.
+   * `decide(key, value, region, leaf)` can replace a field before inspection.
+   * `#RECURSE` requests classification. For a leaf, the decision runs again
+   * with `leaf: true`; `#RECURSE` then keeps the value unchanged. Array elements
+   * are classified first and only leaves reach the decision.
    *
    * `region` classifies where we are, so the allow-list can distinguish the
    * structural envelope from data:
@@ -483,10 +476,9 @@ export class BaseError<T extends string> extends Error {
    * cost the same. Data depth restarts at each cause node, so a deep chain
    * cannot marker-truncate a shallow `details` on a deep cause, and a spine
    * that a subclass supplies past the serializer's cap ends in a marker.
-   * The node budget ({@link MAX_DATA_NODES})
-   * counts every value the walk visits in a data region, a container or a
-   * leaf. The separate read allowance ({@link MAX_REDACTION_READS}) covers
-   * classification, key inspections, and value reads across every region.
+   * The read allowance ({@link MAX_REDACTION_READS}) covers classification,
+   * key inspections, and value reads across every region. Each child visit
+   * requires a charged value read, so this also bounds nodes and width.
    * Read exhaustion retains copied fields and cuts uninspected subtrees.
    * Envelope scalars precede object expansion; cause links precede data.
    * An uninspected object is never treated as an opaque leaf. Arrays append
@@ -495,24 +487,33 @@ export class BaseError<T extends string> extends Error {
    * fields becomes the size marker. `state.seen` holds the containers on the
    * current path, so a cycle is one marker at its first repeat; a shared
    * reference without a cycle is still cloned once per reference and is
-   * bounded by the node budget.
+   * bounded by the read allowance.
    */
   /*#__PURE__*/ static #redactWalk(
-    value: unknown,
-    decide: (key: string, value: unknown, region: RedactRegion) => unknown,
+    value: object,
+    decide: (
+      key: string,
+      value: unknown,
+      region: RedactRegion,
+      leaf: boolean,
+    ) => unknown,
     region: RedactRegion,
     depth: number,
     state: {
-      nodes: number;
       readonly seen: Set<object>;
       readonly reads: { nodes: number };
       readonly headers?: RedactionStackHeader[];
     },
     key = "",
     spine = 0,
+    classified = false,
   ): unknown {
     try {
-      if (!Array.isArray(value) && !BaseError.#isWalkable(value, state.reads)) {
+      if (
+        !classified &&
+        !Array.isArray(value) &&
+        !BaseError.#isWalkable(value, state.reads)
+      ) {
         return value;
       }
     } catch (error) {
@@ -528,14 +529,6 @@ export class BaseError<T extends string> extends Error {
     }
     if (state.seen.has(value)) {
       return REDACTION_CYCLE_MARKER;
-    }
-    // The node budget counts data values. The separate read allowance also
-    // bounds root and cause envelope inspection.
-    if (region === "data") {
-      if (state.nodes >= MAX_DATA_NODES) {
-        return REDACTION_SIZE_MARKER;
-      }
-      state.nodes++;
     }
     state.seen.add(value);
     try {
@@ -565,10 +558,6 @@ export class BaseError<T extends string> extends Error {
             ? length
             : 0;
         for (let index = 0; index < count; index++) {
-          if (region === "data" && state.nodes >= MAX_DATA_NODES) {
-            items.push(REDACTION_SIZE_MARKER);
-            break;
-          }
           if (state.reads.nodes >= MAX_REDACTION_READS) {
             items.push(REDACTION_SIZE_MARKER);
             break;
@@ -591,11 +580,11 @@ export class BaseError<T extends string> extends Error {
                   state,
                   key,
                   position.spine,
+                  true,
                 ),
               );
               continue;
             }
-            if (region === "data") state.nodes++;
             if (typeof item === "function") {
               items.push(null);
               continue;
@@ -611,7 +600,7 @@ export class BaseError<T extends string> extends Error {
               region === "cause" &&
               BaseError.#hasSerializerMarker(value, slot, item)
                 ? BaseError.#RECURSE
-                : decide(key, item, region);
+                : decide(key, item, region, true);
             const redacted = decision === BaseError.#RECURSE ? item : decision;
             if (redacted === item) {
               BaseError.#copySerializerMarker(value, items, slot, item);
@@ -642,10 +631,6 @@ export class BaseError<T extends string> extends Error {
         state.reads,
         out,
       )) {
-        if (region === "data" && state.nodes >= MAX_DATA_NODES) {
-          out[key] = REDACTION_SIZE_MARKER;
-          break;
-        }
         if (
           header !== undefined &&
           (key === "name" || key === "message" || key === "stack")
@@ -665,7 +650,7 @@ export class BaseError<T extends string> extends Error {
         // wrongly masks a region-transition key that holds a leaf (e.g. a
         // top-level `cause: undefined`).
         try {
-          const decision = decide(key, val, region);
+          const decision = decide(key, val, region, false);
           if (decision === BaseError.#RECURSE) {
             if (Array.isArray(val) || BaseError.#isWalkable(val, state.reads)) {
               const position = childPosition(
@@ -682,13 +667,14 @@ export class BaseError<T extends string> extends Error {
                 state,
                 key,
                 position.spine,
+                true,
               );
             } else {
-              if (region === "data") state.nodes++;
-              out[key] = val;
+              const leafDecision = decide(key, val, region, true);
+              out[key] =
+                leafDecision === BaseError.#RECURSE ? val : leafDecision;
             }
           } else {
-            if (region === "data") state.nodes++;
             out[key] = decision;
           }
           if (out[key] === val) {
@@ -1389,7 +1375,7 @@ export class BaseError<T extends string> extends Error {
       return cause;
     }
 
-    if (context.budget.nodes >= MAX_LOG_NODES) {
+    if (context.budget.nodes >= context.budget.limit) {
       return BaseError.#markSerializerMarker(holder, key, MAX_LOG_SIZE_MARKER);
     }
 
@@ -1502,11 +1488,11 @@ export class BaseError<T extends string> extends Error {
     context: LogBuildContext,
   ): unknown {
     if (context.budget.nodes >= context.budget.limit) {
+      if (typeof value === "number") return normalizeLogNumber(value);
       if (
         value === null ||
         typeof value === "string" ||
-        typeof value === "boolean" ||
-        typeof value === "number"
+        typeof value === "boolean"
       )
         return value;
       // An exhausted envelope omits other values instead of forging a scalar.
@@ -1530,7 +1516,7 @@ export class BaseError<T extends string> extends Error {
   ): unknown[] {
     const serialized: unknown[] = [];
     for (const error of aggregate.members) {
-      if (context.budget.nodes >= MAX_LOG_NODES) {
+      if (context.budget.nodes >= context.budget.limit) {
         serialized.push(
           BaseError.#markSerializerMarker(
             serialized,

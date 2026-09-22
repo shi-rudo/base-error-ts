@@ -153,12 +153,12 @@ describe("log data serialization", () => {
     });
   });
 
-  it("preserves negative zero in the copied object", () => {
-    expect(serialize({ value: -0 })).toEqual({ value: -0 });
+  it("normalizes negative zero in the copied object", () => {
+    expect(serialize({ value: -0 })).toEqual({ value: 0 });
   });
 
-  it("preserves a top-level non-finite primitive", () => {
-    expect(serialize(NaN)).toBeNaN();
+  it("normalizes a top-level non-finite primitive", () => {
+    expect(serialize(NaN)).toBeNull();
   });
 
   it("uses a bounded description at the repeated reference", () => {

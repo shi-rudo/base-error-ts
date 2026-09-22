@@ -28,6 +28,10 @@
 
 ### Fixed
 
+- Redaction classifies each object occurrence once, preserving more of its read allowance for data. Denied fields remain maskable before inspection, and later visits to shared references observe mutations. Cause and aggregate traversal use the build context's budget limit. Data copying no longer allocates a second object for each completed object node.
+
+- Copied log numbers now use the same JSON conversion at every depth and in scalar envelopes after budget exhaustion: `NaN` and positive or negative `Infinity` become `null`, and `-0` becomes `0`. Other finite numbers and boolean decisions remain unchanged. Raw root `details` and successful custom-redactor output retain their separate contracts.
+
 - **A failed data value preserves readable siblings.** Failed property reads, serialization callbacks, primitive conversions, and key enumeration produce `[Unserializable value]` at the affected value. They no longer discard its parent object or array and diagnose a false cycle. The marker receives normal key-based redaction and contains no exception text. Cycles replace only the repeated ancestor reference with a bounded circular description; their readable siblings also survive. Successful `undefined` results remain absent, including from `toJSON`. Size cuts retain their existing behavior.
 
 - Document independent redaction of `StructuredError.name` and `code`, including their shared initial value, stack-header behavior, and the effect of masking codes on log-based matching.
