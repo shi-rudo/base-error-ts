@@ -35,6 +35,7 @@ import {
   MAX_CAUSE_DEPTH_MARKER,
   MAX_LOG_SIZE_MARKER,
   UNSERIALIZABLE_CAUSE_MARKER,
+  UNSERIALIZABLE_VALUE_MARKER,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
 import {
@@ -909,7 +910,7 @@ export class BaseError<T extends string> extends Error {
    * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
    *   the reader stops there;
    * - a throw, or a return that is not a record, costs these fields and never
-   *   the node. A getter that throws costs its own key only;
+   *   the node. A getter that throws leaves an unserializable-value marker;
    * - every value is copied as data (see {@link serializeLogData}),
    *   so the log shares no reference with the error.
    *
@@ -975,9 +976,8 @@ export class BaseError<T extends string> extends Error {
       )) {
         if (taken >= MAX_OWN_LOG_FIELDS) break;
         if (RESERVED_NODE_KEYS.has(key)) continue;
-        // Read through the guarded reader, so one throwing getter costs its
-        // own key and leaves every sibling already collected in place.
-        const item = readProperty(record, key);
+        const read = readPropertyResult(record, key);
+        const item = read.readable ? read.value : UNSERIALIZABLE_VALUE_MARKER;
         // Own fields describe the node. Error relationships belong in cause.
         // Nested data errors use a shallow diagnostic view in serializeLogData.
         if (BaseError.#sameRealm(item) || BaseError.#isNativeError(item)) {

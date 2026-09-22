@@ -12,14 +12,19 @@ import {
   UNREADABLE_TO_JSON,
   readOwnEnumerableKeys,
   readProperty,
+  readPropertyResult,
 } from "./guarded-read.js";
 import type { LogBuildContext } from "./log-build-context.js";
+import { ENVELOPE_KEYS } from "./log-field-keys.js";
 import {
   childPosition,
   type LogRegion,
   type WalkPosition,
 } from "./log-position.js";
-import { MAX_LOG_SIZE_MARKER } from "./serializer-markers.js";
+import {
+  MAX_LOG_SIZE_MARKER,
+  UNSERIALIZABLE_VALUE_MARKER,
+} from "./serializer-markers.js";
 import {
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
@@ -92,9 +97,10 @@ function unboxData(value: object): unknown {
  * written as its decimal string, at every depth. A function or symbol has
  * no JSON form either and reads as absent. A bounded walker copies objects,
  * honors `toJSON`, and applies JSON value conversions. Foreign reads and
- * descriptor inspections are guarded and charged before expansion. A cycle
- * or a throwing `toJSON` uses the legacy
- * circular-object fallback. Budget exhaustion uses the log-size marker.
+ * descriptor inspections are guarded and charged before expansion. Failed
+ * reads, conversions, and key enumeration replace only the affected value.
+ * A cycle replaces only the repeated ancestor reference. Budget exhaustion
+ * uses the log-size marker.
  * Nothing in here throws.
  *
  * Cause depth and data depth count separately, with the redaction regions.
@@ -125,27 +131,32 @@ export function serializeLogData(
       if (budget.nodes >= budget.limit) throw SIZE_CUT;
       budget.nodes++;
       let item = input;
-      const errorData =
-        item !== null && typeof item === "object"
-          ? context.dataError(item)
-          : undefined;
-      if (errorData !== undefined) {
-        item = errorData;
-      } else {
-        const toJSON = readToJSON(item);
-        if (toJSON === UNREADABLE_TO_JSON) throw new Error("unreadable toJSON");
-        if (typeof toJSON === "function")
-          item = Reflect.apply(toJSON, item, [key]);
-      }
-      if (item !== null && typeof item === "object") {
-        item = unboxData(item);
+      let array = false;
+      try {
+        const errorData =
+          item !== null && typeof item === "object"
+            ? context.dataError(item)
+            : undefined;
+        if (errorData !== undefined) {
+          item = errorData;
+        } else {
+          const toJSON = readToJSON(item);
+          if (toJSON === UNREADABLE_TO_JSON) return UNSERIALIZABLE_VALUE_MARKER;
+          if (typeof toJSON === "function")
+            item = Reflect.apply(toJSON, item, [key]);
+        }
+        if (item !== null && typeof item === "object") {
+          item = unboxData(item);
+          array = Array.isArray(item);
+        }
+      } catch {
+        return UNSERIALIZABLE_VALUE_MARKER;
       }
       if (typeof item === "bigint") return item.toString();
       if (typeof item === "number") return Number.isFinite(item) ? item : null;
       if (typeof item === "function" || typeof item === "symbol")
         return undefined;
       if (item === null || typeof item !== "object") return item;
-      const array = Array.isArray(item);
       const position =
         parent === undefined
           ? {
@@ -162,11 +173,13 @@ export function serializeLogData(
         depthCuts.add(terminal);
         return terminal;
       }
-      if (seen.has(item)) throw new Error("circular data");
+      if (seen.has(item)) return serializeCircularObject(item, context);
       seen.add(item);
       try {
         if (array) {
-          const length = readProperty(item, "length");
+          const lengthRead = readPropertyResult(item, "length");
+          if (!lengthRead.readable) return UNSERIALIZABLE_VALUE_MARKER;
+          const length = lengthRead.value;
           const count =
             typeof length === "number" &&
             Number.isSafeInteger(length) &&
@@ -176,9 +189,10 @@ export function serializeLogData(
           const out: unknown[] = [];
           for (let index = 0; index < count; index++) {
             if (budget.nodes >= budget.limit) throw SIZE_CUT;
+            const field = readPropertyResult(item, String(index));
             out.push(
               copy(
-                readProperty(item, String(index)),
+                field.readable ? field.value : UNSERIALIZABLE_VALUE_MARKER,
                 String(index),
                 position,
                 true,
@@ -193,11 +207,17 @@ export function serializeLogData(
         while (!entry.done) {
           if (budget.nodes >= budget.limit) throw SIZE_CUT;
           const key = entry.value;
-          const field = copy(readProperty(item, key), key, position);
+          const read = readPropertyResult(item, key);
+          // A failed diagnostic read must not manufacture a scalar decision.
+          let fieldValue: unknown = UNSERIALIZABLE_VALUE_MARKER;
+          if (read.readable) fieldValue = read.value;
+          else if (position.region !== "data" && ENVELOPE_KEYS.has(key))
+            fieldValue = undefined;
+          const field = copy(fieldValue, key, position);
           if (field !== undefined) out[key] = field;
           entry = keys.next();
         }
-        if (!entry.value) throw new Error("unreadable data keys");
+        if (!entry.value) return UNSERIALIZABLE_VALUE_MARKER;
         // A cut can fall on a non-enumerable key and yield no field.
         if (budget.nodes >= budget.limit) throw SIZE_CUT;
         return { ...out };
@@ -206,13 +226,10 @@ export function serializeLogData(
       }
     };
     try {
-      const result = copy(value, "");
-      return result === undefined
-        ? serializeCircularObject(value, context)
-        : result;
+      return copy(value, "");
     } catch (error) {
       if (error === SIZE_CUT) return MAX_LOG_SIZE_MARKER;
-      return serializeCircularObject(value, context);
+      return UNSERIALIZABLE_VALUE_MARKER;
     }
   }
   budget.nodes++;

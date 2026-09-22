@@ -59,6 +59,11 @@ After exhaustion, non-scalar envelope fields are omitted without expansion.
 Redaction preserves the empty containers that the serializer produced at its depth cap.
 Both walkers start each data field at depth zero, including fields on plain-object causes.
 Redaction can retain one more data level than before; the data depth cap remains 100.
+Failed property reads, serialization callbacks, primitive conversions, and key enumeration now produce `[Unserializable value]` at the affected value.
+Readable siblings remain in objects and arrays. The marker receives normal key-based redaction and contains no exception text.
+A cycle now replaces only the repeated ancestor reference with its bounded circular description.
+Failed getters in copied data and own hook fields now leave a marker instead of disappearing or becoming `null`.
+Successful `undefined` results stay absent; array holes stay `null`. Fixed diagnostic fields retain their existing guarded-read behavior, including on plain-object causes.
 A `BaseError` nested in copied data retains primitive diagnostic fields and its
 sticky redaction policy. It does not restart hooks or expand its details or links.
 Use the `cause` chain when the full nested diagnosis is required.

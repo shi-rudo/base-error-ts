@@ -14,6 +14,9 @@ export const MAX_CAUSE_DEPTH_MARKER = "[Max cause depth exceeded]";
 /** A node that defeated serialization entirely (for example a hostile Proxy). */
 export const UNSERIALIZABLE_CAUSE_MARKER = "[Unserializable cause]";
 
+/** A data value whose conversion or inspection failed. */
+export const UNSERIALIZABLE_VALUE_MARKER = "[Unserializable value]";
+
 /** The tail of an aggregate cut at the width cap or a node budget. */
 export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;

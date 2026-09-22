@@ -161,33 +161,34 @@ describe("log data serialization", () => {
     expect(serialize(NaN)).toBeNaN();
   });
 
-  it("uses a bounded description for a cycle", () => {
+  it("uses a bounded description at the repeated reference", () => {
     const value: Record<string, unknown> = { secret: "value" };
     value.self = value;
 
-    expect(serialize(value)).toBe(
-      "[Circular Object with keys: [secret, self]]",
-    );
+    expect(serialize(value)).toEqual({
+      secret: "value",
+      self: "[Circular Object with keys: [secret, self]]",
+    });
   });
 
-  it("uses the legacy fallback when toJSON throws", () => {
+  it("reports a serialization failure when toJSON throws", () => {
     const value = {
       toJSON() {
         throw new Error("consumer");
       },
     };
 
-    expect(serialize(value)).toBe("[Circular Object with keys: [toJSON]]");
+    expect(serialize(value)).toBe("[Unserializable value]");
   });
 
-  it("uses the legacy fallback when a toJSON read throws", () => {
+  it("reports a serialization failure when a toJSON read throws", () => {
     const value = Object.defineProperty({}, "toJSON", {
       get() {
         throw new Error("consumer");
       },
     });
 
-    expect(serialize(value)).toBe("[Circular Object]");
+    expect(serialize(value)).toBe("[Unserializable value]");
   });
 
   it("guards a throwing data getter", () => {
@@ -198,7 +199,10 @@ describe("log data serialization", () => {
       },
     };
 
-    expect(serialize(value)).toEqual({ good: 1 });
+    expect(serialize(value)).toEqual({
+      good: 1,
+      bad: "[Unserializable value]",
+    });
   });
 
   it("cuts deep data before reading its children", () => {

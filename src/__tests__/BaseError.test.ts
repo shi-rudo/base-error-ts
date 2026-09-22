@@ -535,9 +535,10 @@ describe("BaseError", () => {
       const error = new AutoNamedError("Circular cause test", circularCause);
       const json = error.toJSON();
 
-      // Should provide a useful representation for circular references
-      expect(typeof json.cause).toBe("string");
-      expect(json.cause).toBe("[Circular Object with keys: [name, self]]");
+      expect(json.cause).toEqual({
+        name: "CircularObject",
+        self: "[Circular Object with keys: [name, self]]",
+      });
     });
 
     it("should handle null and undefined causes", () => {
@@ -1009,8 +1010,10 @@ describe("BaseError", () => {
 
       const error = new AutoNamedError("test", noProto);
       const json = error.toJSON();
-      expect(json.cause).toContain("Object");
-      expect(json.cause).toContain("a");
+      expect(json.cause).toEqual({
+        a: 1,
+        self: "[Circular Object with keys: [a, self]]",
+      });
     });
 
     it("should truncate objects with more than 5 keys", () => {
@@ -1020,19 +1023,27 @@ describe("BaseError", () => {
 
       const error = new AutoNamedError("test", bigObj);
       const json = error.toJSON();
-      expect(json.cause).toContain("...");
+      expect(json.cause).toEqual({
+        key0: 0,
+        key1: 1,
+        key2: 2,
+        key3: 3,
+        key4: 4,
+        key5: 5,
+        key6: 6,
+        self: "[Circular Object with keys: [key0, key1, key2, key3, key4]...]",
+      });
     });
 
-    it("should handle objects with no keys", () => {
+    it("handles an object whose only field repeats itself", () => {
       const emptyCircular: Record<string, unknown> = {};
       emptyCircular.self = emptyCircular;
 
-      // Force through serializeCircularObject by using non-Error object
-      // JSON.stringify will fail on circular ref, falling through to serializeCircularObject
       const error = new AutoNamedError("test", emptyCircular);
       const json = error.toJSON();
-      expect(typeof json.cause).toBe("string");
-      expect(json.cause).toContain("Circular");
+      expect(json.cause).toEqual({
+        self: "[Circular Object with keys: [self]]",
+      });
     });
   });
 });

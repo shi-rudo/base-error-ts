@@ -162,7 +162,7 @@ bounded:
 | Must not walk a chain or log another error | During own-fields processing, nested public log calls skip own-fields hooks on all instances. Their envelopes, causes, and redaction remain available. An error returned directly as a field value is dropped; a nested data error keeps its primitive diagnostic view |
 | The library's own keys win | A returned key that carries a name this library writes is dropped. Its declaration, `RESERVED_NODE_KEYS` in `src/errors/log-field-keys.ts`, owns that list: the envelope names, `cause`, `errors`, and `__proto__`, which the runtime owns. Name a field something else if it collides |
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
-| A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws costs its own key only |
+| A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws leaves `[Unserializable value]` at its own key |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
 | Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Cause depth counts separately |
 
@@ -181,6 +181,14 @@ Both walkers start each data field at depth zero and count nesting within that f
 The transition from an error envelope to its data field consumes no data depth.
 Private container provenance identifies these cuts. Consumer data added to a cut
 container cannot pass the redaction depth cap.
+
+A failed property read, serialization callback, primitive conversion, or key enumeration replaces
+that value with `[Unserializable value]`. Readable siblings remain in objects and arrays.
+The marker contains no exception text and receives normal key-based redaction.
+A cycle replaces only the repeated ancestor reference with its bounded circular description.
+Readable siblings remain available. Successful `undefined` results remain absent; array holes become `null`.
+Failed reads of fixed cause-envelope fields remain absent, including on plain-object causes.
+This prevents a failed `retryable` read from becoming a truthy marker string.
 
 The marker is a **value**, not an extra diagnostic key. On a data field it is
 masked under `redactAllow([])`. Only a marker emitted on a cause link or aggregate
