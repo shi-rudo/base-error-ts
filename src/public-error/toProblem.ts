@@ -158,14 +158,14 @@ export type ProblemDetailsResult<
  * view. A `title` and a `content-language` header appear only when the view was
  * localized, so the structure-only path is a first-class, RFC-valid response.
  *
- * This is the wire boundary: `details` and `fields` are deep-cloned into a
- * frozen, JSON-safe structure (a `Date`, `BigInt`, circular reference, a value
- * nested deeper than 100 levels, or other non-serializable value drops that
- * member and records it in `outcome.omitted`
+ * This is the wire boundary: `details` is deep-cloned into a frozen, JSON-safe
+ * structure (a `Date`, `BigInt`, circular reference, a value nested deeper
+ * than 100 levels, or other non-serializable value drops that member and
+ * records it in `outcome.omitted`
  * rather than throwing or leaking a value the next serializer would choke on).
- * `toProblem` then keeps exactly `{ field, code }` per fault. It drops `fields`
- * the same way when the value is not a list, or when a fault has no string
- * `field` and `code`.
+ * `fields` keeps exactly `{ field, code }` per fault. `toProblem` drops it the
+ * same way when the value is not a list, or when a fault has no string `field`
+ * and `code`.
  */
 export function toProblem<
   TDetails,
@@ -266,17 +266,16 @@ function jsonSafeOrOmit(
 }
 
 /**
- * The JSON-safe clone of `fields`, reduced to the closed fault shape. The
- * clone runs first, so its node budget bounds the shape check too. An empty
- * list is not a member, as in project().
+ * The closed-shape copy of `fields`. Only `field` and `code` reach the wire,
+ * and both are strings, so the member needs no JSON-safe clone. Another key of
+ * a fault cannot cost the list. An empty list is not a member, as in project().
  */
 function safeFields(
   raw: unknown,
   omitted: OmittedMember[],
 ): readonly FieldFault[] | undefined {
-  const clone = jsonSafeOrOmit(raw, "fields", omitted);
-  if (clone === undefined) return undefined;
-  const faults = copyFieldFaults(clone);
+  if (raw === undefined) return undefined;
+  const faults = copyFieldFaults(raw);
   if (faults === undefined) {
     omitted.push("fields");
     return undefined;

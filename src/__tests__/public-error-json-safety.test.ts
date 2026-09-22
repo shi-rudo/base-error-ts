@@ -184,18 +184,16 @@ describe("toProblem: JSON-safe fields", () => {
     expect(result.outcome.omitted).toEqual([]);
   });
 
-  it("omits fields when an entry is not JSON-safe", () => {
-    // project() normalizes faults to { field, code }, so a non-JSON-safe entry
-    // can only reach toProblem via a hand-built view; the wire boundary still
-    // has to catch it.
+  it("keeps the faults when a key outside the fault shape is not JSON-safe", () => {
     const view = {
       code: "unprocessable",
       fields: [{ field: "email", code: "required", at: new Date() }],
     } as unknown as ReturnType<typeof project>;
 
     const result = toProblem(catalog(), view);
-    expect("fields" in result.body).toBe(false);
-    expect(result.outcome.omitted).toContain("fields");
+
+    expect(result.body.fields).toEqual([{ field: "email", code: "required" }]);
+    expect(result.outcome.omitted).toEqual([]);
   });
 });
 

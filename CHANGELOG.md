@@ -28,7 +28,7 @@
 
 ### Fixed
 
-- **`toProblem` puts only `{ field, code }` per fault on the wire.** A hand-built or revived view reached the body unchecked. A fault forwarded every own key, for example the rejected value. `fields: null` threw inside the error middleware, and a string reached the body. The member now keeps exactly `field` and `code` per fault, as `project()` already does. For a `fields` value that is not a list, or a fault without a string `field` and `code`, `toProblem` drops the member and records it in `outcome.omitted`.
+- **`toProblem` puts only `{ field, code }` per fault on the wire.** A hand-built or revived view reached the body unchecked. A fault forwarded every own key, for example the rejected value. `fields: null` threw inside the error middleware, and a string reached the body. The member now keeps exactly `field` and `code` per fault, as `project()` already does. Another key of a fault no longer matters: before, a `Date` in such a key dropped the whole list. For a `fields` value that is not a list, or a fault without a string `field` and `code`, `toProblem` drops the member and records it in `outcome.omitted`.
 
 - **A broken matcher stays visible when a later entry matches.** `project()` reported a throwing predicate only when the error fell back (`reason: "matcher_failed"`). When a later predicate matched, the `matched` outcome carried no trace of it, so `onProject` could not see the broken matcher. The `matched` outcome now carries `matcherThrew: true` in that case. The property is optional, so an outcome built by hand stays valid.
 

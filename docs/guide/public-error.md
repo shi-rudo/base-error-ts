@@ -157,18 +157,19 @@ const { status, headers, body, outcome } = toProblem(errors, view, {
 
 `toProblem` reads `status`/`type`/`title` from the catalog by public code and
 rides the machine members from the view into a `ProblemDetails` body. It is the
-**wire boundary**: `details` and `fields` are deep-cloned into a frozen,
-JSON-safe structure. For a value that is not JSON-safe, `toProblem` drops its
-member and records it in `outcome.omitted`. It does not throw for such a value,
-and the next serializer gets no value that it cannot handle. Examples are a
-`Date`, a `BigInt`, an `Array` subclass, a circular reference, and a value
-nested deeper than 100 levels.
+**wire boundary**: `details` is deep-cloned into a frozen, JSON-safe
+structure. For a value that is not JSON-safe, `toProblem` drops the member and
+records it in `outcome.omitted`. It does not throw for such a value, and the
+next serializer gets no value that it cannot handle. Examples are a `Date`, a
+`BigInt`, an `Array` subclass, a circular reference, and a value nested deeper
+than 100 levels.
 
 `toProblem` skips a property whose value is `undefined`, as `JSON.stringify`
 does. An `undefined` list element still drops the member, because JSON turns
-it into `null`. `toProblem` then keeps exactly `field` and `code` per fault. It
-drops `fields` the same way when the value is not a list, or when a fault has
-no string `field` and `code`. It also drops a non-string `category` and a
+it into `null`. For `fields`, `toProblem` keeps exactly `field` and `code` per
+fault, so another key of a fault never reaches the wire. It drops `fields` the
+same way when the value is not a list, or when a fault has no string `field`
+and `code`. It also drops a non-string `category` and a
 non-boolean `retryable`.
 
 `title` is the localized `message` when the view was localized, otherwise the
