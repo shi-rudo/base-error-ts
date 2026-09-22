@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- **`toString` renders every primitive aggregate member.** It put every visited value into its `seen` set, primitives included. For `new AggregateError(["timeout", "timeout"])` it rendered the second member as `[Circular cause chain]`, which the log object did not. It also skipped a hole, so the node line said `(+2 aggregated)` above a single entry. A primitive has no links and cannot close a cycle. `toString` now renders each primitive member, and a hole as `undefined`. The tree traversal (`{ aggregates: true }`) keeps counting each distinct value once, so repeated values cannot use up its node budget.
+
 - **`toProblem` puts only `{ field, code }` per fault on the wire.** A hand-built or revived view reached the body unchecked. A fault forwarded every own key, for example the rejected value. `fields: null` threw inside the error middleware, and a string reached the body. The member now keeps exactly `field` and `code` per fault, as `project()` already does. Another key of a fault no longer matters: before, a `Date` in such a key dropped the whole list. `toProblem` drops a `fields` value that is not a list and records it in `outcome.omitted`. It does the same for a fault without a string `field` and `code`.
 
 - **A broken matcher stays visible when a later entry matches.** `project()` reported a throwing predicate only when the error fell back (`reason: "matcher_failed"`). When a later predicate matched, the `matched` outcome carried no trace of it, so `onProject` could not see the broken matcher. The `matched` outcome now carries `matcherThrew: true` in that case. The property is optional, so an outcome built by hand stays valid.

@@ -558,6 +558,23 @@ describe("toString() with an aggregate", () => {
     expect(wrap(aggregate).toString()).toContain("[Circular cause chain]");
   });
 
+  it("renders a repeated primitive member each time", () => {
+    const aggregate = new AggregateError(["timeout", "timeout"], "retries");
+
+    const lines = wrap(aggregate).toString().split("\n");
+
+    expect(lines.slice(2)).toEqual(["  - timeout", "  - timeout"]);
+  });
+
+  it("renders a hole as undefined, so the list matches the count", () => {
+    const aggregate = new AggregateError([undefined, "x"], "sparse");
+
+    const lines = wrap(aggregate).toString().split("\n");
+
+    expect(lines[1]).toBe("Caused by: AggregateError: sparse (+2 aggregated)");
+    expect(lines.slice(2)).toEqual(["  - undefined", "  - x"]);
+  });
+
   it("caps the rendered members", () => {
     const branches = Array.from(
       { length: 130 },

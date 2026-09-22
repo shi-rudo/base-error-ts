@@ -1118,11 +1118,15 @@ export class BaseError<T extends string> extends Error {
       const prefix = first ? indent : `${indent}Caused by: `;
       first = false;
 
-      if (seen.has(current)) {
-        lines.push(`${prefix}${CIRCULAR_CAUSE_CHAIN_MARKER}`);
-        break;
+      // A primitive has no links and cannot close a cycle, so it renders
+      // each time it repeats.
+      if (typeof current === "object") {
+        if (seen.has(current)) {
+          lines.push(`${prefix}${CIRCULAR_CAUSE_CHAIN_MARKER}`);
+          break;
+        }
+        seen.add(current);
       }
-      seen.add(current);
 
       const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
       const total = aggregate === undefined ? 0 : aggregate.total;
@@ -1131,6 +1135,12 @@ export class BaseError<T extends string> extends Error {
 
       const shown = aggregate === undefined ? [] : aggregate.members;
       for (const member of shown) {
+        // A hole reads as undefined. It keeps its slot, as in the log, so the
+        // count on the node line matches the list.
+        if (member === undefined || member === null) {
+          lines.push(`${indent}  - ${String(member)}`);
+          continue;
+        }
         const rendered = BaseError.#renderChain(
           member,
           seen,
