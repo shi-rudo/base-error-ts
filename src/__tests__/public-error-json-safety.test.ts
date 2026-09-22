@@ -97,6 +97,35 @@ describe("toProblem: JSON-safe details", () => {
   });
 });
 
+describe("toProblem: undefined in details", () => {
+  function handBuiltView(details: unknown): ReturnType<typeof project> {
+    return { code: "unprocessable", details } as unknown as ReturnType<
+      typeof project
+    >;
+  }
+
+  it("skips an undefined property, as JSON.stringify does", () => {
+    const result = toProblem(
+      catalog(),
+      handBuiltView({ id: "o-1", hint: undefined }),
+    );
+
+    expect(result.body.details).toEqual({ id: "o-1" });
+    expect(Object.keys(result.body.details as object)).toEqual(["id"]);
+    expect(result.outcome.omitted).toEqual([]);
+  });
+
+  it("still omits details that hold an undefined list element", () => {
+    const result = toProblem(
+      catalog(),
+      handBuiltView({ ids: ["o-1", undefined] }),
+    );
+
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["details"]);
+  });
+});
+
 describe("toProblem: JSON-safe fields", () => {
   it("clones JSON-safe field faults and freezes them", () => {
     const view = project(catalog(), {

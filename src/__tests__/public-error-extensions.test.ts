@@ -29,6 +29,20 @@ describe("toProblem: typed extensions", () => {
     expect(Object.isFrozen(result.body.nested)).toBe(true);
   });
 
+  it("skips an undefined extension value instead of dropping the set", () => {
+    const view = project(catalog(), { code: "x" });
+    const extensions: { traceId: string; attempt?: number } = {
+      traceId: "t-1",
+      attempt: undefined,
+    };
+
+    const result = toProblem(catalog(), view, { extensions });
+
+    expect(result.body.traceId).toBe("t-1");
+    expect("attempt" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual([]);
+  });
+
   it("never lets an extension override a reserved member", () => {
     const view = project(catalog(), { code: "x" });
     // Reserved keys are forbidden at compile time; cast for the runtime check.

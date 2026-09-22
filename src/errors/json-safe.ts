@@ -37,6 +37,10 @@ export function isPlainObject(
  * clone is deeply frozen and decoupled from the source, so it is safe to place
  * on a wire object that may be shared or mutated afterward.
  *
+ * An `undefined` property is skipped: it reads the same as an absent one, and
+ * `JSON.stringify` drops it. An `undefined` list element is rejected, because
+ * JSON turns it into `null`.
+ *
  * `errorMessage` replaces the default rejection message, so each boundary
  * keeps its own error contract over the one shared walker.
  */
@@ -109,6 +113,7 @@ function cloneInto(
     }
     const clone = Object.create(null) as Record<string, JsonSafeValue>;
     for (const [key, item] of Object.entries(value)) {
+      if (item === undefined) continue;
       clone[key] = cloneInto(item, depth + 1, seen, state, errorMessage);
     }
     return Object.freeze(clone);

@@ -162,7 +162,9 @@ JSON-safe structure (a `Date`, `BigInt`, circular reference, a value nested
 deeper than 100 levels, or other non-serializable value drops that member and
 is recorded in `outcome.omitted`,
 rather than throwing or producing a body the next serializer chokes on).
-`fields` then keeps exactly `field` and `code` per fault. A `fields` value that
+A property whose value is `undefined` is skipped, as `JSON.stringify` skips it.
+An `undefined` list element still drops the member, because JSON turns it into
+`null`. `fields` then keeps exactly `field` and `code` per fault. A `fields` value that
 is not a list, or a fault without a string `field` and `code`, drops the member
 the same way. A non-string `category` or non-boolean `retryable` is dropped at
 this boundary too.
