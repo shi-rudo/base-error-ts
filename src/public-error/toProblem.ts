@@ -158,14 +158,14 @@ export type ProblemDetailsResult<
  * view. A `title` and a `content-language` header appear only when the view was
  * localized, so the structure-only path is a first-class, RFC-valid response.
  *
- * This is the wire boundary: `details` is deep-cloned into a frozen, JSON-safe
- * structure (a `Date`, `BigInt`, circular reference, a value nested deeper
- * than 100 levels, or other non-serializable value drops that member and
- * records it in `outcome.omitted`
- * rather than throwing or leaking a value the next serializer would choke on).
- * `fields` keeps exactly `{ field, code }` per fault. `toProblem` drops it the
- * same way when the value is not a list, or when a fault has no string `field`
- * and `code`.
+ * This is the wire boundary. `details` is deep-cloned into a frozen, JSON-safe
+ * structure. For a value that is not JSON-safe, `toProblem` drops the member
+ * and records it in `outcome.omitted`. It does not throw for such a value, and
+ * the next serializer gets no value that it cannot handle. Examples are a
+ * `Date`, a `BigInt`, a circular reference, and a value nested deeper than 100
+ * levels. `fields` keeps exactly `{ field, code }` per fault. `toProblem` drops
+ * it the same way when the value is not a list, or when a fault has no string
+ * `field` and `code`.
  */
 export function toProblem<
   TDetails,
