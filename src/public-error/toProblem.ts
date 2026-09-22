@@ -14,10 +14,13 @@ import type { FieldFault, LocalizedPublicError, PublicError } from "./types.js";
 
 export { PROBLEM_DETAILS_JSON };
 
-/** A dynamic body member dropped because it was not JSON-safe. */
+/**
+ * A dynamic body member that `toProblem` dropped at the wire: its value was
+ * not JSON-safe, or `fields` was not a list of faults.
+ */
 export type OmittedMember = "details" | "fields" | "extensions";
 
-/** A response header dropped because its value failed validation. */
+/** A response header that `toProblem` dropped: its value failed validation. */
 export type OmittedHeader = "content-language";
 
 /** Body members the adapter owns; an extension may not collide with them. */
@@ -121,11 +124,12 @@ export type ProblemDetails<
 
 /** Mapping diagnostics retained outside the serialized body. */
 export type ProblemDetailsOutcome = {
-  /** Dynamic members dropped because they were not JSON-safe. */
+  /** Body members that failed the wire checks ({@link OmittedMember}). */
   readonly omitted: readonly OmittedMember[];
   /**
-   * Headers dropped because their value failed validation. Present only when
-   * a header was dropped, so an outcome built by hand stays valid.
+   * Headers that `toProblem` dropped because their value failed validation.
+   * `toProblem` sets this property only when it drops a header, so an outcome
+   * built by hand stays valid.
    */
   readonly omittedHeaders?: readonly OmittedHeader[];
 };
@@ -159,9 +163,9 @@ export type ProblemDetailsResult<
  * nested deeper than 100 levels, or other non-serializable value drops that
  * member and records it in `outcome.omitted`
  * rather than throwing or leaking a value the next serializer would choke on).
- * `fields` then keeps exactly `{ field, code }` per fault. A `fields` value
- * that is not a list, or a fault without a string `field` and `code`, drops
- * the member the same way.
+ * `toProblem` then keeps exactly `{ field, code }` per fault. It drops `fields`
+ * the same way when the value is not a list, or when a fault has no string
+ * `field` and `code`.
  */
 export function toProblem<
   TDetails,

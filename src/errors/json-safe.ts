@@ -42,9 +42,9 @@ export function isPlainObject(
  * The returned clone is deeply frozen and decoupled from the source. It is
  * safe on a wire object that is shared or mutated afterward.
  *
- * An `undefined` property is skipped: it reads the same as an absent one, and
- * `JSON.stringify` drops it. An `undefined` list element is rejected, because
- * JSON turns it into `null`.
+ * The clone skips an `undefined` property: it reads the same as an absent one,
+ * and `JSON.stringify` drops it. The clone rejects an `undefined` list element,
+ * because JSON turns it into `null`.
  *
  * `errorMessage` replaces the default rejection message, so each boundary
  * keeps its own error contract over the one shared walker.

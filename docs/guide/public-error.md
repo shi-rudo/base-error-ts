@@ -158,25 +158,25 @@ const { status, headers, body, outcome } = toProblem(errors, view, {
 `toProblem` reads `status`/`type`/`title` from the catalog by public code and
 rides the machine members from the view into a `ProblemDetails` body. It is the
 **wire boundary**: `details` and `fields` are deep-cloned into a frozen,
-JSON-safe structure. A value that is not JSON-safe drops its member, and
-`outcome.omitted` records it. `toProblem` does not throw, and the next
-serializer gets no value that it cannot handle. Examples are a `Date`, a
-`BigInt`, an `Array` subclass, a circular reference, and a value nested deeper
-than 100 levels.
+JSON-safe structure. For a value that is not JSON-safe, `toProblem` drops its
+member and records it in `outcome.omitted`. It does not throw for such a value,
+and the next serializer gets no value that it cannot handle. Examples are a
+`Date`, a `BigInt`, an `Array` subclass, a circular reference, and a value
+nested deeper than 100 levels.
 
-A property whose value is `undefined` is skipped, as `JSON.stringify` skips it.
-An `undefined` list element still drops the member, because JSON turns it into
-`null`. `fields` then keeps exactly `field` and `code` per fault. A `fields`
-value that is not a list, or a fault without a string `field` and `code`,
-drops the member the same way. A non-string `category` or non-boolean
-`retryable` is dropped at this boundary too.
+`toProblem` skips a property whose value is `undefined`, as `JSON.stringify`
+does. An `undefined` list element still drops the member, because JSON turns
+it into `null`. `toProblem` then keeps exactly `field` and `code` per fault. It
+drops `fields` the same way when the value is not a list, or when a fault has
+no string `field` and `code`. It also drops a non-string `category` and a
+non-boolean `retryable`.
 
 `title` is the localized `message` when the view was localized, otherwise the
 static developer-facing `title` from the descriptor, otherwise omitted (RFC 9457
 makes it optional). `content-language` is set only when the view was localized
-and its `locale` is a BCP 47 language tag. A hand-built view with any other
-`locale` string keeps its `title`, loses the header, and records it in
-`outcome.omittedHeaders`.
+and its `locale` is a BCP 47 language tag. For a hand-built view with any other
+`locale` string, `toProblem` keeps the `title`, drops the header, and records
+it in `outcome.omittedHeaders`.
 A `retryAfter` (from `projectRetryAfter` or the context) becomes both the
 `Retry-After` header and a body member.
 
