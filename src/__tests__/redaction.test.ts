@@ -477,7 +477,7 @@ describe("log redaction", () => {
     });
 
     it("redactAllow keeps an absent cause as undefined instead of masking it", () => {
-      // makeError() has no cause → buildLogObject emits cause: undefined.
+      // makeError() has no cause → the envelope contains cause: undefined.
       const log = makeError().redactAllow(["userId"]).toLogObject();
       expect(log.cause).toBeUndefined(); // structural slot, not "[REDACTED]"
     });
@@ -534,8 +534,8 @@ describe("log redaction", () => {
         super(message);
       }
 
-      protected override buildLogObject(): Record<string, unknown> {
-        return { ...super.buildLogObject(), context: this.context };
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { context: this.context };
       }
     }
 
@@ -556,8 +556,8 @@ describe("log redaction", () => {
 
     it("masks a subclass-added top-level scalar that is not allow-listed", () => {
       class ScalarError extends BaseError<"ScalarError"> {
-        protected override buildLogObject(): Record<string, unknown> {
-          return { ...super.buildLogObject(), apiKey: "sk_live_123" };
+        protected override buildOwnLogFields(): Record<string, unknown> {
+          return { apiKey: "sk_live_123" };
         }
       }
       const log = new ScalarError("m").redactAllow([]).toLogObject();
@@ -566,8 +566,8 @@ describe("log redaction", () => {
 
     it("keeps a subclass-added top-level scalar when allow-listed", () => {
       class ScalarError extends BaseError<"ScalarError"> {
-        protected override buildLogObject(): Record<string, unknown> {
-          return { ...super.buildLogObject(), tenant: "acme" };
+        protected override buildOwnLogFields(): Record<string, unknown> {
+          return { tenant: "acme" };
         }
       }
       const log = new ScalarError("m").redactAllow(["tenant"]).toLogObject();
@@ -576,9 +576,8 @@ describe("log redaction", () => {
 
     it("masks leaves inside a subclass-added top-level array", () => {
       class ListError extends BaseError<"ListError"> {
-        protected override buildLogObject(): Record<string, unknown> {
+        protected override buildOwnLogFields(): Record<string, unknown> {
           return {
-            ...super.buildLogObject(),
             attempts: [{ token: "SECRET", id: "a1" }],
           };
         }
@@ -859,18 +858,15 @@ describe("redactAllow treats a container under an envelope name as data", () => 
     });
   });
 
-  it("masks a container that a subclass emits under a root envelope name", () => {
-    class CodeObjectError extends BaseError<"CodeObjectError"> {
-      protected override buildLogObject(): Record<string, unknown> {
-        return {
-          ...super.buildLogObject(),
-          code: { message: "SECRET-AT-ROOT" },
-          stack: { message: "SECRET-STACK" },
-        };
-      }
-    }
-
-    const log = new CodeObjectError("m").redactAllow([]).toLogObject();
+  it("masks a container assigned to a root envelope property", () => {
+    const error = new BaseError("m").redactAllow([]);
+    Object.defineProperty(error, "code", {
+      value: { message: "SECRET-AT-ROOT" },
+    });
+    Object.defineProperty(error, "stack", {
+      value: { message: "SECRET-STACK" },
+    });
+    const log = error.toLogObject();
 
     expect(log.message).toBe("m");
     expect(log.code).toEqual({ message: "[REDACTED]" });

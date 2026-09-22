@@ -1,0 +1,640 @@
+import { describe, expect, it } from "vitest";
+
+import { BaseError, StructuredError } from "../index.js";
+
+/** A subclass that contributes its own fields through the narrow hook. */
+class ConcurrencyConflictError extends StructuredError<
+  "CONCURRENCY_CONFLICT",
+  "CONFLICT",
+  Record<string, unknown>
+> {
+  public readonly expectedVersion: number;
+  public readonly actualVersion: number;
+
+  constructor(expectedVersion: number, actualVersion: number, cause?: unknown) {
+    super({
+      code: "CONCURRENCY_CONFLICT",
+      category: "CONFLICT",
+      retryable: true,
+      message: "stale version",
+      cause,
+    });
+    this.expectedVersion = expectedVersion;
+    this.actualVersion = actualVersion;
+  }
+
+  protected override buildOwnLogFields(): Record<string, unknown> {
+    return {
+      expectedVersion: this.expectedVersion,
+      actualVersion: this.actualVersion,
+    };
+  }
+}
+
+/** A hook whose value is byte-identical to one of the serializer's markers. */
+class MarkerLookalike extends BaseError<"MarkerLookalike"> {
+  protected override buildOwnLogFields(): Record<string, unknown> {
+    return { token: "[Unserializable cause]", plain: "SECRET" };
+  }
+}
+
+const causeOf = (error: BaseError<string>): Record<string, unknown> =>
+  error.toLogObject().cause as Record<string, unknown>;
+
+describe("a cause's own log fields", () => {
+  it("carries the fields of a subclass at the root, as it always did", () => {
+    const log = new ConcurrencyConflictError(3, 5).toLogObject();
+
+    expect(log.expectedVersion).toBe(3);
+    expect(log.actualVersion).toBe(5);
+  });
+
+  it("carries the fields of a subclass when another error logs it as its cause", () => {
+    const inner = new ConcurrencyConflictError(3, 5);
+    const outer = new BaseError("write failed", inner);
+
+    expect(causeOf(outer).expectedVersion).toBe(3);
+    expect(causeOf(outer).actualVersion).toBe(5);
+  });
+
+  it("carries the fields of a subclass nested two levels down", () => {
+    const inner = new ConcurrencyConflictError(3, 5);
+    const middle = new BaseError("adapter failed", inner);
+    const outer = new BaseError("request failed", middle);
+
+    const nested = causeOf(outer).cause as Record<string, unknown>;
+    expect(nested.expectedVersion).toBe(3);
+  });
+
+  it("carries the fields of a subclass held as an aggregate member", () => {
+    const member = new ConcurrencyConflictError(3, 5);
+    const aggregate = new AggregateError([member], "fan-out");
+    const outer = new BaseError("batch failed", aggregate);
+
+    const members = causeOf(outer).errors as Record<string, unknown>[];
+    expect(members[0]?.expectedVersion).toBe(3);
+  });
+
+  it("keeps the structured fields of a StructuredError cause unchanged", () => {
+    const inner = new StructuredError({
+      code: "DB_TIMEOUT",
+      category: "DATABASE",
+      retryable: true,
+      message: "timed out",
+      details: { query: "select 1" },
+    });
+    const cause = causeOf(new BaseError("outer", inner));
+
+    expect(cause.code).toBe("DB_TIMEOUT");
+    expect(cause.category).toBe("DATABASE");
+    expect(cause.retryable).toBe(true);
+    expect(cause.details).toEqual({ query: "select 1" });
+  });
+
+  it("reads no hook from a cause behind a Proxy, which has no reachable brand", () => {
+    const inner = new ConcurrencyConflictError(3, 5);
+    const proxied = new Proxy(inner, {});
+    const outer = new BaseError("outer", proxied);
+
+    expect(causeOf(outer).expectedVersion).toBeUndefined();
+    expect(causeOf(outer).message).toBe("stale version");
+  });
+
+  it("keeps the library's own envelope when a hook returns a colliding key", () => {
+    class Colliding extends BaseError<"Colliding"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return {
+          name: "forged",
+          message: "forged",
+          stack: "forged",
+          cause: { message: "SMUGGLED" },
+          errors: [{ message: "SMUGGLED" }],
+        };
+      }
+    }
+    const outer = new BaseError("outer", new Colliding("real message"));
+    const cause = causeOf(outer);
+
+    expect(cause.message).toBe("real message");
+    expect(cause.name).toBe("Colliding");
+    expect(JSON.stringify(outer)).not.toContain("SMUGGLED");
+  });
+
+  it("costs a cause its own fields, not its envelope, when the hook throws", () => {
+    class ThrowingHook extends BaseError<"ThrowingHook"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        throw new Error("hook threw");
+      }
+    }
+    const outer = new BaseError("outer", new ThrowingHook("inner message"));
+
+    expect(() => JSON.stringify(outer)).not.toThrow();
+    expect(causeOf(outer).message).toBe("inner message");
+  });
+
+  it("keeps a consumer's JSON.stringify total when a hook returns a bigint", () => {
+    class BigIntHook extends BaseError<"BigIntHook"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { size: 10n };
+      }
+    }
+    const outer = new BaseError("outer", new BigIntHook("inner"));
+
+    expect(() => JSON.stringify(outer)).not.toThrow();
+    expect(causeOf(outer).size).toBe("10");
+  });
+
+  it("decouples a hook's value, so a later mutation cannot change the log", () => {
+    const live: Record<string, unknown> = { host: "db.local" };
+    class LiveHook extends BaseError<"LiveHook"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { target: live };
+      }
+    }
+    const cause = causeOf(new BaseError("outer", new LiveHook("inner")));
+    live.host = "changed";
+
+    expect(cause.target).toEqual({ host: "db.local" });
+  });
+
+  it("masks a cause's own fields under the cause's own allow list", () => {
+    class SecretHook extends BaseError<"SecretHook"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { token: "SECRET-TOKEN" };
+      }
+    }
+    const inner = new SecretHook("inner").redactAllow([]);
+    const outer = new BaseError("outer", inner);
+
+    expect(JSON.stringify(outer)).not.toContain("SECRET-TOKEN");
+  });
+
+  class WideHook extends BaseError<"WideHook"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const fields: Record<string, unknown> = {};
+      for (let index = 0; index < 150; index++) {
+        fields[`f${index}`] = index;
+      }
+      return fields;
+    }
+  }
+
+  it("cuts a hook's fields at the width cap", () => {
+    const cause = causeOf(new BaseError("outer", new WideHook("inner")));
+
+    expect(cause.f0).toBe(0);
+    expect(cause.f99).toBe(99);
+    expect(cause.f100).toBeUndefined();
+  });
+
+  it("applies the same width cap at the root", () => {
+    const log = new WideHook("inner").toLogObject();
+
+    expect(log.f99).toBe(99);
+    expect(log.f100).toBeUndefined();
+  });
+
+  it("keeps a hook that sits exactly at the width cap whole", () => {
+    class ExactHook extends BaseError<"ExactHook"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        const fields: Record<string, unknown> = {};
+        for (let index = 0; index < 100; index++) {
+          fields[`f${index}`] = index;
+        }
+        return fields;
+      }
+    }
+    const log = new ExactHook("inner").toLogObject();
+
+    expect(log.f0).toBe(0);
+    expect(log.f99).toBe(99);
+  });
+
+  it("carries the hook's fields on the deepest node a long chain reaches", () => {
+    let chain: BaseError<string> = new ConcurrencyConflictError(3, 5);
+    for (let index = 0; index < 99; index++) {
+      chain = new BaseError(`hop ${index}`, chain);
+    }
+
+    let node = chain.toLogObject();
+    while (node.cause !== undefined && typeof node.cause === "object") {
+      node = node.cause as Record<string, unknown>;
+    }
+
+    expect(node.expectedVersion).toBe(3);
+  });
+});
+
+describe("a cause's own log fields across a fromJSON round trip", () => {
+  it("does not restore a subclass's own fields, which stays a documented loss", () => {
+    const inner = new ConcurrencyConflictError(3, 5);
+    const outer = new BaseError("write failed", inner);
+    const wire = JSON.parse(JSON.stringify(outer)) as Record<string, unknown>;
+
+    expect((wire.cause as Record<string, unknown>).expectedVersion).toBe(3);
+
+    const restored = StructuredError.fromJSON(wire);
+    const cause = (restored as unknown as { cause: Record<string, unknown> })
+      .cause;
+
+    expect(cause.expectedVersion).toBeUndefined();
+    expect(cause.code).toBe("CONCURRENCY_CONFLICT");
+  });
+});
+
+describe("the hook against the fields the library owns", () => {
+  class SubclassOfStructured extends StructuredError<
+    "CONFLICT",
+    "CONFLICT",
+    Record<string, unknown>
+  > {
+    constructor() {
+      super({
+        code: "CONFLICT",
+        category: "CONFLICT",
+        retryable: true,
+        message: "stale version",
+      });
+    }
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { expectedVersion: 3 };
+    }
+  }
+
+  class EnvelopeNamed extends BaseError<"EnvelopeNamed"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return {
+        category: "SECRET-CATEGORY",
+        retryable: "SECRET-RETRYABLE",
+        details: "SECRET-DETAILS",
+        timestamp: "SECRET-TIMESTAMP",
+        ordinary: "ordinary value",
+      };
+    }
+  }
+
+  it("keeps the structural fields a StructuredError subclass did not declare", () => {
+    const log = new SubclassOfStructured().toLogObject();
+
+    expect(log.code).toBe("CONFLICT");
+    expect(log.category).toBe("CONFLICT");
+    expect(log.retryable).toBe(true);
+    expect(log.expectedVersion).toBe(3);
+  });
+
+  it("reconstructs such a subclass by its code after a round trip", () => {
+    const wire = JSON.parse(
+      JSON.stringify(new SubclassOfStructured()),
+    ) as Record<string, unknown>;
+
+    expect(StructuredError.fromJSON(wire).code).toBe("CONFLICT");
+  });
+
+  it("masks a hook field that carries an envelope name under an allow list", () => {
+    const json = JSON.stringify(
+      new EnvelopeNamed("m").redactAllow([]).toLogObject(),
+    );
+
+    expect(json).not.toContain("SECRET-CATEGORY");
+    expect(json).not.toContain("SECRET-RETRYABLE");
+    expect(json).not.toContain("SECRET-DETAILS");
+    expect(json).not.toContain("SECRET-TIMESTAMP");
+  });
+
+  it("drops a hook field that carries an envelope name, keeping the library's", () => {
+    const log = new EnvelopeNamed("m").toLogObject();
+
+    expect(log.category).toBeUndefined();
+    expect(log.timestamp).toBeTypeOf("number");
+    expect(log.ordinary).toBe("ordinary value");
+  });
+
+  it("keeps a plain StructuredError's root key order", () => {
+    const log = new StructuredError({
+      code: "X",
+      category: "C",
+      retryable: false,
+      message: "m",
+    }).toLogObject();
+
+    expect(Object.keys(log)[0]).toBe("name");
+  });
+
+  it("keeps JSON.stringify total when a hook returns a bigint at the root", () => {
+    class BigIntRoot extends BaseError<"BigIntRoot"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { size: 10n };
+      }
+    }
+
+    expect(() => JSON.stringify(new BigIntRoot("m"))).not.toThrow();
+    expect(new BigIntRoot("m").toLogObject().size).toBe("10");
+  });
+
+  it("keeps JSON.stringify total when a hook returns a cycle at the root", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    class CycleRoot extends BaseError<"CycleRoot"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { graph: cyclic };
+      }
+    }
+
+    expect(() => JSON.stringify(new CycleRoot("m"))).not.toThrow();
+  });
+
+  it("keeps the envelope at the root when the hook throws", () => {
+    class ThrowingRoot extends BaseError<"ThrowingRoot"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        throw new Error("hook threw");
+      }
+    }
+
+    expect(new ThrowingRoot("m").toLogObject().message).toBe("m");
+  });
+
+  it("marks no loss for a cause behind a Proxy, which has no hook to lose", () => {
+    const inner = new ConcurrencyConflictError(3, 5);
+    const outer = new BaseError("outer", new Proxy(inner, {}));
+
+    expect(causeOf(outer).message).toBe("stale version");
+  });
+
+  it("does not let an oversized field mislabel its small siblings", () => {
+    const oversized: Record<string, unknown> = {};
+    for (let index = 0; index < 200_000; index++)
+      oversized[`k${index}`] = index;
+    class BigThenSmall extends BaseError<"BigThenSmall"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return { big: oversized, small: { a: 1 } };
+      }
+    }
+    const log = new BigThenSmall("m").toLogObject();
+
+    expect(log.big).toBe("[Max log size exceeded]");
+    expect(log.small).toBe("[Max log size exceeded]");
+  });
+});
+
+describe("the log object when a subclass hook fails", () => {
+  class HookThrows extends BaseError<"HookThrows"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      throw new Error("hook threw");
+    }
+  }
+
+  class Wide extends BaseError<"Wide"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 150; i++) f[`f${i}`] = i;
+      return f;
+    }
+  }
+
+  class ProtoHook extends BaseError<"ProtoHook"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f = Object.create(null) as Record<string, unknown>;
+      f["__proto__"] = { polluted: "YES" };
+      f.ok = 1;
+      return f;
+    }
+  }
+
+  it("keeps a cause whose hook throws, minus that cause's own fields", () => {
+    const outer = new BaseError("outer", new HookThrows("inner"));
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+
+    expect(cause.message).toBe("inner");
+  });
+
+  it("cuts at the width cap on a cause as it does at the root", () => {
+    const outer = new BaseError("outer", new Wide("inner"));
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+
+    expect(cause.f99).toBe(99);
+    expect(cause.f100).toBeUndefined();
+  });
+
+  it("keeps a __proto__ key from a hook away from a prototype setter", () => {
+    const log = new ProtoHook("m").toLogObject();
+    expect(Object.getPrototypeOf(log)).toBe(Object.prototype);
+    expect(log.ok).toBe(1);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+});
+
+describe("the log object against a hostile or malformed hook record", () => {
+  class HostileRecord extends BaseError<"HostileRecord"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return {
+        ok: 1,
+        get boom(): never {
+          throw new Error("getter threw");
+        },
+      };
+    }
+  }
+
+  class WideHook extends BaseError<"WideHook"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 150; i++) f[`f${i}`] = i;
+      return f;
+    }
+  }
+
+  class FunctionFields extends BaseError<"FunctionFields"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 100; i++) f[`fn${i}`] = () => i;
+      f.real = "KEEP-ME";
+      return f;
+    }
+  }
+
+  class NotARecord extends BaseError<"NotARecord"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return ["a", "b"] as unknown as Record<string, unknown>;
+    }
+  }
+
+  class Ordered extends BaseError<"Ordered"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+  }
+
+  it("costs the fields, not the log, when a getter in the record throws", () => {
+    const log = new HostileRecord("m").toLogObject();
+    expect(log.message).toBe("m");
+    expect(typeof log.stack).toBe("string");
+  });
+
+  it("costs the fields, not the node, when a cause record getter throws", () => {
+    const outer = new BaseError("outer", new HostileRecord("inner"));
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+    expect(cause.message).toBe("inner");
+  });
+
+  it("masks a hook value that merely looks like a serializer marker", () => {
+    const json = JSON.stringify(
+      new MarkerLookalike("m").redactAllow([]).toLogObject(),
+    );
+    expect(json).not.toContain("[Unserializable cause]");
+  });
+
+  it("keeps the hook's first fields at its width cap", () => {
+    const log = new WideHook("m").toLogObject();
+    expect(log.f100).toBeUndefined();
+    expect(log.f0).toBe(0);
+  });
+
+  it("spends the width cap only on fields that reach the log object", () => {
+    const log = new FunctionFields("m").toLogObject();
+    expect(log.real).toBe("KEEP-ME");
+  });
+
+  it("keeps the envelope when a hook returns something that is not a record", () => {
+    expect(new NotARecord("m").toLogObject().message).toBe("m");
+  });
+
+  it("keeps name first in the root log object of a subclass with a hook", () => {
+    expect(Object.keys(new Ordered("m").toLogObject())[0]).toBe("name");
+  });
+});
+
+describe("the hook against the library's own words and order", () => {
+  class CapThenFunctions extends BaseError<"CapThenFunctions"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      const f: Record<string, unknown> = {};
+      for (let i = 0; i < 100; i++) f[`real${i}`] = i;
+      for (let i = 0; i < 50; i++) f[`fn${i}`] = () => i;
+      return f;
+    }
+  }
+
+  class ReservedName extends BaseError<"ReservedName"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { details: "mine", ok: 1 };
+    }
+  }
+
+  class StructuredWithHook extends StructuredError<
+    "X",
+    "C",
+    Record<string, unknown>
+  > {
+    constructor() {
+      super({ code: "X", category: "C", retryable: false, message: "m" });
+    }
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { jobId: "J" };
+    }
+  }
+
+  class HookAndRedactorThrow extends BaseError<"HookAndRedactorThrow"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      throw new Error("hook threw");
+    }
+  }
+
+  it("masks a cause hook value that forges a serializer marker", () => {
+    const outer = new BaseError(
+      "outer",
+      new MarkerLookalike("inner"),
+    ).redactAllow([]);
+    const cause = outer.toLogObject().cause as Record<string, unknown>;
+    expect(cause.token).toBe("[REDACTED]");
+  });
+
+  it("spends the cap on real fields, not on the functions after them", () => {
+    expect(new CapThenFunctions("m").toLogObject().real99).toBe(99);
+  });
+
+  it("drops a reserved key and keeps the ordinary field beside it", () => {
+    const log = new ReservedName("m").toLogObject();
+    expect(log.ok).toBe(1);
+    expect(log.details).toBeUndefined();
+  });
+
+  it("puts the machine-readable code before the hook fields", () => {
+    const keys = Object.keys(new StructuredWithHook().toLogObject());
+    expect(keys.indexOf("code")).toBeLessThan(keys.indexOf("jobId"));
+  });
+
+  it("stays fail-closed when the hook and the redactor both fail", () => {
+    const err = new HookAndRedactorThrow("m").redactWith(() => {
+      throw new Error("redactor threw");
+    });
+    expect(err.toLogObject().message).toBe("[log redaction failed]");
+  });
+});
+
+describe("the log object against a throwing field getter", () => {
+  class OneHostileKey extends BaseError<"OneHostileKey"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return {
+        a: 1,
+        get boom(): never {
+          throw new Error("getter threw");
+        },
+        b: 2,
+      };
+    }
+  }
+
+  it("costs one hostile key its own entry and keeps its siblings", () => {
+    const log = new OneHostileKey("m").toLogObject();
+    expect(log.a).toBe(1);
+    expect(log.b).toBe(2);
+  });
+});
+
+describe("the log object against a malformed or oversized contribution", () => {
+  it("reads a bounded number of keys however long the record is", () => {
+    let reads = 0;
+    const counting: Record<string, unknown> = {};
+    for (let index = 0; index < 5000; index++) {
+      Object.defineProperty(counting, `fn${index}`, {
+        enumerable: true,
+        get: () => {
+          reads++;
+          return () => index;
+        },
+      });
+    }
+    class Counting extends BaseError<"Counting"> {
+      protected override buildOwnLogFields(): Record<string, unknown> {
+        return counting;
+      }
+    }
+
+    new Counting("m").toLogObject();
+
+    expect(reads).toBeLessThanOrEqual(1000);
+  });
+});
+
+describe("the log object against a hostile or self-referencing contribution", () => {
+  class SelfReferencing extends BaseError<"SelfReferencing"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { a: this, b: this };
+    }
+  }
+  class HoldsAnotherError extends BaseError<"HoldsAnotherError"> {
+    protected override buildOwnLogFields(): Record<string, unknown> {
+      return { related: new BaseError("other"), ok: 1 };
+    }
+  }
+
+  it("does not re-enter the log build when a hook returns the error itself", () => {
+    const size = JSON.stringify(new SelfReferencing("m")).length;
+    expect(size).toBeLessThan(5000);
+  });
+
+  it("drops an error a hook returns and keeps the fields beside it", () => {
+    const log = new HoldsAnotherError("m").toLogObject();
+    expect(log.ok).toBe(1);
+    expect(log.related).toBeUndefined();
+  });
+});

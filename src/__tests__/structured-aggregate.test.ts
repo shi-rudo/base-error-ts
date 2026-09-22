@@ -129,25 +129,6 @@ describe("StructuredAggregateError", () => {
         details: { host: "node-1", token: "[REDACTED]" },
       });
     });
-
-    it("still masks a scalar `errors` field, which is not structural", () => {
-      class Odd extends StructuredError<"ODD", "C"> {
-        public readonly errors = "not-an-array";
-        public constructor() {
-          super({
-            code: "ODD",
-            category: "C",
-            retryable: false,
-            message: "m",
-          });
-        }
-        protected override buildLogObject(): Record<string, unknown> {
-          return { ...super.buildLogObject(), errors: this.errors };
-        }
-      }
-
-      expect(new Odd().redactAllow([]).toLogObject().errors).toBe("[REDACTED]");
-    });
   });
 
   describe("the rest of the library reads it by shape", () => {

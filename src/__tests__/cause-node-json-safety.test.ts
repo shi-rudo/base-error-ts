@@ -51,7 +51,7 @@ describe("a native cause with a non-JSON extension field", () => {
     expect(causeNode(error).code).toBe("10");
   });
 
-  it("degrades a cyclic details object to the circular marker", () => {
+  it("preserves details around a circular reference", () => {
     const cyclic: Record<string, unknown> = { name: "cyc" };
     cyclic.self = cyclic;
     const cause = new Error("db") as Extended;
@@ -60,12 +60,13 @@ describe("a native cause with a non-JSON extension field", () => {
     const error = wrap(cause);
 
     expect(() => JSON.stringify(error)).not.toThrow();
-    expect(causeNode(error).details).toBe(
-      "[Circular Object with keys: [name, self]]",
-    );
+    expect(causeNode(error).details).toEqual({
+      name: "cyc",
+      self: "[Circular Object with keys: [name, self]]",
+    });
   });
 
-  it("degrades details whose toJSON throws to the circular marker", () => {
+  it("reports a serialization failure for details whose toJSON throws", () => {
     const cause = new Error("db") as Extended;
     cause.details = {
       id: 7,
@@ -77,20 +78,16 @@ describe("a native cause with a non-JSON extension field", () => {
     const error = wrap(cause);
 
     expect(() => JSON.stringify(error)).not.toThrow();
-    expect(causeNode(error).details).toBe(
-      "[Circular Object with keys: [id, toJSON]]",
-    );
+    expect(causeNode(error).details).toBe("[Unserializable value]");
   });
 
-  it("degrades a details graph past the node budget to the circular marker", () => {
+  it("marks a details graph past the shared log budget as a size cut", () => {
     const cause = new Error("db") as Extended;
     cause.details = makeDag(18);
 
     const error = wrap(cause);
 
-    expect(causeNode(error).details).toBe(
-      "[Circular Object with keys: [a, b]]",
-    );
+    expect(causeNode(error).details).toBe("[Max log size exceeded]");
   });
 
   it("keeps the node when details is a Proxy whose every trap throws", () => {
