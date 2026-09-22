@@ -217,6 +217,20 @@ describe("projected fields are curated copies", () => {
     expect(fieldReads).toBe(1);
   });
 
+  it("drops fields when the returned list reports a length that is not a count", () => {
+    const lyingList = new Proxy([{ field: "email", code: "required" }], {
+      get: (target, key, receiver): unknown =>
+        key === "length" ? -1 : Reflect.get(target, key, receiver),
+    });
+
+    const view = project(faultsCatalog(), {
+      code: "form.invalid",
+      faults: lyingList,
+    });
+
+    expect(view.fields).toBeUndefined();
+  });
+
   it("keeps each copied fault a plain object", () => {
     const view = project(faultsCatalog(), {
       code: "form.invalid",
