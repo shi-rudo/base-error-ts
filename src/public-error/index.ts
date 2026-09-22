@@ -29,6 +29,7 @@ export { project, projectWithDescriptor } from "./project.js";
 export { localize } from "./localize.js";
 export { toProblem, PROBLEM_DETAILS_JSON } from "./toProblem.js";
 export type {
+  OmittedHeader,
   OmittedMember,
   ProblemDetails,
   ProblemDetailsOutcome,

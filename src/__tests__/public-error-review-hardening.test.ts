@@ -87,6 +87,35 @@ describe("A5: a message-only view is not treated as localized", () => {
   });
 });
 
+describe("content-language carries only a language tag", () => {
+  it("drops a locale that is not a language tag and records the header", () => {
+    const view: LocalizedPublicError = {
+      code: "x",
+      message: "hi",
+      locale: "en\r\nX-Injected: 1",
+    };
+
+    const result = toProblem({ status: 400 }, view);
+
+    expect("content-language" in result.headers).toBe(false);
+    expect(result.outcome.omittedHeaders).toEqual(["content-language"]);
+    expect(result.body.title).toBe("hi");
+  });
+
+  it("keeps a valid language tag as given and records nothing", () => {
+    const view: LocalizedPublicError = {
+      code: "x",
+      message: "hi",
+      locale: "de-CH",
+    };
+
+    const result = toProblem({ status: 400 }, view);
+
+    expect(result.headers["content-language"]).toBe("de-CH");
+    expect(result.outcome.omittedHeaders).toEqual([]);
+  });
+});
+
 // ── A7: toProblem omits an empty fields array, matching project ──
 describe("A7: an empty fields array is omitted from the body", () => {
   it("does not emit fields: []", () => {

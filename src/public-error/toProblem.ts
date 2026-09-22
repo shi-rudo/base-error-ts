@@ -8,6 +8,7 @@ import {
   PROBLEM_DETAILS_JSON,
 } from "../utils/problem-validation.js";
 import { copyFieldFaults } from "./field-faults.js";
+import { canonicalizeLocale } from "./locale.js";
 import type { PublicErrorCatalog, Transport } from "./PublicErrorCatalog.js";
 import type { FieldFault, LocalizedPublicError, PublicError } from "./types.js";
 
@@ -15,6 +16,9 @@ export { PROBLEM_DETAILS_JSON };
 
 /** A dynamic body member dropped because it was not JSON-safe. */
 export type OmittedMember = "details" | "fields" | "extensions";
+
+/** A response header dropped because its value failed validation. */
+export type OmittedHeader = "content-language";
 
 /** Body members the adapter owns; an extension may not collide with them. */
 const RESERVED_BODY_FIELDS = [
@@ -119,6 +123,8 @@ export type ProblemDetails<
 export type ProblemDetailsOutcome = {
   /** Dynamic members dropped because they were not JSON-safe. */
   readonly omitted: readonly OmittedMember[];
+  /** Headers dropped because their value failed validation. */
+  readonly omittedHeaders: readonly OmittedHeader[];
 };
 
 /** Framework-neutral status, headers, body, and diagnostics. */
@@ -171,6 +177,11 @@ export function toProblem<
     : assertValidTransport(source);
   const localized = hasMessage(view) ? view : undefined;
   const omitted: OmittedMember[] = [];
+  const omittedHeaders: OmittedHeader[] = [];
+  const contentLanguage =
+    localized !== undefined
+      ? languageTagOrOmit(localized.locale, omittedHeaders)
+      : undefined;
 
   // A localized end-user message wins; otherwise the static developer-facing
   // title. RFC 9457 title is optional, so a client-localizing app that sets
@@ -217,12 +228,15 @@ export function toProblem<
 
   const headers = Object.freeze({
     "content-type": PROBLEM_DETAILS_JSON,
-    ...(localized !== undefined && { "content-language": localized.locale }),
+    ...(contentLanguage !== undefined && {
+      "content-language": contentLanguage,
+    }),
     ...(retryAfter !== undefined && { "retry-after": String(retryAfter) }),
   });
 
   const outcome: ProblemDetailsOutcome = Object.freeze({
     omitted: Object.freeze(omitted),
+    omittedHeaders: Object.freeze(omittedHeaders),
   });
 
   return Object.freeze({ status: transport.status, headers, body, outcome });
@@ -292,6 +306,21 @@ function safeExtensions(
     omitted.push("extensions");
     return undefined;
   }
+}
+
+/**
+ * The view's locale as a `content-language` value, or `undefined` when it is
+ * not a language tag. Only `localize()` guarantees a canonical tag. A
+ * hand-built view can carry any string, and the host rejects a header value
+ * with a line break inside the error middleware.
+ */
+function languageTagOrOmit(
+  locale: string,
+  omittedHeaders: OmittedHeader[],
+): string | undefined {
+  if (canonicalizeLocale(locale) !== undefined) return locale;
+  omittedHeaders.push("content-language");
+  return undefined;
 }
 
 function hasMessage<TDetails, TCode extends string>(

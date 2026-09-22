@@ -171,7 +171,10 @@ this boundary too.
 
 `title` is the localized `message` when the view was localized, otherwise the
 static developer-facing `title` from the descriptor, otherwise omitted (RFC 9457
-makes it optional). `content-language` is set only when the view was localized.
+makes it optional). `content-language` is set only when the view was localized
+and its `locale` is a BCP 47 language tag. A hand-built view with any other
+`locale` string keeps its `title`, loses the header, and records it in
+`outcome.omittedHeaders`.
 A `retryAfter` (from `projectRetryAfter` or the context) becomes both the
 `Retry-After` header and a body member.
 
