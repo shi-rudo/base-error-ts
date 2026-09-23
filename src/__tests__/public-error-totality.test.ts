@@ -6,8 +6,16 @@ import {
   definePublicErrors,
 } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
-import { toProblem } from "../public-error/toProblem.js";
-import type { FieldFault, PublicError } from "../public-error/types.js";
+import {
+  PROBLEM_DETAILS_JSON,
+  toProblem,
+  type ToProblemContext,
+} from "../public-error/toProblem.js";
+import type {
+  FieldFault,
+  LocalizedPublicError,
+  PublicError,
+} from "../public-error/types.js";
 import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 
 type TimeoutLike = { kind: "timeout" };
@@ -273,5 +281,269 @@ describe("projected fields are curated copies", () => {
 
     const view = project(catalog, { code: "ext.detail" });
     expect(view.details).toBe(source);
+  });
+});
+
+/** A getter that returns `first` on its first read and `later` afterwards. */
+function flipping(first: unknown, later: unknown): PropertyDescriptor {
+  let reads = 0;
+  return { get: () => (++reads === 1 ? first : later), enumerable: true };
+}
+
+function throwingGetter(): PropertyDescriptor {
+  return {
+    get: (): never => {
+      throw new Error("hostile getter");
+    },
+    enumerable: true,
+  };
+}
+
+describe("toProblem: a hand-built view with getters", () => {
+  it("drops a details member whose getter throws and records it", () => {
+    const view = Object.defineProperties(
+      { code: "x" },
+      { details: throwingGetter() },
+    ) as PublicError;
+
+    const result = toProblem({ status: 400 }, view);
+
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["details"]);
+  });
+
+  it("drops a fields member whose getter throws and records it", () => {
+    const view = Object.defineProperties(
+      { code: "x" },
+      { fields: throwingGetter() },
+    ) as PublicError;
+
+    const result = toProblem({ status: 400 }, view);
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+
+  it("treats the other members as absent when their getters throw", () => {
+    const view = Object.defineProperties(
+      { code: "x" },
+      {
+        category: throwingGetter(),
+        retryable: throwingGetter(),
+        retryAfter: throwingGetter(),
+        message: throwingGetter(),
+        locale: throwingGetter(),
+      },
+    ) as LocalizedPublicError;
+
+    const result = toProblem({ status: 400, title: "Static." }, view);
+
+    expect(result.body).toEqual({ title: "Static.", status: 400, code: "x" });
+    expect(result.headers).toEqual({ "content-type": PROBLEM_DETAILS_JSON });
+  });
+
+  it("throws the documented error when the code getter throws", () => {
+    const view = Object.defineProperties({}, { code: throwingGetter() });
+
+    expect(() => toProblem({ status: 400 }, view as PublicError)).toThrow(
+      "toProblem: view.code must be a non-empty string.",
+    );
+  });
+
+  it("writes the view values that it validated", () => {
+    const view = Object.defineProperties(
+      {},
+      {
+        code: flipping("x", { forged: true }),
+        category: flipping("temporary", { forged: true }),
+        retryable: flipping(true, "yes"),
+        retryAfter: flipping(5, "5\r\nSet-Cookie: session=1"),
+        message: flipping("Try again later.", 42),
+        locale: flipping("en", "en\r\nX-Injected: 1"),
+      },
+    ) as LocalizedPublicError;
+
+    const result = toProblem({ status: 429 }, view);
+
+    expect(result.body).toEqual({
+      title: "Try again later.",
+      status: 429,
+      code: "x",
+      category: "temporary",
+      retryable: true,
+      retryAfter: 5,
+    });
+    expect(result.headers).toEqual({
+      "content-type": PROBLEM_DETAILS_JSON,
+      "content-language": "en",
+      "retry-after": "5",
+    });
+  });
+
+  it("drops context members whose getters throw and records extensions", () => {
+    const context = Object.defineProperties(
+      {},
+      {
+        extensions: throwingGetter(),
+        detail: throwingGetter(),
+        instance: throwingGetter(),
+      },
+    ) as ToProblemContext;
+
+    const result = toProblem({ status: 400 }, { code: "x" }, context);
+
+    expect(result.body).toEqual({ status: 400, code: "x" });
+    expect(result.outcome.omitted).toEqual(["extensions"]);
+  });
+
+  it("reads the members of a callable view and context", () => {
+    const view = Object.assign(() => undefined, { code: "x" });
+    const context = Object.assign(() => undefined, {
+      detail: "The lock clears soon.",
+      extensions: { traceId: "t-1" },
+    });
+
+    const result = toProblem(
+      { status: 400 },
+      view as unknown as PublicError,
+      context as unknown as ToProblemContext,
+    );
+
+    expect(result.body).toEqual({
+      status: 400,
+      detail: "The lock clears soon.",
+      code: "x",
+      traceId: "t-1",
+    });
+  });
+
+  it("writes the context values that it validated", () => {
+    const context = Object.defineProperties(
+      {},
+      {
+        detail: flipping("The lock clears soon.", { forged: true }),
+        instance: flipping("urn:trace:1", { forged: true }),
+        retryAfter: flipping(5, "5\r\nSet-Cookie: session=1"),
+      },
+    ) as ToProblemContext;
+
+    const result = toProblem({ status: 429 }, { code: "x" }, context);
+
+    expect(result.body).toEqual({
+      status: 429,
+      detail: "The lock clears soon.",
+      instance: "urn:trace:1",
+      code: "x",
+      retryAfter: 5,
+    });
+    expect(result.headers["retry-after"]).toBe("5");
+  });
+});
+
+describe("toProblem: a hand-built transport and extensions", () => {
+  it("writes the transport status and type that it validated", () => {
+    const transport = Object.defineProperties(
+      {},
+      {
+        status: flipping(400, "oops"),
+        type: flipping("https://errors.example/bad-input", { forged: true }),
+      },
+    ) as { status: number; type: string };
+
+    const result = toProblem(transport, { code: "x" });
+
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      type: "https://errors.example/bad-input",
+      status: 400,
+      code: "x",
+    });
+  });
+
+  it("throws the documented error when the transport status getter throws", () => {
+    const transport = Object.defineProperties({}, { status: throwingGetter() });
+
+    expect(() =>
+      toProblem(transport as { status: number }, { code: "x" }),
+    ).toThrow(/invalid transport status/);
+  });
+
+  it("throws the documented error when the transport type getter throws", () => {
+    const transport = Object.defineProperties(
+      { status: 400 },
+      { type: throwingGetter() },
+    );
+
+    expect(() =>
+      toProblem(transport as { status: number }, { code: "x" }),
+    ).toThrow(/invalid transport type/);
+  });
+
+  it("validates the transport that a catalog returns", () => {
+    const lookalike = { transportFor: () => ({ status: "oops", type: 7 }) };
+
+    expect(() =>
+      toProblem(lookalike as unknown as PublicErrorCatalog, { code: "x" }),
+    ).toThrow(/invalid transport status/);
+  });
+
+  it("reads the transportFor member of a catalog once", () => {
+    const lookalike = Object.defineProperties(
+      {},
+      {
+        transportFor: flipping(
+          () => ({ status: 404, type: "https://errors.example/missing" }),
+          undefined,
+        ),
+      },
+    );
+
+    const result = toProblem(lookalike as PublicErrorCatalog, { code: "x" });
+
+    expect(result.status).toBe(404);
+    expect(result.body.type).toBe("https://errors.example/missing");
+  });
+
+  it("drops extensions with more keys than the data-node budget before reading a value", () => {
+    const target: Record<string, number> = {};
+    for (let index = 0; index <= MAX_DATA_NODES; index++) {
+      target[`k${index}`] = index;
+    }
+    let valueReads = 0;
+    const extensions = new Proxy(target, {
+      get: (inner, key, receiver): unknown => {
+        valueReads++;
+        return Reflect.get(inner, key, receiver) as unknown;
+      },
+    });
+
+    const result = toProblem({ status: 400 }, { code: "x" }, {
+      extensions,
+    } as ToProblemContext);
+
+    expect(result.outcome.omitted).toEqual(["extensions"]);
+    expect(valueReads).toBe(0);
+  });
+
+  it("copies only the extension keys that it checked", () => {
+    const target = JSON.parse(
+      '{"traceId":"t-1","type":"https://evil.example","__proto__":"https://evil.example"}',
+    ) as object;
+    let listings = 0;
+    const extensions = new Proxy(target, {
+      ownKeys: (inner) =>
+        ++listings === 1 ? ["traceId"] : Reflect.ownKeys(inner),
+    });
+
+    const result = toProblem({ status: 400 }, { code: "x" }, {
+      extensions,
+    } as ToProblemContext);
+
+    expect(Reflect.ownKeys(result.body).sort()).toEqual([
+      "code",
+      "status",
+      "traceId",
+    ]);
+    expect(result.outcome.omitted).toEqual([]);
   });
 });

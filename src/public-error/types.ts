@@ -71,8 +71,8 @@ export type PublicErrorDescriptor<
   /**
    * Optional per-occurrence retry delay in whole seconds, read from the error
    * (e.g. a rate limiter's window). Surfaced as the view's `retryAfter` and, by
-   * `toProblem`, as the HTTP `Retry-After` header. A non-integer/negative result
-   * or a throw is ignored.
+   * `toProblem`, as the HTTP `Retry-After` header. `project` ignores a result
+   * that is not a non-negative safe integer, and a throw.
    */
   readonly projectRetryAfter?: (error: TError) => number | undefined;
   /**

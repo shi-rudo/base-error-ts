@@ -1,5 +1,5 @@
-import { cloneJsonSafe } from "../errors/json-safe.js";
-import { readProperty } from "../errors/guarded-read.js";
+import { cloneJsonSafe, isPlainObject } from "../errors/json-safe.js";
+import { readMember, readMemberResult } from "../errors/guarded-read.js";
 import type { JsonSafeValue } from "../errors/json-safe.js";
 import {
   isHttpStatusCode,
@@ -7,6 +7,7 @@ import {
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
 } from "../utils/problem-validation.js";
+import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 import { copyFieldFaults } from "./field-faults.js";
 import { canonicalizeLocale } from "./locale.js";
 import type { PublicErrorCatalog, Transport } from "./PublicErrorCatalog.js";
@@ -84,8 +85,8 @@ export type ToProblemContext<
   readonly detail?: string;
   /**
    * Retry delay in whole seconds, overriding the view's `retryAfter`. For a
-   * boundary that knows the value (a rate limiter) rather than the error. A
-   * non-integer/negative value is ignored.
+   * boundary that knows the value (a rate limiter) rather than the error.
+   * `toProblem` ignores a value that is not a non-negative safe integer.
    */
   readonly retryAfter?: number;
   /** Additional JSON-safe top-level body members, keyed by a non-reserved name. */
@@ -166,6 +167,11 @@ export type ProblemDetailsResult<
  * levels. `fields` keeps exactly `{ field, code }` per fault. `toProblem` drops
  * it the same way when the value is not a list, or when a fault has no string
  * `field` and `code`.
+ *
+ * `toProblem` reads each member of the view, the context and the transport
+ * once, and it lists the extension keys once. The value that passes a check is
+ * the value that it writes. A getter that throws counts as an invalid value. It
+ * validates a transport from a catalog like an explicit one.
  */
 export function toProblem<
   TDetails,
@@ -176,36 +182,59 @@ export function toProblem<
   view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
   context?: ToProblemContext<TExtensions>,
 ): ProblemDetailsResult<TDetails, TCode, TExtensions> {
-  if (!isNonEmptyString(view.code)) {
+  const code = readMember(view, "code");
+  if (!isNonEmptyString(code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
-  const transport = isCatalog(source)
-    ? transportOrThrow(source, view.code)
-    : assertValidTransport(source);
-  const localized = hasMessage(view) ? view : undefined;
+  const transportFor = readMember(source, "transportFor");
+  const transport = validatedTransport(
+    typeof transportFor === "function"
+      ? registeredTransport(
+          transportFor as (publicCode: string) => unknown,
+          source,
+          code,
+        )
+      : source,
+  );
   const omitted: OmittedMember[] = [];
   const omittedHeaders: OmittedHeader[] = [];
-  const contentLanguage =
-    localized !== undefined
-      ? languageTagOrOmit(localized.locale, omittedHeaders)
-      : undefined;
+
+  // Both are required: a message without a locale would emit
+  // `content-language: undefined`, so a partial view stays unlocalized.
+  const message = readMember(view, "message");
+  const locale = readMember(view, "locale");
+  const localized = typeof message === "string" && typeof locale === "string";
+  const contentLanguage = localized
+    ? languageTagOrOmit(locale, omittedHeaders)
+    : undefined;
 
   // A localized end-user message wins; otherwise the static developer-facing
   // title. RFC 9457 title is optional, so a client-localizing app that sets
   // neither simply emits no title.
-  const title = localized !== undefined ? localized.message : transport.title;
+  const title = localized ? message : transport.title;
 
   // Each candidate is validated independently, so an invalid boundary override
   // falls back to the view's still-valid hint rather than dropping both.
-  const retryAfter = isRetryAfterSeconds(context?.retryAfter)
-    ? context.retryAfter
-    : isRetryAfterSeconds(view.retryAfter)
-      ? view.retryAfter
+  const contextRetryAfter = readMember(context, "retryAfter");
+  const viewRetryAfter = readMember(view, "retryAfter");
+  const retryAfter = isRetryAfterSeconds(contextRetryAfter)
+    ? contextRetryAfter
+    : isRetryAfterSeconds(viewRetryAfter)
+      ? viewRetryAfter
       : undefined;
 
-  const details = jsonSafeOrOmit(view.details, "details", omitted);
-  const fields = safeFields(view.fields, omitted);
-  const extensions = safeExtensions(context?.extensions, omitted);
+  const details = wireMember(view, "details", omitted, cloneJsonSafe);
+  const fields = wireMember(view, "fields", omitted, fieldsForWire);
+  const extensions = wireMember(
+    context,
+    "extensions",
+    omitted,
+    extensionsForWire,
+  );
+  const detail = readMember(context, "detail");
+  const instance = readMember(context, "instance");
+  const category = readMember(view, "category");
+  const retryable = readMember(view, "retryable");
 
   const body = Object.freeze(
     Object.assign(Object.create(null) as Record<string, unknown>, {
@@ -220,13 +249,11 @@ export function toProblem<
       // The TS type already constrains these to strings; the runtime guard keeps
       // an untyped caller (an `as` cast, a value from JSON.parse) from writing a
       // non-string, non-RFC-9457 value straight onto the wire body.
-      ...(typeof context?.detail === "string" && { detail: context.detail }),
-      ...(typeof context?.instance === "string" && {
-        instance: context.instance,
-      }),
-      code: view.code,
-      ...(typeof view.category === "string" && { category: view.category }),
-      ...(typeof view.retryable === "boolean" && { retryable: view.retryable }),
+      ...(typeof detail === "string" && { detail }),
+      ...(typeof instance === "string" && { instance }),
+      code,
+      ...(typeof category === "string" && { category }),
+      ...(typeof retryable === "boolean" && { retryable }),
       ...(retryAfter !== undefined && { retryAfter }),
       ...(fields !== undefined && { fields }),
       ...(details !== undefined && { details }),
@@ -251,18 +278,29 @@ export function toProblem<
   return Object.freeze({ status: transport.status, headers, body, outcome });
 }
 
-function jsonSafeOrOmit(
-  value: unknown,
+/**
+ * One dynamic member on its way to the wire, read once. `toWire` returns the
+ * wire value, `undefined` for no member, or throws for an invalid value. A
+ * getter that throws and a value that `toWire` rejects both drop the member,
+ * and `outcome.omitted` records it once.
+ */
+function wireMember<T>(
+  holder: unknown,
   member: OmittedMember,
   omitted: OmittedMember[],
-): unknown {
-  if (value === undefined) return undefined;
-  try {
-    return cloneJsonSafe(value);
-  } catch {
-    omitted.push(member);
-    return undefined;
+  toWire: (value: unknown) => T | undefined,
+): T | undefined {
+  const read = readMemberResult(holder, member);
+  if (read.readable && read.value === undefined) return undefined;
+  if (read.readable) {
+    try {
+      return toWire(read.value);
+    } catch {
+      // A rejected value is recorded like an unreadable one.
+    }
   }
+  omitted.push(member);
+  return undefined;
 }
 
 /**
@@ -270,16 +308,9 @@ function jsonSafeOrOmit(
  * and both are strings, so the member needs no JSON-safe clone. Another key of
  * a fault cannot cost the list. An empty list is not a member, as in project().
  */
-function safeFields(
-  raw: unknown,
-  omitted: OmittedMember[],
-): readonly FieldFault[] | undefined {
-  if (raw === undefined) return undefined;
-  const faults = copyFieldFaults(raw);
-  if (faults === undefined) {
-    omitted.push("fields");
-    return undefined;
-  }
+function fieldsForWire(value: unknown): readonly FieldFault[] | undefined {
+  const faults = copyFieldFaults(value);
+  if (faults === undefined) throw new Error("fields is not a list of faults");
   return faults.length > 0 ? faults : undefined;
 }
 
@@ -288,32 +319,26 @@ function safeFields(
  * are all strings, none forbidden ({@link FORBIDDEN_EXTENSION_KEYS}), and whose
  * values are all JSON-safe. The whole set is dropped (recorded in
  * `outcome.omitted`) if any key collides or any value is not JSON-safe, so a bad
- * set never partially leaks onto the body. Keys are screened on the raw input
- * before the clone, so a `__proto__` own key (e.g. from `JSON.parse`) is rejected
- * rather than serialized; `cloneJsonSafe` only carries those screened string keys
- * through, so no second key check is needed.
+ * set never partially leaks onto the body. One listing of the own keys decides
+ * both the check and the copy. A Proxy that lists other keys later cannot add a
+ * forbidden key, such as a `__proto__` own key from `JSON.parse`, after the check.
+ * The clone cannot hold more than {@link MAX_DATA_NODES} values, so a set with
+ * more keys is dropped before its values are read.
  */
-function safeExtensions(
-  raw: unknown,
-  omitted: OmittedMember[],
-): Record<string, JsonSafeValue> | undefined {
-  if (raw === undefined) return undefined;
-  try {
-    if (
-      typeof raw !== "object" ||
-      raw === null ||
-      Array.isArray(raw) ||
-      Reflect.ownKeys(raw).some(
-        (key) => typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key),
-      )
-    ) {
+function extensionsForWire(value: unknown): Record<string, JsonSafeValue> {
+  if (!isPlainObject(value)) throw new Error("invalid extensions");
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > MAX_DATA_NODES) throw new Error("too many extensions");
+  const checked = Object.create(null) as Record<string, unknown>;
+  for (const key of keys) {
+    if (typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key)) {
       throw new Error("invalid extensions");
     }
-    return cloneJsonSafe(raw) as Record<string, JsonSafeValue>;
-  } catch {
-    omitted.push("extensions");
-    return undefined;
+    if (Object.prototype.propertyIsEnumerable.call(value, key)) {
+      checked[key] = value[key];
+    }
   }
+  return cloneJsonSafe(checked) as Record<string, JsonSafeValue>;
 }
 
 /**
@@ -331,40 +356,20 @@ function languageTagOrOmit(
   return undefined;
 }
 
-function hasMessage<TDetails, TCode extends string>(
-  view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
-): view is LocalizedPublicError<TDetails, TCode> {
-  const partial = view as Partial<LocalizedPublicError<TDetails, TCode>>;
-  // Both are required: a message without a locale would emit
-  // `content-language: undefined`, so a partial view stays unlocalized.
-  return (
-    typeof partial.message === "string" && typeof partial.locale === "string"
-  );
-}
-
 /**
- * Tells a catalog from an explicit transport by shape: a catalog answers
- * `transportFor`, a transport is a plain `{ status, type?, title? }`. Not
- * `instanceof`, which is realm-bound and fails for a catalog built by a second
- * copy of this package (CJS next to ESM, two versions in one tree).
+ * The transport that a catalog registered for `publicCode`. A catalog is
+ * recognized by shape, a callable `transportFor`, not by `instanceof`, which
+ * fails for a catalog built by a second copy of this package. A code that the
+ * catalog does not know is a foreign or stale view. The fallback status would
+ * pair the view's code with a mismatched status, so the caller must pass an
+ * explicit transport instead.
  */
-function isCatalog(
-  source: PublicErrorCatalog | Transport,
-): source is PublicErrorCatalog {
-  return typeof readProperty(source, "transportFor") === "function";
-}
-
-/**
- * Resolves the transport for a registered public code, or throws. A code the
- * catalog does not know is a foreign/stale view; emitting the fallback status
- * would pair the view's real code with a mismatched status, so the caller must
- * use an explicit transport instead.
- */
-function transportOrThrow(
-  catalog: PublicErrorCatalog,
+function registeredTransport(
+  transportFor: (publicCode: string) => unknown,
+  catalog: unknown,
   publicCode: string,
-): Transport {
-  const transport = catalog.transportFor(publicCode);
+): unknown {
+  const transport: unknown = Reflect.apply(transportFor, catalog, [publicCode]);
   if (transport === undefined) {
     throw new Error(
       `toProblem: public code "${publicCode}" is not registered in this catalog; pass an explicit transport for a foreign view.`,
@@ -374,20 +379,29 @@ function transportOrThrow(
 }
 
 /**
- * Validates an explicit (catalog-free) transport at the boundary, since it
- * bypasses the catalog's registration-time checks. Returns it unchanged on
- * success.
+ * Validates a transport at the boundary. An explicit transport bypasses the
+ * registration-time checks of a catalog, and a catalog look-alike can return
+ * anything. Returns a copy of the values that it checked, each read once. A
+ * `type` getter that throws counts as an invalid `type`.
  */
-function assertValidTransport(transport: Transport): Transport {
-  if (!isHttpStatusCode(transport.status)) {
+function validatedTransport(transport: unknown): Transport {
+  const status = readMember(transport, "status");
+  if (!isHttpStatusCode(status)) {
     throw new Error(
-      `toProblem: invalid transport status; expected an integer in [100, 599], got ${String(transport.status)}.`,
+      `toProblem: invalid transport status; expected an integer in [100, 599], got ${String(status)}.`,
     );
   }
-  if (transport.type !== undefined && !isNonEmptyString(transport.type)) {
+  const typeRead = readMemberResult(transport, "type");
+  const type = typeRead.readable ? typeRead.value : null;
+  if (type !== undefined && !isNonEmptyString(type)) {
     throw new Error(
       "toProblem: invalid transport type; expected a non-empty string.",
     );
   }
-  return transport;
+  const title = readMember(transport, "title");
+  return {
+    status,
+    ...(type !== undefined && { type }),
+    ...(typeof title === "string" && { title }),
+  };
 }

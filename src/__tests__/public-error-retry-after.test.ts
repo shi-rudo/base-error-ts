@@ -31,6 +31,15 @@ describe("project: retryAfter rides on the view as a neutral hint", () => {
     expect(view.retryable).toBe(true);
   });
 
+  it("drops a projected retryAfter that has no plain digit form", () => {
+    const view = project(rateLimited(), {
+      code: "rate.limited",
+      retryAfterSeconds: 1e21,
+    });
+
+    expect(view).not.toHaveProperty("retryAfter");
+  });
+
   it("guards a non-integer/negative/throwing projector to no hint, no throw", () => {
     const catalog = rateLimited();
     expect(
@@ -98,6 +107,15 @@ describe("toProblem: materializes retryAfter into header and body", () => {
     const result = toProblem({ status: 429 }, view, { retryAfter: 12 });
     expect(result.headers["retry-after"]).toBe("12");
     expect(result.body.retryAfter).toBe(12);
+  });
+
+  it("drops a retryAfter that has no plain digit form", () => {
+    const view: PublicError = { code: "x", retryAfter: 1e21 };
+
+    const result = toProblem({ status: 429 }, view);
+
+    expect("retry-after" in result.headers).toBe(false);
+    expect("retryAfter" in result.body).toBe(false);
   });
 
   it("ignores an invalid context retryAfter", () => {

@@ -23,7 +23,11 @@ export function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
 
-/** True for a non-negative integer, the delay-seconds form of `Retry-After`. */
+/**
+ * True for a non-negative safe integer, the delay-seconds form of `Retry-After`.
+ * RFC 9110 requires plain digits, and `String()` writes a number of 1e21 or more
+ * in exponent notation. A safe integer always prints as its exact digits.
+ */
 export function isRetryAfterSeconds(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
