@@ -43,6 +43,7 @@ import {
   MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
+  MAX_LOG_NODES,
   MAX_REDACTION_READS,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
@@ -83,6 +84,14 @@ const REDACTION_DEPTH_MARKER = "[Max redaction depth exceeded]";
 const REDACTION_CYCLE_MARKER = "[Circular reference]";
 const REDACTION_SIZE_MARKER = "[Max redaction size exceeded]";
 const REDACTION_READ_CUT = Symbol("redaction.read.cut");
+
+/** One `toString` render: the objects on it, its line budget, and its output. */
+type ChainRender = {
+  readonly seen: Set<unknown>;
+  readonly budget: LogBuildContext["budget"];
+  readonly lines: string[];
+  cut: boolean;
+};
 
 type RedactionStackHeader = {
   target: Record<string, unknown>;
@@ -1070,20 +1079,52 @@ export class BaseError<T extends string> extends Error {
    * A plain-object cause carries its data fields in the log object. This
    * render follows its `cause` links and ends them at the cap. Honors a deny-listed
    * `"message"` (see {@link redact}) per BaseError in the chain; other
-   * redaction shapes rewrite only the log object.
+   * redaction shapes rewrite only the log object. The render writes at most
+   * 100,000 lines, and the next line is the size marker of the log object.
    */
   public override toString(): string {
-    return BaseError.#renderChain(this, new Set<unknown>(), "", 0, 0).join(
-      "\n",
-    );
+    const render: ChainRender = {
+      seen: new Set<unknown>(),
+      budget: { nodes: 0, limit: MAX_LOG_NODES },
+      lines: [],
+      cut: false,
+    };
+    BaseError.#renderChain(this, render, "", "", 0, 0);
+    return render.lines.join("\n");
   }
 
   /**
-   * Renders one cause chain into lines. A node that carries aggregate members
-   * gets a count on its own line, and each member is rendered as its own
-   * chain, indented one level deeper. The `seen` set is shared across the whole
-   * tree, so a cycle or a repeated branch ends with a marker instead of
-   * recursing.
+   * Writes one line for one unit of the render budget. The first line past
+   * the budget becomes the size marker, and the render stops at every level.
+   * Returns whether the line was written.
+   */
+  /*#__PURE__*/ static #renderLine(
+    render: ChainRender,
+    prefix: string,
+    text: string,
+  ): boolean {
+    if (render.budget.nodes >= render.budget.limit) {
+      render.lines.push(`${prefix}${MAX_LOG_SIZE_MARKER}`);
+      render.cut = true;
+      return false;
+    }
+    render.budget.nodes++;
+    render.lines.push(`${prefix}${text}`);
+    return true;
+  }
+
+  /**
+   * Renders one cause chain into `render.lines`. A node that carries aggregate
+   * members gets a count on its own line, and each member is rendered as its
+   * own chain, indented one level deeper. `head` prefixes the first line: a
+   * member starts with a bullet at the indent of its parent, and its own chain
+   * keeps the deeper `indent`. The `seen` set is shared across the whole tree,
+   * so a cycle or a repeated branch ends with a marker instead of recursing.
+   *
+   * `seen` bounds only repeated objects. The line budget bounds a tree that
+   * grows while the render reads it, for example through a getter that returns
+   * fresh members. Every line costs one unit of {@link MAX_LOG_NODES}, markers
+   * and holes included, so the budget bounds the output.
    *
    * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
    * at which its `cause` lands. The two differ only at the root: the log
@@ -1091,76 +1132,78 @@ export class BaseError<T extends string> extends Error {
    * depth 1, and every cause node puts both one level below itself. Both
    * counters mirror {@link BaseError.#serializeCauseNode}, so for a chain of
    * error objects `toString()` shows the same nodes as `toLogObject()` and
-   * cuts at the same marker. For a plain-object cause, the serializer also
-   * copies its data fields and cuts deep containers without a marker.
+   * cuts at the same marker. Near the budget the two differ: the log also
+   * spends its allowance on data, and the render spends one unit per line.
+   * For a plain-object cause, the serializer also copies its data fields and
+   * cuts deep containers without a marker.
    */
   /*#__PURE__*/ static #renderChain(
     start: unknown,
-    seen: Set<unknown>,
+    render: ChainRender,
+    head: string,
     indent: string,
     depth: number,
     causeDepth: number,
-  ): string[] {
+  ): void {
     // Aggregates recurse, and a string render must never throw: bound the
     // nesting with the same cap the log serializer uses, so a pathologically
     // deep tree degrades to a marker instead of overflowing the host stack
     // (which is far smaller on an edge isolate than on Node).
     if (depth >= MAX_CAUSE_DEPTH) {
-      return [`${indent}${MAX_CAUSE_DEPTH_MARKER}`];
+      BaseError.#renderLine(render, head, MAX_CAUSE_DEPTH_MARKER);
+      return;
     }
-    const lines: string[] = [];
     let current: unknown = start;
+    let prefix = head;
     let nodeDepth = depth;
     let nextCauseDepth = causeDepth;
-    let first = true;
 
     while (current != null) {
-      const prefix = first ? indent : `${indent}Caused by: `;
-      first = false;
-
       // A primitive has no links and cannot close a cycle, so it renders
       // each time it repeats.
       if (typeof current === "object") {
-        if (seen.has(current)) {
-          lines.push(`${prefix}${CIRCULAR_CAUSE_CHAIN_MARKER}`);
-          break;
+        if (render.seen.has(current)) {
+          BaseError.#renderLine(render, prefix, CIRCULAR_CAUSE_CHAIN_MARKER);
+          return;
         }
-        seen.add(current);
+        render.seen.add(current);
       }
 
       const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
       const total = aggregate === undefined ? 0 : aggregate.total;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
-      lines.push(`${prefix}${BaseError.#renderNode(current)}${suffix}`);
+      const node = `${BaseError.#renderNode(current)}${suffix}`;
+      if (!BaseError.#renderLine(render, prefix, node)) return;
 
       const shown = aggregate === undefined ? [] : aggregate.members;
       for (const member of shown) {
         // A hole reads as undefined. It keeps its slot, as in the log, so the
         // count on the node line matches the list.
         if (member === undefined || member === null) {
-          lines.push(`${indent}  - ${String(member)}`);
+          if (!BaseError.#renderLine(render, `${indent}  - `, String(member))) {
+            return;
+          }
           continue;
         }
-        const rendered = BaseError.#renderChain(
+        BaseError.#renderChain(
           member,
-          seen,
+          render,
+          `${indent}  - `,
           `${indent}    `,
           nodeDepth + 1,
           nodeDepth + 2,
         );
-        // The head of a member is bulleted at the parent's indent; its own
-        // chain keeps the deeper indent, so the tree stays readable. Appended
-        // one by one: a spread of an unbounded chain exceeds the argument
-        // limit, which is another way for a string render to throw.
-        for (let index = 0; index < rendered.length; index++) {
-          const line = rendered[index] as string;
-          lines.push(index === 0 ? `${indent}  - ${line.trimStart()}` : line);
-        }
+        if (render.cut) return;
       }
-      if (total > shown.length) {
-        lines.push(
-          `${indent}  ${moreAggregatedErrorsMarker(total - shown.length)}`,
-        );
+      if (
+        total > shown.length &&
+        !BaseError.#renderLine(
+          render,
+          `${indent}  `,
+          moreAggregatedErrorsMarker(total - shown.length),
+        )
+      ) {
+        return;
       }
 
       // The linear spine is bounded the way the serializer bounds it: a cause
@@ -1169,15 +1212,18 @@ export class BaseError<T extends string> extends Error {
       // are read, so the length of the chain never sets the cost.
       const cause = readProperty(current, "cause");
       if (cause != null && nextCauseDepth >= MAX_CAUSE_DEPTH) {
-        lines.push(`${indent}Caused by: ${MAX_CAUSE_DEPTH_MARKER}`);
-        break;
+        BaseError.#renderLine(
+          render,
+          `${indent}Caused by: `,
+          MAX_CAUSE_DEPTH_MARKER,
+        );
+        return;
       }
       current = cause;
+      prefix = `${indent}Caused by: `;
       nodeDepth = nextCauseDepth;
       nextCauseDepth++;
     }
-
-    return lines;
   }
 
   /**

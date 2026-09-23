@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { BaseError } from "../index.js";
+import { MAX_LOG_SIZE_MARKER } from "../errors/serializer-markers.js";
+import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
 const DEPTH_MARKER = "[Max cause depth exceeded]";
 
@@ -163,6 +165,140 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
 
     expect(error.toString()).toBe(
       "[BaseError] root\nCaused by: Error: level 1\nCaused by: Error: bottom",
+    );
+  });
+});
+
+/**
+ * An error-shaped node whose members are built on each read, 100, 100 and 11
+ * wide per level: 120,101 nodes, more than one log build may visit.
+ */
+function growingTree(level = 0): object {
+  const widths = [100, 100, 11];
+  return {
+    name: "Node",
+    message: `level ${level}`,
+    get errors(): unknown[] {
+      const width = widths[level] ?? 0;
+      return Array.from({ length: width }, () => growingTree(level + 1));
+    },
+  };
+}
+
+/** Like `growingTree`, but each node on the last level holds 10 holes: 100,000 in total. */
+function holeyTree(level = 0): object {
+  return {
+    name: "Node",
+    message: `level ${level}`,
+    get errors(): unknown[] {
+      return level < 2
+        ? Array.from({ length: 100 }, () => holeyTree(level + 1))
+        : new Array<unknown>(10);
+    },
+  };
+}
+
+/** A `cause` spine of `length` error-shaped plain objects that ends in `tail`. */
+function spineEndingIn(length: number, tail: object): object {
+  let chain = tail;
+  for (let hop = 1; hop < length; hop++) {
+    chain = { name: "Error", message: `hop ${hop}`, cause: chain };
+  }
+  return chain;
+}
+
+/**
+ * An error-shaped tree that renders exactly `lines` lines: a leaf renders one
+ * line, and a node renders its own line plus the lines of its members.
+ */
+function treeOfLines(lines: number): object {
+  if (lines === 1) return { name: "Node", message: "leaf" };
+  const members: object[] = [];
+  let rest = lines - 1;
+  const share = Math.ceil(rest / 100);
+  while (rest > 0) {
+    const size = Math.min(share, rest);
+    members.push(treeOfLines(size));
+    rest -= size;
+  }
+  return { name: "Node", message: `${lines} lines`, errors: members };
+}
+
+function sizeMarkerLines(lines: readonly string[]): string[] {
+  return lines.filter((line) => line.endsWith(MAX_LOG_SIZE_MARKER));
+}
+
+describe("toString() node budget", () => {
+  it("stops a tree that outgrows the log node budget with the size marker", () => {
+    const error = new BaseError("root", growingTree());
+
+    const lines = error.toString().split("\n");
+
+    expect(lines.length).toBeLessThan(MAX_LOG_NODES + 10);
+    expect(lines.some((line) => line.endsWith(MAX_LOG_SIZE_MARKER))).toBe(true);
+    expect(JSON.stringify(error.toLogObject())).toContain(MAX_LOG_SIZE_MARKER);
+  });
+
+  it("writes the size marker once, as the last line", () => {
+    const tree = Object.assign(growingTree(), {
+      cause: new Error("after the members"),
+    });
+
+    const lines = new BaseError("root", tree).toString().split("\n");
+
+    expect(sizeMarkerLines(lines)).toHaveLength(1);
+    expect(lines[lines.length - 1]).toMatch(/- \[Max log size exceeded\]$/);
+  });
+
+  it("charges a depth marker, so members at the depth cap cannot outgrow the budget", () => {
+    const error = new BaseError("root", spineEndingIn(98, growingTree()));
+
+    const lines = error.toString().split("\n");
+
+    expect(lines.length).toBeLessThanOrEqual(MAX_LOG_NODES + 1);
+    expect(sizeMarkerLines(lines)).toHaveLength(1);
+  });
+
+  it("charges a hole, so holes cannot outgrow the budget", () => {
+    const lines = new BaseError("root", holeyTree()).toString().split("\n");
+
+    expect(lines.length).toBeLessThanOrEqual(MAX_LOG_NODES + 1);
+    expect(sizeMarkerLines(lines)).toHaveLength(1);
+  });
+
+  it("writes the size marker in place of a count line that does not fit", () => {
+    const members = [
+      treeOfLines(MAX_LOG_NODES - 101),
+      ...Array.from(
+        { length: 149 },
+        (_, index) => new Error(`member ${index}`),
+      ),
+    ];
+    const wide = Object.assign(new AggregateError(members, "wide"), {
+      cause: new Error("after the count line"),
+    });
+
+    const lines = new BaseError("root", wide).toString().split("\n");
+
+    expect(lines).toHaveLength(MAX_LOG_NODES + 1);
+    expect(lines[lines.length - 1]).toBe(`  ${MAX_LOG_SIZE_MARKER}`);
+  });
+
+  it("writes no count of further members after the budget ran out", () => {
+    const members = [
+      growingTree(),
+      ...Array.from(
+        { length: 149 },
+        (_, index) => new Error(`member ${index}`),
+      ),
+    ];
+
+    const lines = new BaseError("root", new AggregateError(members, "wide"))
+      .toString()
+      .split("\n");
+
+    expect(lines.some((line) => line.includes("more aggregated errors"))).toBe(
+      false,
     );
   });
 });
