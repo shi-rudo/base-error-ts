@@ -380,6 +380,27 @@ describe("toProblem: a hand-built view with getters", () => {
     });
   });
 
+  it("reads the members of a callable view and context", () => {
+    const view = Object.assign(() => undefined, { code: "x" });
+    const context = Object.assign(() => undefined, {
+      detail: "The lock clears soon.",
+      extensions: { traceId: "t-1" },
+    });
+
+    const result = toProblem(
+      { status: 400 },
+      view as unknown as PublicError,
+      context as unknown as ToProblemContext,
+    );
+
+    expect(result.body).toEqual({
+      status: 400,
+      detail: "The lock clears soon.",
+      code: "x",
+      traceId: "t-1",
+    });
+  });
+
   it("writes the context values that it validated", () => {
     const context = Object.defineProperties(
       {},

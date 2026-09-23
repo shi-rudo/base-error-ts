@@ -180,7 +180,7 @@ export function toProblem<
   // Each member is read once through the guarded reader: the value that
   // passes a check is the value that is written, and a throwing getter
   // cannot replace the error that the middleware handles.
-  const code = readProperty(view, "code");
+  const code = readMember(view, "code");
   if (!isNonEmptyString(code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
@@ -192,8 +192,8 @@ export function toProblem<
 
   // Both are required: a message without a locale would emit
   // `content-language: undefined`, so a partial view stays unlocalized.
-  const message = readProperty(view, "message");
-  const locale = readProperty(view, "locale");
+  const message = readMember(view, "message");
+  const locale = readMember(view, "locale");
   const localized = typeof message === "string" && typeof locale === "string";
   const contentLanguage = localized
     ? languageTagOrOmit(locale, omittedHeaders)
@@ -206,8 +206,8 @@ export function toProblem<
 
   // Each candidate is validated independently, so an invalid boundary override
   // falls back to the view's still-valid hint rather than dropping both.
-  const contextRetryAfter = readProperty(context, "retryAfter");
-  const viewRetryAfter = readProperty(view, "retryAfter");
+  const contextRetryAfter = readMember(context, "retryAfter");
+  const viewRetryAfter = readMember(view, "retryAfter");
   const retryAfter = isRetryAfterSeconds(contextRetryAfter)
     ? contextRetryAfter
     : isRetryAfterSeconds(viewRetryAfter)
@@ -227,10 +227,10 @@ export function toProblem<
     readRecordedMember(context, "extensions", omitted),
     omitted,
   );
-  const detail = readProperty(context, "detail");
-  const instance = readProperty(context, "instance");
-  const category = readProperty(view, "category");
-  const retryable = readProperty(view, "retryable");
+  const detail = readMember(context, "detail");
+  const instance = readMember(context, "instance");
+  const category = readMember(view, "category");
+  const retryable = readMember(view, "retryable");
 
   const body = Object.freeze(
     Object.assign(Object.create(null) as Record<string, unknown>, {
@@ -353,6 +353,20 @@ function languageTagOrOmit(
   return undefined;
 }
 
+/** A view, a context or a transport can be a plain object or a function. */
+function isMemberHolder(value: unknown): value is object {
+  return (
+    (typeof value === "object" && value !== null) || typeof value === "function"
+  );
+}
+
+/** One guarded read of a member. A getter that throws reads as absent. */
+function readMember(holder: unknown, key: string): unknown {
+  if (!isMemberHolder(holder)) return undefined;
+  const read = readPropertyResult(holder, key);
+  return read.readable ? read.value : undefined;
+}
+
 /**
  * One guarded read of a dynamic member. A getter that throws drops the member
  * and records it, like a value that fails the wire checks.
@@ -362,7 +376,7 @@ function readRecordedMember(
   member: OmittedMember,
   omitted: OmittedMember[],
 ): unknown {
-  if (typeof holder !== "object" || holder === null) return undefined;
+  if (!isMemberHolder(holder)) return undefined;
   const read = readPropertyResult(holder, member);
   if (read.readable) return read.value;
   omitted.push(member);
@@ -406,19 +420,19 @@ function transportOrThrow(
  * that it checked, each read once.
  */
 function validatedTransport(transport: Transport): Transport {
-  const status = readProperty(transport, "status");
+  const status = readMember(transport, "status");
   if (!isHttpStatusCode(status)) {
     throw new Error(
       `toProblem: invalid transport status; expected an integer in [100, 599], got ${String(status)}.`,
     );
   }
-  const type = readProperty(transport, "type");
+  const type = readMember(transport, "type");
   if (type !== undefined && !isNonEmptyString(type)) {
     throw new Error(
       "toProblem: invalid transport type; expected a non-empty string.",
     );
   }
-  const title = readProperty(transport, "title");
+  const title = readMember(transport, "title");
   return {
     status,
     ...(type !== undefined && { type }),
