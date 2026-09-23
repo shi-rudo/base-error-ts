@@ -172,6 +172,12 @@ same way when the value is not a list, or when a fault has no string `field`
 and `code`. It also drops a non-string `category` and a
 non-boolean `retryable`.
 
+`toProblem` reads each member of the view and the context once, so the value
+that passes a check is the value that it writes. A getter that throws counts as
+an invalid value: `toProblem` records a dropped `details`, `fields` or
+`extensions` in `outcome.omitted` and leaves the other members out. A `code`
+getter that throws gets the same error as a missing `code`.
+
 `title` is the localized `message` when the view was localized, otherwise the
 static developer-facing `title` from the descriptor, otherwise omitted (RFC 9457
 makes it optional). `content-language` is set only when the view was localized

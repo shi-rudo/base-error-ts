@@ -1,5 +1,5 @@
 import { cloneJsonSafe } from "../errors/json-safe.js";
-import { readProperty } from "../errors/guarded-read.js";
+import { readProperty, readPropertyResult } from "../errors/guarded-read.js";
 import type { JsonSafeValue } from "../errors/json-safe.js";
 import {
   isHttpStatusCode,
@@ -176,36 +176,61 @@ export function toProblem<
   view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
   context?: ToProblemContext<TExtensions>,
 ): ProblemDetailsResult<TDetails, TCode, TExtensions> {
-  if (!isNonEmptyString(view.code)) {
+  // A view or a context can be hand-built, and this runs in error middleware.
+  // Each member is read once through the guarded reader: the value that
+  // passes a check is the value that is written, and a throwing getter
+  // cannot replace the error that the middleware handles.
+  const code = readProperty(view, "code");
+  if (!isNonEmptyString(code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
   const transport = isCatalog(source)
-    ? transportOrThrow(source, view.code)
+    ? transportOrThrow(source, code)
     : assertValidTransport(source);
-  const localized = hasMessage(view) ? view : undefined;
   const omitted: OmittedMember[] = [];
   const omittedHeaders: OmittedHeader[] = [];
-  const contentLanguage =
-    localized !== undefined
-      ? languageTagOrOmit(localized.locale, omittedHeaders)
-      : undefined;
+
+  // Both are required: a message without a locale would emit
+  // `content-language: undefined`, so a partial view stays unlocalized.
+  const message = readProperty(view, "message");
+  const locale = readProperty(view, "locale");
+  const localized = typeof message === "string" && typeof locale === "string";
+  const contentLanguage = localized
+    ? languageTagOrOmit(locale, omittedHeaders)
+    : undefined;
 
   // A localized end-user message wins; otherwise the static developer-facing
   // title. RFC 9457 title is optional, so a client-localizing app that sets
   // neither simply emits no title.
-  const title = localized !== undefined ? localized.message : transport.title;
+  const title = localized ? message : transport.title;
 
   // Each candidate is validated independently, so an invalid boundary override
   // falls back to the view's still-valid hint rather than dropping both.
-  const retryAfter = isRetryAfterSeconds(context?.retryAfter)
-    ? context.retryAfter
-    : isRetryAfterSeconds(view.retryAfter)
-      ? view.retryAfter
+  const contextRetryAfter = readProperty(context, "retryAfter");
+  const viewRetryAfter = readProperty(view, "retryAfter");
+  const retryAfter = isRetryAfterSeconds(contextRetryAfter)
+    ? contextRetryAfter
+    : isRetryAfterSeconds(viewRetryAfter)
+      ? viewRetryAfter
       : undefined;
 
-  const details = jsonSafeOrOmit(view.details, "details", omitted);
-  const fields = safeFields(view.fields, omitted);
-  const extensions = safeExtensions(context?.extensions, omitted);
+  const details = jsonSafeOrOmit(
+    readRecordedMember(view, "details", omitted),
+    "details",
+    omitted,
+  );
+  const fields = safeFields(
+    readRecordedMember(view, "fields", omitted),
+    omitted,
+  );
+  const extensions = safeExtensions(
+    readRecordedMember(context, "extensions", omitted),
+    omitted,
+  );
+  const detail = readProperty(context, "detail");
+  const instance = readProperty(context, "instance");
+  const category = readProperty(view, "category");
+  const retryable = readProperty(view, "retryable");
 
   const body = Object.freeze(
     Object.assign(Object.create(null) as Record<string, unknown>, {
@@ -220,13 +245,11 @@ export function toProblem<
       // The TS type already constrains these to strings; the runtime guard keeps
       // an untyped caller (an `as` cast, a value from JSON.parse) from writing a
       // non-string, non-RFC-9457 value straight onto the wire body.
-      ...(typeof context?.detail === "string" && { detail: context.detail }),
-      ...(typeof context?.instance === "string" && {
-        instance: context.instance,
-      }),
-      code: view.code,
-      ...(typeof view.category === "string" && { category: view.category }),
-      ...(typeof view.retryable === "boolean" && { retryable: view.retryable }),
+      ...(typeof detail === "string" && { detail }),
+      ...(typeof instance === "string" && { instance }),
+      code,
+      ...(typeof category === "string" && { category }),
+      ...(typeof retryable === "boolean" && { retryable }),
       ...(retryAfter !== undefined && { retryAfter }),
       ...(fields !== undefined && { fields }),
       ...(details !== undefined && { details }),
@@ -331,15 +354,20 @@ function languageTagOrOmit(
   return undefined;
 }
 
-function hasMessage<TDetails, TCode extends string>(
-  view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
-): view is LocalizedPublicError<TDetails, TCode> {
-  const partial = view as Partial<LocalizedPublicError<TDetails, TCode>>;
-  // Both are required: a message without a locale would emit
-  // `content-language: undefined`, so a partial view stays unlocalized.
-  return (
-    typeof partial.message === "string" && typeof partial.locale === "string"
-  );
+/**
+ * One guarded read of a dynamic member. A getter that throws drops the member
+ * and records it, like a value that fails the wire checks.
+ */
+function readRecordedMember(
+  holder: unknown,
+  member: OmittedMember,
+  omitted: OmittedMember[],
+): unknown {
+  if (typeof holder !== "object" || holder === null) return undefined;
+  const read = readPropertyResult(holder, member);
+  if (read.readable) return read.value;
+  omitted.push(member);
+  return undefined;
 }
 
 /**

@@ -6,8 +6,16 @@ import {
   definePublicErrors,
 } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
-import { toProblem } from "../public-error/toProblem.js";
-import type { FieldFault, PublicError } from "../public-error/types.js";
+import {
+  PROBLEM_DETAILS_JSON,
+  toProblem,
+  type ToProblemContext,
+} from "../public-error/toProblem.js";
+import type {
+  FieldFault,
+  LocalizedPublicError,
+  PublicError,
+} from "../public-error/types.js";
 import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 
 type TimeoutLike = { kind: "timeout" };
@@ -273,5 +281,124 @@ describe("projected fields are curated copies", () => {
 
     const view = project(catalog, { code: "ext.detail" });
     expect(view.details).toBe(source);
+  });
+});
+
+/** A getter that returns `first` on its first read and `later` afterwards. */
+function flipping(first: unknown, later: unknown): PropertyDescriptor {
+  let reads = 0;
+  return { get: () => (++reads === 1 ? first : later), enumerable: true };
+}
+
+function throwingGetter(): PropertyDescriptor {
+  return {
+    get: (): never => {
+      throw new Error("hostile getter");
+    },
+    enumerable: true,
+  };
+}
+
+describe("toProblem: a hand-built view with getters", () => {
+  it("drops a details member whose getter throws and records it", () => {
+    const view = Object.defineProperties(
+      { code: "x" },
+      { details: throwingGetter() },
+    ) as PublicError;
+
+    const result = toProblem({ status: 400 }, view);
+
+    expect("details" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["details"]);
+  });
+
+  it("drops a fields member whose getter throws and records it", () => {
+    const view = Object.defineProperties(
+      { code: "x" },
+      { fields: throwingGetter() },
+    ) as PublicError;
+
+    const result = toProblem({ status: 400 }, view);
+
+    expect("fields" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual(["fields"]);
+  });
+
+  it("treats the other members as absent when their getters throw", () => {
+    const view = Object.defineProperties(
+      { code: "x" },
+      {
+        category: throwingGetter(),
+        retryable: throwingGetter(),
+        retryAfter: throwingGetter(),
+        message: throwingGetter(),
+        locale: throwingGetter(),
+      },
+    ) as LocalizedPublicError;
+
+    const result = toProblem({ status: 400, title: "Static." }, view);
+
+    expect(result.body).toEqual({ title: "Static.", status: 400, code: "x" });
+    expect(result.headers).toEqual({ "content-type": PROBLEM_DETAILS_JSON });
+  });
+
+  it("throws the documented error when the code getter throws", () => {
+    const view = Object.defineProperties({}, { code: throwingGetter() });
+
+    expect(() => toProblem({ status: 400 }, view as PublicError)).toThrow(
+      "toProblem: view.code must be a non-empty string.",
+    );
+  });
+
+  it("writes the view values that it validated", () => {
+    const view = Object.defineProperties(
+      {},
+      {
+        code: flipping("x", { forged: true }),
+        category: flipping("temporary", { forged: true }),
+        retryable: flipping(true, "yes"),
+        retryAfter: flipping(5, "5\r\nSet-Cookie: session=1"),
+        message: flipping("Try again later.", 42),
+        locale: flipping("en", "en\r\nX-Injected: 1"),
+      },
+    ) as LocalizedPublicError;
+
+    const result = toProblem({ status: 429 }, view);
+
+    expect(result.body).toEqual({
+      title: "Try again later.",
+      status: 429,
+      code: "x",
+      category: "temporary",
+      retryable: true,
+      retryAfter: 5,
+    });
+    expect(result.headers).toEqual({
+      "content-type": PROBLEM_DETAILS_JSON,
+      "content-language": "en",
+      "retry-after": "5",
+    });
+  });
+
+  it("writes the context values that it validated", () => {
+    const context = Object.defineProperties(
+      {},
+      {
+        detail: flipping("The lock clears soon.", { forged: true }),
+        instance: flipping("urn:trace:1", { forged: true }),
+        retryAfter: flipping(5, "5\r\nSet-Cookie: session=1"),
+      },
+    ) as ToProblemContext;
+
+    const result = toProblem({ status: 429 }, { code: "x" }, context);
+
+    expect(result.body).toEqual({
+      status: 429,
+      detail: "The lock clears soon.",
+      instance: "urn:trace:1",
+      code: "x",
+      retryAfter: 5,
+    });
+    expect(result.headers["retry-after"]).toBe("5");
   });
 });
