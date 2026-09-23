@@ -43,6 +43,7 @@ import {
   MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
+  MAX_LOG_NODES,
   MAX_REDACTION_READS,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
@@ -1070,12 +1071,18 @@ export class BaseError<T extends string> extends Error {
    * A plain-object cause carries its data fields in the log object. This
    * render follows its `cause` links and ends them at the cap. Honors a deny-listed
    * `"message"` (see {@link redact}) per BaseError in the chain; other
-   * redaction shapes rewrite only the log object.
+   * redaction shapes rewrite only the log object. After 100,000 rendered
+   * nodes, the render ends with the size marker of the log object.
    */
   public override toString(): string {
-    return BaseError.#renderChain(this, new Set<unknown>(), "", 0, 0).join(
-      "\n",
-    );
+    return BaseError.#renderChain(
+      this,
+      new Set<unknown>(),
+      { nodes: 0 },
+      "",
+      0,
+      0,
+    ).join("\n");
   }
 
   /**
@@ -1083,7 +1090,10 @@ export class BaseError<T extends string> extends Error {
    * gets a count on its own line, and each member is rendered as its own
    * chain, indented one level deeper. The `seen` set is shared across the whole
    * tree, so a cycle or a repeated branch ends with a marker instead of
-   * recursing.
+   * recursing. `seen` bounds only repeated objects. A tree that grows as it is
+   * read (a getter that returns fresh members) is bounded by `budget`: each
+   * rendered node costs one of the {@link MAX_LOG_NODES} that a log build may
+   * visit, and at exhaustion the render ends with the log's size marker.
    *
    * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
    * at which its `cause` lands. The two differ only at the root: the log
@@ -1097,6 +1107,7 @@ export class BaseError<T extends string> extends Error {
   /*#__PURE__*/ static #renderChain(
     start: unknown,
     seen: Set<unknown>,
+    budget: { nodes: number },
     indent: string,
     depth: number,
     causeDepth: number,
@@ -1118,6 +1129,12 @@ export class BaseError<T extends string> extends Error {
       const prefix = first ? indent : `${indent}Caused by: `;
       first = false;
 
+      if (budget.nodes >= MAX_LOG_NODES) {
+        lines.push(`${prefix}${MAX_LOG_SIZE_MARKER}`);
+        break;
+      }
+      budget.nodes++;
+
       // A primitive has no links and cannot close a cycle, so it renders
       // each time it repeats.
       if (typeof current === "object") {
@@ -1135,6 +1152,10 @@ export class BaseError<T extends string> extends Error {
 
       const shown = aggregate === undefined ? [] : aggregate.members;
       for (const member of shown) {
+        if (budget.nodes >= MAX_LOG_NODES) {
+          lines.push(`${indent}  ${MAX_LOG_SIZE_MARKER}`);
+          break;
+        }
         // A hole reads as undefined. It keeps its slot, as in the log, so the
         // count on the node line matches the list.
         if (member === undefined || member === null) {
@@ -1144,6 +1165,7 @@ export class BaseError<T extends string> extends Error {
         const rendered = BaseError.#renderChain(
           member,
           seen,
+          budget,
           `${indent}    `,
           nodeDepth + 1,
           nodeDepth + 2,

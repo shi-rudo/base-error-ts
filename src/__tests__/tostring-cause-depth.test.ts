@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { BaseError } from "../index.js";
+import { MAX_LOG_SIZE_MARKER } from "../errors/serializer-markers.js";
+import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
 const DEPTH_MARKER = "[Max cause depth exceeded]";
 
@@ -164,5 +166,43 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
     expect(error.toString()).toBe(
       "[BaseError] root\nCaused by: Error: level 1\nCaused by: Error: bottom",
     );
+  });
+});
+
+/**
+ * An error-shaped node whose members are built on each read, 100, 100 and 11
+ * wide per level: 120,101 nodes, more than one log build may visit.
+ */
+function growingTree(level = 0): object {
+  const widths = [100, 100, 11];
+  return {
+    name: "Node",
+    message: `level ${level}`,
+    get errors(): unknown[] {
+      const width = widths[level] ?? 0;
+      return Array.from({ length: width }, () => growingTree(level + 1));
+    },
+  };
+}
+
+describe("toString() node budget", () => {
+  it("stops a tree that outgrows the log node budget with the size marker", () => {
+    const error = new BaseError("root", growingTree());
+
+    const lines = error.toString().split("\n");
+
+    expect(lines.length).toBeLessThan(MAX_LOG_NODES + 10);
+    expect(lines.some((line) => line.endsWith(MAX_LOG_SIZE_MARKER))).toBe(true);
+    expect(JSON.stringify(error.toLogObject())).toContain(MAX_LOG_SIZE_MARKER);
+  });
+
+  it("ends the cause spine with the size marker once the members used up the budget", () => {
+    const tree = Object.assign(growingTree(), {
+      cause: new Error("after the members"),
+    });
+
+    const lines = new BaseError("root", tree).toString().split("\n");
+
+    expect(lines[lines.length - 1]).toBe(`Caused by: ${MAX_LOG_SIZE_MARKER}`);
   });
 });
