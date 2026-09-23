@@ -1,4 +1,4 @@
-import { cloneJsonSafe } from "../errors/json-safe.js";
+import { cloneJsonSafe, isPlainObject } from "../errors/json-safe.js";
 import { readProperty, readPropertyResult } from "../errors/guarded-read.js";
 import type { JsonSafeValue } from "../errors/json-safe.js";
 import {
@@ -186,7 +186,7 @@ export function toProblem<
   }
   const transport = isCatalog(source)
     ? transportOrThrow(source, code)
-    : assertValidTransport(source);
+    : validatedTransport(source);
   const omitted: OmittedMember[] = [];
   const omittedHeaders: OmittedHeader[] = [];
 
@@ -311,10 +311,9 @@ function safeFields(
  * are all strings, none forbidden ({@link FORBIDDEN_EXTENSION_KEYS}), and whose
  * values are all JSON-safe. The whole set is dropped (recorded in
  * `outcome.omitted`) if any key collides or any value is not JSON-safe, so a bad
- * set never partially leaks onto the body. Keys are screened on the raw input
- * before the clone, so a `__proto__` own key (e.g. from `JSON.parse`) is rejected
- * rather than serialized; `cloneJsonSafe` only carries those screened string keys
- * through, so no second key check is needed.
+ * set never partially leaks onto the body. One listing of the own keys decides
+ * both the check and the copy. A Proxy that lists other keys later cannot add a
+ * forbidden key, such as a `__proto__` own key from `JSON.parse`, after the check.
  */
 function safeExtensions(
   raw: unknown,
@@ -322,17 +321,17 @@ function safeExtensions(
 ): Record<string, JsonSafeValue> | undefined {
   if (raw === undefined) return undefined;
   try {
-    if (
-      typeof raw !== "object" ||
-      raw === null ||
-      Array.isArray(raw) ||
-      Reflect.ownKeys(raw).some(
-        (key) => typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key),
-      )
-    ) {
-      throw new Error("invalid extensions");
+    if (!isPlainObject(raw)) throw new Error("invalid extensions");
+    const checked = Object.create(null) as Record<string, unknown>;
+    for (const key of Reflect.ownKeys(raw)) {
+      if (typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key)) {
+        throw new Error("invalid extensions");
+      }
+      if (Object.prototype.propertyIsEnumerable.call(raw, key)) {
+        checked[key] = raw[key];
+      }
     }
-    return cloneJsonSafe(raw) as Record<string, JsonSafeValue>;
+    return cloneJsonSafe(checked) as Record<string, JsonSafeValue>;
   } catch {
     omitted.push("extensions");
     return undefined;
@@ -403,19 +402,26 @@ function transportOrThrow(
 
 /**
  * Validates an explicit (catalog-free) transport at the boundary, since it
- * bypasses the catalog's registration-time checks. Returns it unchanged on
- * success.
+ * bypasses the catalog's registration-time checks. Returns a copy of the values
+ * that it checked, each read once.
  */
-function assertValidTransport(transport: Transport): Transport {
-  if (!isHttpStatusCode(transport.status)) {
+function validatedTransport(transport: Transport): Transport {
+  const status = readProperty(transport, "status");
+  if (!isHttpStatusCode(status)) {
     throw new Error(
-      `toProblem: invalid transport status; expected an integer in [100, 599], got ${String(transport.status)}.`,
+      `toProblem: invalid transport status; expected an integer in [100, 599], got ${String(status)}.`,
     );
   }
-  if (transport.type !== undefined && !isNonEmptyString(transport.type)) {
+  const type = readProperty(transport, "type");
+  if (type !== undefined && !isNonEmptyString(type)) {
     throw new Error(
       "toProblem: invalid transport type; expected a non-empty string.",
     );
   }
-  return transport;
+  const title = readProperty(transport, "title");
+  return {
+    status,
+    ...(type !== undefined && { type }),
+    ...(typeof title === "string" && { title }),
+  };
 }

@@ -402,3 +402,54 @@ describe("toProblem: a hand-built view with getters", () => {
     expect(result.headers["retry-after"]).toBe("5");
   });
 });
+
+describe("toProblem: a hand-built transport and extensions", () => {
+  it("writes the transport status and type that it validated", () => {
+    const transport = Object.defineProperties(
+      {},
+      {
+        status: flipping(400, "oops"),
+        type: flipping("https://errors.example/bad-input", { forged: true }),
+      },
+    ) as { status: number; type: string };
+
+    const result = toProblem(transport, { code: "x" });
+
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      type: "https://errors.example/bad-input",
+      status: 400,
+      code: "x",
+    });
+  });
+
+  it("throws the documented error when the transport status getter throws", () => {
+    const transport = Object.defineProperties({}, { status: throwingGetter() });
+
+    expect(() =>
+      toProblem(transport as { status: number }, { code: "x" }),
+    ).toThrow(/invalid transport status/);
+  });
+
+  it("copies only the extension keys that it checked", () => {
+    const target = JSON.parse(
+      '{"traceId":"t-1","type":"https://evil.example","__proto__":"https://evil.example"}',
+    ) as object;
+    let listings = 0;
+    const extensions = new Proxy(target, {
+      ownKeys: (inner) =>
+        ++listings === 1 ? ["traceId"] : Reflect.ownKeys(inner),
+    });
+
+    const result = toProblem({ status: 400 }, { code: "x" }, {
+      extensions,
+    } as ToProblemContext);
+
+    expect(Reflect.ownKeys(result.body).sort()).toEqual([
+      "code",
+      "status",
+      "traceId",
+    ]);
+    expect(result.outcome.omitted).toEqual([]);
+  });
+});
