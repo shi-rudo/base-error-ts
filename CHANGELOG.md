@@ -28,7 +28,7 @@
 
 ### Fixed
 
-- **`toString` has a node budget.** It had a depth cap, a width cap and a `seen` set, but the `seen` set bounds only repeated objects. An `errors` getter that returns fresh members on each read grows the tree while it renders. With 2 new members per level, the tree doubles at each of the 100 levels, so the render could not end in practice. `toString` runs in `catch` paths. It now counts each rendered node against the 100,000 nodes that a log build may visit. At exhaustion it ends with `[Max log size exceeded]`, the marker of the log object.
+- **`toString` has a node budget.** It had a depth cap, a width cap and a `seen` set, but the `seen` set bounds only repeated objects. An `errors` getter that returns fresh members on each read grows the tree while it renders. With 2 new members per level, the tree doubles at each of the 100 levels, so the render could not end in practice. `toString` runs in `catch` paths. It now spends one unit per rendered line from the 100,000 visits that a log build may make, markers and holes included. The next line is `[Max log size exceeded]`, the marker of the log object, and the render stops there.
 
 - **`fromJSON` keeps the fields of a foreign cause.** A cause without the full structured shape came back as a plain `Error` with `code` only. An aggregate cause kept neither `code` nor `retryable`, and neither branch kept `details`. A retryable cause lost that flag in the round trip, so `someChainRetryable` turned from `true` to `false`. Both branches now restore each of `code`, `category`, `retryable` and `details` that the serializer wrote, `details` as a shallow copy. The result still does not read as a `StructuredError`, because these branches never hold all three decision fields with valid types.
 

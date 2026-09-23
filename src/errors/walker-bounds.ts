@@ -94,7 +94,8 @@ export const MAX_REDACTION_READS: number = MAX_DATA_NODES;
  * consumer callbacks get independent allowances.
  * One final key per active hook can carry a size cut. Fixed scalar envelope
  * fields survive exhaustion without further expansion. Matches the data cap.
- * `toString` counts each rendered node against the same number.
+ * `toString` spends one unit of the same number per rendered line. Its public
+ * JSDoc repeats the number as the consumer's contract; change both together.
  */
 export const MAX_LOG_NODES: number = MAX_DATA_NODES;
 
