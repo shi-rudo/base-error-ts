@@ -43,6 +43,32 @@ describe("toProblem: typed extensions", () => {
     expect(result.outcome.omitted).toEqual([]);
   });
 
+  it("omits extensions that are not a plain object", () => {
+    const view = project(catalog(), { code: "x" });
+
+    for (const extensions of [["t-1"], new Map([["traceId", "t-1"]])]) {
+      const result = toProblem(catalog(), view, {
+        extensions,
+      } as unknown as ToProblemContext);
+
+      expect(result.outcome.omitted).toEqual(["extensions"]);
+    }
+  });
+
+  it("skips a non-enumerable extension key, as JSON.stringify does", () => {
+    const view = project(catalog(), { code: "x" });
+    const extensions = Object.defineProperty({ traceId: "t-1" }, "hidden", {
+      value: "secret",
+      enumerable: false,
+    });
+
+    const result = toProblem(catalog(), view, { extensions });
+
+    expect(result.body.traceId).toBe("t-1");
+    expect("hidden" in result.body).toBe(false);
+    expect(result.outcome.omitted).toEqual([]);
+  });
+
   it("never lets an extension override a reserved member", () => {
     const view = project(catalog(), { code: "x" });
     // Reserved keys are forbidden at compile time; cast for the runtime check.
