@@ -13,6 +13,14 @@ import {
   MAX_RECONSTRUCTED_CAUSE_NODES,
 } from "./walker-bounds.js";
 
+/** One guarded read of each structured field of a serialized cause node. */
+type StructuredFieldReads = {
+  readonly code: unknown;
+  readonly category: unknown;
+  readonly retryable: unknown;
+  readonly details: unknown;
+};
+
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
  *
@@ -315,6 +323,30 @@ export class StructuredError<
     return reconstructed;
   }
 
+  /**
+   * Restores the structured fields that the serializer copies from a foreign
+   * cause: each of `code`, `category` and `retryable` with a valid type, and a
+   * shallow copy of `details`. The caller reads each field once and passes the
+   * values, so the checked value is the restored value. A cause that holds all
+   * three decision fields takes the structured path, so the target never reads
+   * as a `StructuredError`.
+   */
+  static #restoreStructuredFields(
+    target: Error,
+    source: StructuredFieldReads,
+  ): void {
+    const fields = target as unknown as Record<string, unknown>;
+    if (typeof source.code === "string" || typeof source.code === "number") {
+      fields.code = source.code;
+    }
+    if (typeof source.category === "string") fields.category = source.category;
+    if (typeof source.retryable === "boolean") {
+      fields.retryable = source.retryable;
+    }
+    const details = StructuredError.#copyDetails(source.details);
+    if (details !== undefined) fields.details = details;
+  }
+
   static #reconstructCause(
     value: unknown,
     depth: number,
@@ -337,10 +369,16 @@ export class StructuredError<
 
     // Structured shape -> nested StructuredError. Guarded reads throughout:
     // the never-throws contract covers every nested node too.
+    const structuredFields: StructuredFieldReads = {
+      code: readProperty(obj, "code"),
+      category: readProperty(obj, "category"),
+      retryable: readProperty(obj, "retryable"),
+      details: readProperty(obj, "details"),
+    };
     if (
-      typeof readProperty(obj, "code") === "string" &&
-      typeof readProperty(obj, "category") === "string" &&
-      typeof readProperty(obj, "retryable") === "boolean"
+      typeof structuredFields.code === "string" &&
+      typeof structuredFields.category === "string" &&
+      typeof structuredFields.retryable === "boolean"
     ) {
       return StructuredError.#fromJSON(obj, depth + 1, budget);
     }
@@ -364,6 +402,7 @@ export class StructuredError<
       if (typeof stackField === "string") {
         aggregate.stack = stackField;
       }
+      StructuredError.#restoreStructuredFields(aggregate, structuredFields);
       const nested = StructuredError.#reconstructCause(
         readProperty(obj, "cause"),
         depth + 1,
@@ -385,17 +424,7 @@ export class StructuredError<
       if (typeof stackField === "string") {
         err.stack = stackField;
       }
-      // A Node-style errno `code` (`ECONNREFUSED`, `ENOENT`, …) is what
-      // {@link hasErrorCode} matches on, and it is what an aggregate's members
-      // usually carry. The serializer already writes it, so restore it rather
-      // than handing back an error the library's own guard can no longer
-      // recognize. It stays a lone field: without `category`/`retryable` the
-      // result does not read as a `StructuredError`.
-      const codeField = readProperty(obj, "code");
-      if (typeof codeField === "string" || typeof codeField === "number") {
-        const errProperties = err as unknown as Record<string, unknown>;
-        errProperties.code = codeField;
-      }
+      StructuredError.#restoreStructuredFields(err, structuredFields);
       const nested = StructuredError.#reconstructCause(
         readProperty(obj, "cause"),
         depth + 1,

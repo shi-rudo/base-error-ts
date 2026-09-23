@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { errorWithThrowingGetter } from "./hostile-values.fixture.js";
-import { hasErrorCode, isStructuredError, StructuredError } from "../index.js";
+import {
+  hasErrorCode,
+  isStructuredError,
+  someChainRetryable,
+  StructuredError,
+} from "../index.js";
 
 /** The serialized shape of one node in a logged cause chain. */
 type SerializedCause = Record<string, unknown>;
@@ -507,6 +512,85 @@ describe("errno codes on reconstructed plain errors", () => {
   });
 });
 
+describe("decision fields on reconstructed foreign causes", () => {
+  it("restores retryable on a plain cause, so the chain stays retryable", () => {
+    const timeout = Object.assign(new Error("upstream timed out"), {
+      code: "ETIMEDOUT",
+      retryable: true,
+    });
+
+    const restored = StructuredError.fromJSON(
+      JSON.parse(JSON.stringify(wrap(timeout))) as unknown,
+    );
+
+    expect(someChainRetryable(restored)).toBe(true);
+    expect((restored as unknown as { cause?: unknown }).cause).toMatchObject({
+      code: "ETIMEDOUT",
+      retryable: true,
+    });
+  });
+
+  it("restores category on a plain cause", () => {
+    const timeout = Object.assign(new Error("upstream timed out"), {
+      code: "ETIMEDOUT",
+      category: "UPSTREAM",
+    });
+
+    const cause = roundTrip(wrap(timeout));
+
+    expect(cause).toMatchObject({ code: "ETIMEDOUT", category: "UPSTREAM" });
+  });
+
+  it("restores details on a plain cause", () => {
+    const timeout = Object.assign(new Error("upstream timed out"), {
+      code: "ETIMEDOUT",
+      details: { host: "db-1" },
+    });
+
+    const cause = roundTrip(wrap(timeout)) as { details?: unknown };
+
+    expect(cause.details).toEqual({ host: "db-1" });
+  });
+
+  it("restores the decision fields that it checked", () => {
+    let codeReads = 0;
+    const node = {
+      message: "upstream failed",
+      get code(): unknown {
+        codeReads++;
+        return codeReads === 1 ? 503 : "FORGED";
+      },
+      category: "UPSTREAM",
+      retryable: true,
+    };
+
+    const restored = StructuredError.fromJSON({
+      code: "OUTER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "outer failed",
+      cause: node,
+    });
+    const cause = (restored as unknown as { cause?: unknown }).cause;
+
+    expect(isStructuredError(cause)).toBe(false);
+    expect(cause).toMatchObject({ code: 503 });
+    expect(codeReads).toBe(1);
+  });
+
+  it("restores code and retryable on an aggregate cause", () => {
+    const fanOut = Object.assign(
+      new AggregateError([new Error("branch a")], "all branches failed"),
+      { code: "FANOUT_FAILED", retryable: true },
+    );
+
+    const cause = roundTrip(wrap(fanOut));
+
+    expect(cause).toBeInstanceOf(AggregateError);
+    expect(cause).toMatchObject({ code: "FANOUT_FAILED", retryable: true });
+  });
+});
+
 describe("toString() with an aggregate", () => {
   it("counts the members on the aggregate line", () => {
     const aggregate = new AggregateError(
@@ -556,6 +640,23 @@ describe("toString() with an aggregate", () => {
     aggregate.errors.push(aggregate);
 
     expect(wrap(aggregate).toString()).toContain("[Circular cause chain]");
+  });
+
+  it("renders a repeated primitive member each time", () => {
+    const aggregate = new AggregateError(["timeout", "timeout"], "retries");
+
+    const lines = wrap(aggregate).toString().split("\n");
+
+    expect(lines.slice(2)).toEqual(["  - timeout", "  - timeout"]);
+  });
+
+  it("renders a hole as undefined, so the list matches the count", () => {
+    const aggregate = new AggregateError([undefined, "x"], "sparse");
+
+    const lines = wrap(aggregate).toString().split("\n");
+
+    expect(lines[1]).toBe("Caused by: AggregateError: sparse (+2 aggregated)");
+    expect(lines.slice(2)).toEqual(["  - undefined", "  - x"]);
   });
 
   it("caps the rendered members", () => {

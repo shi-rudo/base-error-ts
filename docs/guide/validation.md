@@ -65,7 +65,9 @@ only a fixed whitelist can ever cross.
 `publicIssues()` yields that whitelist: `{ message, path, code?, pointer? }`,
 **never** raw validator extras (a Zod-native issue may carry the rejected input
 value in a `received` field; that field never reaches the wire). A `pointer`
-string (e.g. `"address.zip"`) is derived from the path for HTTP clients.
+string (e.g. `"address.zip"`) is derived from the path for HTTP clients. It
+joins the segments with dots and is not an RFC 6901 JSON Pointer
+(`"/address/zip"`).
 
 ```ts
 v.publicIssues();

@@ -155,6 +155,32 @@ describe("aggregate traversal", () => {
       ).toHaveLength(2);
     });
 
+    it("visits a repeated value once, primitive or object", () => {
+      const shared = new Error("timeout");
+      const aggregate = new AggregateError(
+        ["timeout", "timeout", shared, shared],
+        "retries",
+      );
+
+      const visited = filterCauseChain(aggregate, () => true, {
+        aggregates: true,
+      });
+
+      expect(visited).toEqual([aggregate, "timeout", shared]);
+    });
+
+    it("does not let repeated holes hide a later retryable member", () => {
+      const retryable = Object.assign(new Error("upstream"), {
+        retryable: true,
+      });
+      const aggregate = new AggregateError(
+        [new AggregateError(new Array(2000), "sparse"), retryable],
+        "fan-out",
+      );
+
+      expect(someChainRetryable(aggregate, { aggregates: true })).toBe(true);
+    });
+
     it("evaluates every and some over the whole tree", () => {
       const error = fanOut();
 
