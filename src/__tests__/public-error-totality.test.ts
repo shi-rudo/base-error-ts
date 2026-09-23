@@ -380,6 +380,22 @@ describe("toProblem: a hand-built view with getters", () => {
     });
   });
 
+  it("drops context members whose getters throw and records extensions", () => {
+    const context = Object.defineProperties(
+      {},
+      {
+        extensions: throwingGetter(),
+        detail: throwingGetter(),
+        instance: throwingGetter(),
+      },
+    ) as ToProblemContext;
+
+    const result = toProblem({ status: 400 }, { code: "x" }, context);
+
+    expect(result.body).toEqual({ status: 400, code: "x" });
+    expect(result.outcome.omitted).toEqual(["extensions"]);
+  });
+
   it("reads the members of a callable view and context", () => {
     const view = Object.assign(() => undefined, { code: "x" });
     const context = Object.assign(() => undefined, {

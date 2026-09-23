@@ -166,6 +166,11 @@ export type ProblemDetailsResult<
  * levels. `fields` keeps exactly `{ field, code }` per fault. `toProblem` drops
  * it the same way when the value is not a list, or when a fault has no string
  * `field` and `code`.
+ *
+ * `toProblem` reads each member of the view, the context and an explicit
+ * transport once, and it lists the extension keys once. The value that passes a
+ * check is the value that it writes. A getter that throws counts as an invalid
+ * value.
  */
 export function toProblem<
   TDetails,
@@ -176,10 +181,6 @@ export function toProblem<
   view: PublicError<TDetails, TCode> | LocalizedPublicError<TDetails, TCode>,
   context?: ToProblemContext<TExtensions>,
 ): ProblemDetailsResult<TDetails, TCode, TExtensions> {
-  // A view or a context can be hand-built, and this runs in error middleware.
-  // Each member is read once through the guarded reader: the value that
-  // passes a check is the value that is written, and a throwing getter
-  // cannot replace the error that the middleware handles.
   const code = readMember(view, "code");
   if (!isNonEmptyString(code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
