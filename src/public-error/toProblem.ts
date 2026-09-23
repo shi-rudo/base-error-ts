@@ -85,8 +85,8 @@ export type ToProblemContext<
   readonly detail?: string;
   /**
    * Retry delay in whole seconds, overriding the view's `retryAfter`. For a
-   * boundary that knows the value (a rate limiter) rather than the error. A
-   * non-integer/negative value is ignored.
+   * boundary that knows the value (a rate limiter) rather than the error.
+   * `toProblem` ignores a value that is not a non-negative safe integer.
    */
   readonly retryAfter?: number;
   /** Additional JSON-safe top-level body members, keyed by a non-reserved name. */

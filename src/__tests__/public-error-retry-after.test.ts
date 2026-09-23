@@ -31,6 +31,15 @@ describe("project: retryAfter rides on the view as a neutral hint", () => {
     expect(view.retryable).toBe(true);
   });
 
+  it("drops a projected retryAfter that has no plain digit form", () => {
+    const view = project(rateLimited(), {
+      code: "rate.limited",
+      retryAfterSeconds: 1e21,
+    });
+
+    expect(view).not.toHaveProperty("retryAfter");
+  });
+
   it("guards a non-integer/negative/throwing projector to no hint, no throw", () => {
     const catalog = rateLimited();
     expect(
