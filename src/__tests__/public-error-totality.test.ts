@@ -504,6 +504,27 @@ describe("toProblem: a hand-built transport and extensions", () => {
     expect(result.body.type).toBe("https://errors.example/missing");
   });
 
+  it("drops extensions with more keys than the data-node budget before reading a value", () => {
+    const target: Record<string, number> = {};
+    for (let index = 0; index <= MAX_DATA_NODES; index++) {
+      target[`k${index}`] = index;
+    }
+    let valueReads = 0;
+    const extensions = new Proxy(target, {
+      get: (inner, key, receiver): unknown => {
+        valueReads++;
+        return Reflect.get(inner, key, receiver) as unknown;
+      },
+    });
+
+    const result = toProblem({ status: 400 }, { code: "x" }, {
+      extensions,
+    } as ToProblemContext);
+
+    expect(result.outcome.omitted).toEqual(["extensions"]);
+    expect(valueReads).toBe(0);
+  });
+
   it("copies only the extension keys that it checked", () => {
     const target = JSON.parse(
       '{"traceId":"t-1","type":"https://evil.example","__proto__":"https://evil.example"}',

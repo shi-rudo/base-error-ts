@@ -7,6 +7,7 @@ import {
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
 } from "../utils/problem-validation.js";
+import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 import { copyFieldFaults } from "./field-faults.js";
 import { canonicalizeLocale } from "./locale.js";
 import type { PublicErrorCatalog, Transport } from "./PublicErrorCatalog.js";
@@ -321,11 +322,15 @@ function fieldsForWire(value: unknown): readonly FieldFault[] | undefined {
  * set never partially leaks onto the body. One listing of the own keys decides
  * both the check and the copy. A Proxy that lists other keys later cannot add a
  * forbidden key, such as a `__proto__` own key from `JSON.parse`, after the check.
+ * The clone cannot hold more than {@link MAX_DATA_NODES} values, so a set with
+ * more keys is dropped before its values are read.
  */
 function extensionsForWire(value: unknown): Record<string, JsonSafeValue> {
   if (!isPlainObject(value)) throw new Error("invalid extensions");
+  const keys = Reflect.ownKeys(value);
+  if (keys.length > MAX_DATA_NODES) throw new Error("too many extensions");
   const checked = Object.create(null) as Record<string, unknown>;
-  for (const key of Reflect.ownKeys(value)) {
+  for (const key of keys) {
     if (typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key)) {
       throw new Error("invalid extensions");
     }
