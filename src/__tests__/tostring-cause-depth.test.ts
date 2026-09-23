@@ -207,6 +207,23 @@ function spineEndingIn(length: number, tail: object): object {
   return chain;
 }
 
+/**
+ * An error-shaped tree that renders exactly `lines` lines: a leaf renders one
+ * line, and a node renders its own line plus the lines of its members.
+ */
+function treeOfLines(lines: number): object {
+  if (lines === 1) return { name: "Node", message: "leaf" };
+  const members: object[] = [];
+  let rest = lines - 1;
+  const share = Math.ceil(rest / 100);
+  while (rest > 0) {
+    const size = Math.min(share, rest);
+    members.push(treeOfLines(size));
+    rest -= size;
+  }
+  return { name: "Node", message: `${lines} lines`, errors: members };
+}
+
 function sizeMarkerLines(lines: readonly string[]): string[] {
   return lines.filter((line) => line.endsWith(MAX_LOG_SIZE_MARKER));
 }
@@ -247,6 +264,24 @@ describe("toString() node budget", () => {
 
     expect(lines.length).toBeLessThanOrEqual(MAX_LOG_NODES + 1);
     expect(sizeMarkerLines(lines)).toHaveLength(1);
+  });
+
+  it("writes the size marker in place of a count line that does not fit", () => {
+    const members = [
+      treeOfLines(MAX_LOG_NODES - 101),
+      ...Array.from(
+        { length: 149 },
+        (_, index) => new Error(`member ${index}`),
+      ),
+    ];
+    const wide = Object.assign(new AggregateError(members, "wide"), {
+      cause: new Error("after the count line"),
+    });
+
+    const lines = new BaseError("root", wide).toString().split("\n");
+
+    expect(lines).toHaveLength(MAX_LOG_NODES + 1);
+    expect(lines[lines.length - 1]).toBe(`  ${MAX_LOG_SIZE_MARKER}`);
   });
 
   it("writes no count of further members after the budget ran out", () => {

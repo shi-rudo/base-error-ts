@@ -1103,7 +1103,6 @@ export class BaseError<T extends string> extends Error {
     prefix: string,
     text: string,
   ): boolean {
-    if (render.cut) return false;
     if (render.budget.nodes >= render.budget.limit) {
       render.lines.push(`${prefix}${MAX_LOG_SIZE_MARKER}`);
       render.cut = true;
