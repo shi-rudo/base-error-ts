@@ -468,6 +468,42 @@ describe("toProblem: a hand-built transport and extensions", () => {
     ).toThrow(/invalid transport status/);
   });
 
+  it("throws the documented error when the transport type getter throws", () => {
+    const transport = Object.defineProperties(
+      { status: 400 },
+      { type: throwingGetter() },
+    );
+
+    expect(() =>
+      toProblem(transport as { status: number }, { code: "x" }),
+    ).toThrow(/invalid transport type/);
+  });
+
+  it("validates the transport that a catalog returns", () => {
+    const lookalike = { transportFor: () => ({ status: "oops", type: 7 }) };
+
+    expect(() =>
+      toProblem(lookalike as unknown as PublicErrorCatalog, { code: "x" }),
+    ).toThrow(/invalid transport status/);
+  });
+
+  it("reads the transportFor member of a catalog once", () => {
+    const lookalike = Object.defineProperties(
+      {},
+      {
+        transportFor: flipping(
+          () => ({ status: 404, type: "https://errors.example/missing" }),
+          undefined,
+        ),
+      },
+    );
+
+    const result = toProblem(lookalike as PublicErrorCatalog, { code: "x" });
+
+    expect(result.status).toBe(404);
+    expect(result.body.type).toBe("https://errors.example/missing");
+  });
+
   it("copies only the extension keys that it checked", () => {
     const target = JSON.parse(
       '{"traceId":"t-1","type":"https://evil.example","__proto__":"https://evil.example"}',

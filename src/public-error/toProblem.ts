@@ -167,10 +167,10 @@ export type ProblemDetailsResult<
  * it the same way when the value is not a list, or when a fault has no string
  * `field` and `code`.
  *
- * `toProblem` reads each member of the view, the context and an explicit
- * transport once, and it lists the extension keys once. The value that passes a
- * check is the value that it writes. A getter that throws counts as an invalid
- * value.
+ * `toProblem` reads each member of the view, the context and the transport
+ * once, and it lists the extension keys once. The value that passes a check is
+ * the value that it writes. A getter that throws counts as an invalid value. It
+ * validates a transport from a catalog like an explicit one.
  */
 export function toProblem<
   TDetails,
@@ -185,9 +185,16 @@ export function toProblem<
   if (!isNonEmptyString(code)) {
     throw new Error("toProblem: view.code must be a non-empty string.");
   }
-  const transport = isCatalog(source)
-    ? transportOrThrow(source, code)
-    : validatedTransport(source);
+  const transportFor = readMember(source, "transportFor");
+  const transport = validatedTransport(
+    typeof transportFor === "function"
+      ? registeredTransport(
+          transportFor as (publicCode: string) => unknown,
+          source,
+          code,
+        )
+      : source,
+  );
   const omitted: OmittedMember[] = [];
   const omittedHeaders: OmittedHeader[] = [];
 
@@ -345,28 +352,19 @@ function languageTagOrOmit(
 }
 
 /**
- * Tells a catalog from an explicit transport by shape: a catalog answers
- * `transportFor`, a transport is a plain `{ status, type?, title? }`. Not
- * `instanceof`, which is realm-bound and fails for a catalog built by a second
- * copy of this package (CJS next to ESM, two versions in one tree).
+ * The transport that a catalog registered for `publicCode`. A catalog is
+ * recognized by shape, a callable `transportFor`, not by `instanceof`, which
+ * fails for a catalog built by a second copy of this package. A code that the
+ * catalog does not know is a foreign or stale view. The fallback status would
+ * pair the view's code with a mismatched status, so the caller must pass an
+ * explicit transport instead.
  */
-function isCatalog(
-  source: PublicErrorCatalog | Transport,
-): source is PublicErrorCatalog {
-  return typeof readMember(source, "transportFor") === "function";
-}
-
-/**
- * Resolves the transport for a registered public code, or throws. A code the
- * catalog does not know is a foreign/stale view; emitting the fallback status
- * would pair the view's real code with a mismatched status, so the caller must
- * use an explicit transport instead.
- */
-function transportOrThrow(
-  catalog: PublicErrorCatalog,
+function registeredTransport(
+  transportFor: (publicCode: string) => unknown,
+  catalog: unknown,
   publicCode: string,
-): Transport {
-  const transport = catalog.transportFor(publicCode);
+): unknown {
+  const transport: unknown = Reflect.apply(transportFor, catalog, [publicCode]);
   if (transport === undefined) {
     throw new Error(
       `toProblem: public code "${publicCode}" is not registered in this catalog; pass an explicit transport for a foreign view.`,
@@ -376,18 +374,20 @@ function transportOrThrow(
 }
 
 /**
- * Validates an explicit (catalog-free) transport at the boundary, since it
- * bypasses the catalog's registration-time checks. Returns a copy of the values
- * that it checked, each read once.
+ * Validates a transport at the boundary. An explicit transport bypasses the
+ * registration-time checks of a catalog, and a catalog look-alike can return
+ * anything. Returns a copy of the values that it checked, each read once. A
+ * `type` getter that throws counts as an invalid `type`.
  */
-function validatedTransport(transport: Transport): Transport {
+function validatedTransport(transport: unknown): Transport {
   const status = readMember(transport, "status");
   if (!isHttpStatusCode(status)) {
     throw new Error(
       `toProblem: invalid transport status; expected an integer in [100, 599], got ${String(status)}.`,
     );
   }
-  const type = readMember(transport, "type");
+  const typeRead = readMemberResult(transport, "type");
+  const type = typeRead.readable ? typeRead.value : null;
   if (type !== undefined && !isNonEmptyString(type)) {
     throw new Error(
       "toProblem: invalid transport type; expected a non-empty string.",

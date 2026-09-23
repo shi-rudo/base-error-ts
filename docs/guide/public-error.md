@@ -172,12 +172,13 @@ same way when the value is not a list, or when a fault has no string `field`
 and `code`. It also drops a non-string `category` and a
 non-boolean `retryable`.
 
-`toProblem` reads each member of the view, the context and an explicit
-transport once, and it lists the extension keys once. The value that passes a
-check is the value that it writes. A getter that throws counts as an invalid
-value: `toProblem` records a dropped `details`, `fields` or `extensions` in
-`outcome.omitted` and leaves the other members out. A `code` or transport
-`status` getter that throws gets the same error as a missing value.
+`toProblem` reads each member of the view, the context and the transport once,
+and it lists the extension keys once. The value that passes a check is the value
+that it writes. A getter that throws counts as an invalid value: `toProblem`
+records a dropped `details`, `fields` or `extensions` in `outcome.omitted` and
+leaves the other members out. A `code`, transport `status` or transport `type`
+getter that throws gets the same error as an invalid value. `toProblem`
+validates a transport from a catalog like an explicit one.
 
 `title` is the localized `message` when the view was localized, otherwise the
 static developer-facing `title` from the descriptor, otherwise omitted (RFC 9457
