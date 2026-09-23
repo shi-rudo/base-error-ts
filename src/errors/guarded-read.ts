@@ -35,6 +35,28 @@ export function readPropertyResult(
   }
 }
 
+/**
+ * Reads one member of an argument, which can be an object or a function.
+ * {@link readProperty} treats a function as having no properties, which suits
+ * cause links. A value that is neither reads as a missing member.
+ */
+export function readMemberResult(
+  value: unknown,
+  key: string | symbol,
+): { readable: true; value: unknown } | { readable: false } {
+  if (typeof value === "function") return readPropertyResult(value, key);
+  if (typeof value !== "object" || value === null) {
+    return { readable: true, value: undefined };
+  }
+  return readPropertyResult(value, key);
+}
+
+/** {@link readMemberResult}, with a throwing getter read as `undefined`. */
+export function readMember(value: unknown, key: string | symbol): unknown {
+  const read = readMemberResult(value, key);
+  return read.readable ? read.value : undefined;
+}
+
 /** Reads an own property. An inherited or unreadable property reads as absent. */
 export function readOwnProperty(value: unknown, key: string): unknown {
   if (typeof value !== "object" || value === null) return undefined;

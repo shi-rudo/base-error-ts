@@ -1,5 +1,5 @@
 import { cloneJsonSafe, isPlainObject } from "../errors/json-safe.js";
-import { readProperty, readPropertyResult } from "../errors/guarded-read.js";
+import { readMember, readMemberResult } from "../errors/guarded-read.js";
 import type { JsonSafeValue } from "../errors/json-safe.js";
 import {
   isHttpStatusCode,
@@ -215,18 +215,13 @@ export function toProblem<
       ? viewRetryAfter
       : undefined;
 
-  const details = jsonSafeOrOmit(
-    readRecordedMember(view, "details", omitted),
-    "details",
+  const details = wireMember(view, "details", omitted, cloneJsonSafe);
+  const fields = wireMember(view, "fields", omitted, fieldsForWire);
+  const extensions = wireMember(
+    context,
+    "extensions",
     omitted,
-  );
-  const fields = safeFields(
-    readRecordedMember(view, "fields", omitted),
-    omitted,
-  );
-  const extensions = safeExtensions(
-    readRecordedMember(context, "extensions", omitted),
-    omitted,
+    extensionsForWire,
   );
   const detail = readMember(context, "detail");
   const instance = readMember(context, "instance");
@@ -275,18 +270,29 @@ export function toProblem<
   return Object.freeze({ status: transport.status, headers, body, outcome });
 }
 
-function jsonSafeOrOmit(
-  value: unknown,
+/**
+ * One dynamic member on its way to the wire, read once. `toWire` returns the
+ * wire value, `undefined` for no member, or throws for an invalid value. A
+ * getter that throws and a value that `toWire` rejects both drop the member,
+ * and `outcome.omitted` records it once.
+ */
+function wireMember<T>(
+  holder: unknown,
   member: OmittedMember,
   omitted: OmittedMember[],
-): unknown {
-  if (value === undefined) return undefined;
-  try {
-    return cloneJsonSafe(value);
-  } catch {
-    omitted.push(member);
-    return undefined;
+  toWire: (value: unknown) => T | undefined,
+): T | undefined {
+  const read = readMemberResult(holder, member);
+  if (read.readable && read.value === undefined) return undefined;
+  if (read.readable) {
+    try {
+      return toWire(read.value);
+    } catch {
+      // A rejected value is recorded like an unreadable one.
+    }
   }
+  omitted.push(member);
+  return undefined;
 }
 
 /**
@@ -294,16 +300,9 @@ function jsonSafeOrOmit(
  * and both are strings, so the member needs no JSON-safe clone. Another key of
  * a fault cannot cost the list. An empty list is not a member, as in project().
  */
-function safeFields(
-  raw: unknown,
-  omitted: OmittedMember[],
-): readonly FieldFault[] | undefined {
-  if (raw === undefined) return undefined;
-  const faults = copyFieldFaults(raw);
-  if (faults === undefined) {
-    omitted.push("fields");
-    return undefined;
-  }
+function fieldsForWire(value: unknown): readonly FieldFault[] | undefined {
+  const faults = copyFieldFaults(value);
+  if (faults === undefined) throw new Error("fields is not a list of faults");
   return faults.length > 0 ? faults : undefined;
 }
 
@@ -316,27 +315,18 @@ function safeFields(
  * both the check and the copy. A Proxy that lists other keys later cannot add a
  * forbidden key, such as a `__proto__` own key from `JSON.parse`, after the check.
  */
-function safeExtensions(
-  raw: unknown,
-  omitted: OmittedMember[],
-): Record<string, JsonSafeValue> | undefined {
-  if (raw === undefined) return undefined;
-  try {
-    if (!isPlainObject(raw)) throw new Error("invalid extensions");
-    const checked = Object.create(null) as Record<string, unknown>;
-    for (const key of Reflect.ownKeys(raw)) {
-      if (typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key)) {
-        throw new Error("invalid extensions");
-      }
-      if (Object.prototype.propertyIsEnumerable.call(raw, key)) {
-        checked[key] = raw[key];
-      }
+function extensionsForWire(value: unknown): Record<string, JsonSafeValue> {
+  if (!isPlainObject(value)) throw new Error("invalid extensions");
+  const checked = Object.create(null) as Record<string, unknown>;
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || FORBIDDEN_EXTENSION_KEYS.has(key)) {
+      throw new Error("invalid extensions");
     }
-    return cloneJsonSafe(checked) as Record<string, JsonSafeValue>;
-  } catch {
-    omitted.push("extensions");
-    return undefined;
+    if (Object.prototype.propertyIsEnumerable.call(value, key)) {
+      checked[key] = value[key];
+    }
   }
+  return cloneJsonSafe(checked) as Record<string, JsonSafeValue>;
 }
 
 /**
@@ -354,36 +344,6 @@ function languageTagOrOmit(
   return undefined;
 }
 
-/** A view, a context or a transport can be a plain object or a function. */
-function isMemberHolder(value: unknown): value is object {
-  return (
-    (typeof value === "object" && value !== null) || typeof value === "function"
-  );
-}
-
-/** One guarded read of a member. A getter that throws reads as absent. */
-function readMember(holder: unknown, key: string): unknown {
-  if (!isMemberHolder(holder)) return undefined;
-  const read = readPropertyResult(holder, key);
-  return read.readable ? read.value : undefined;
-}
-
-/**
- * One guarded read of a dynamic member. A getter that throws drops the member
- * and records it, like a value that fails the wire checks.
- */
-function readRecordedMember(
-  holder: unknown,
-  member: OmittedMember,
-  omitted: OmittedMember[],
-): unknown {
-  if (!isMemberHolder(holder)) return undefined;
-  const read = readPropertyResult(holder, member);
-  if (read.readable) return read.value;
-  omitted.push(member);
-  return undefined;
-}
-
 /**
  * Tells a catalog from an explicit transport by shape: a catalog answers
  * `transportFor`, a transport is a plain `{ status, type?, title? }`. Not
@@ -393,7 +353,7 @@ function readRecordedMember(
 function isCatalog(
   source: PublicErrorCatalog | Transport,
 ): source is PublicErrorCatalog {
-  return typeof readProperty(source, "transportFor") === "function";
+  return typeof readMember(source, "transportFor") === "function";
 }
 
 /**
