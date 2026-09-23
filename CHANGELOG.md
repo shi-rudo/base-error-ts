@@ -28,6 +28,8 @@
 
 ### Fixed
 
+- **`Retry-After` holds only plain digits.** The retry-after check accepted any non-negative integer. `String()` writes a number of 1e21 or more in exponent notation, so `retryAfter: 1e21` produced the header `retry-after: 1e+21`, which RFC 9110 does not allow. The check now requires a safe integer, which always prints as its exact digits. A larger value is ignored, like a negative one.
+
 - **`toProblem` reads each member of the view and the context once.** It read several members twice, once to check and once to write. A getter that answered `5` and then `"5\r\nSet-Cookie: session=1"` put a line break into the `retry-after` header. The same gap let `code`, `category`, `retryable`, `message`, `detail` and `instance` write a value that no check had seen. A getter that threw raised a new exception inside the error middleware. Every member now passes through one guarded read. A getter that throws counts as an invalid value. `details`, `fields` and `extensions` then land in `outcome.omitted`, and the other members are left out. A throwing `code` gets the documented `view.code must be a non-empty string` error.
 
 - **`toString` has a node budget.** It had a depth cap, a width cap and a `seen` set, but the `seen` set bounds only repeated objects. An `errors` getter that returns fresh members on each read grows the tree while it renders. With 2 new members per level, the tree doubles at each of the 100 levels, so the render could not end in practice. `toString` runs in `catch` paths. It now spends one unit per rendered line from the 100,000 visits that a log build may make, markers and holes included. The next line is `[Max log size exceeded]`, the marker of the log object, and the render stops there.

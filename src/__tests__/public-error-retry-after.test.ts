@@ -100,6 +100,15 @@ describe("toProblem: materializes retryAfter into header and body", () => {
     expect(result.body.retryAfter).toBe(12);
   });
 
+  it("drops a retryAfter that has no plain digit form", () => {
+    const view: PublicError = { code: "x", retryAfter: 1e21 };
+
+    const result = toProblem({ status: 429 }, view);
+
+    expect("retry-after" in result.headers).toBe(false);
+    expect("retryAfter" in result.body).toBe(false);
+  });
+
   it("ignores an invalid context retryAfter", () => {
     const view: PublicError = { code: "rate_limited" };
     const result = toProblem({ status: 429 }, view, { retryAfter: -1 });
