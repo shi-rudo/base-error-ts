@@ -5,6 +5,7 @@ type Log = Record<string, unknown>;
 
 const markerStrings = [
   "[Circular cause chain]",
+  "[Shared cause]",
   "[Max cause depth exceeded]",
   "[Unserializable cause]",
   "[4111111111111111 more aggregated errors]",

@@ -1,5 +1,20 @@
 # Migration Guide
 
+## Next major: shared cause marker
+
+A cause that the same walk already wrote, without a cycle, is now
+`[Shared cause]` in the log object and in `toString`. Before, it was
+`[Circular cause chain]`. The circular marker now means a real cycle only:
+the node is its own ancestor.
+
+If an alert or a log query matched `[Circular cause chain]`, check what it
+looks for. To find a loop in the error wiring, keep the match. To find a
+repeated upstream failure across the branches of a fan-out, match
+`[Shared cause]`.
+
+A chain that returns to the root now ends in `[Circular cause chain]` one hop
+earlier in the log. The log no longer writes the root a second time.
+
 ## Next major: log field hooks
 
 `buildLogObject()` is removed from `BaseError` and `StructuredError`.

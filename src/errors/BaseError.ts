@@ -88,10 +88,12 @@ const REDACTION_READ_CUT = Symbol("redaction.read.cut");
 
 /**
  * The nodes of one walk over a cause graph, in the log and in `toString`.
- * `seen` holds every node that the walk already wrote, so each node is
- * written in full once and a later occurrence is the shared marker. `path`
- * holds the ancestors of the current node, so a node on it closes a cycle and
- * is the circular marker. The root starts on both.
+ * `seen` holds every node that the walk already wrote, so each node is written
+ * once and a later occurrence is the shared marker. The first occurrence can
+ * have its subtree cut by the depth cap or masked by a sticky policy, and the
+ * marker does not repeat it. `path` holds the ancestors of the current node,
+ * so a node on it closes a cycle and is the circular marker. The root starts
+ * on both.
  */
 type CauseWalk = {
   readonly seen: Set<unknown>;
@@ -802,12 +804,11 @@ export class BaseError<T extends string> extends Error {
       );
       if (value !== undefined) json[key] = value;
     }
-    // One walk for the cause and the members, so a node in both is written
-    // in full once.
-    const walk: CauseWalk = { seen: new Set([this]), path: new Set([this]) };
+    // The cause and the members get a walk each, so a node in both stays in
+    // full in the members, where fromJSON rebuilds it.
     json.cause = this.#serializeCause(
       readProperty(this, "cause"),
-      walk,
+      BaseError.#rootWalk(this),
       0,
       json,
       "cause",
@@ -819,7 +820,12 @@ export class BaseError<T extends string> extends Error {
     // the same bounded, cycle-safe serialization as an aggregate cause.
     const aggregate = readMembers(this, MAX_AGGREGATE_MEMBERS);
     if (aggregate !== undefined && aggregate.total > 0) {
-      json.errors = this.#serializeAggregate(aggregate, walk, 1, context);
+      json.errors = this.#serializeAggregate(
+        aggregate,
+        BaseError.#rootWalk(this),
+        1,
+        context,
+      );
     }
 
     // Read structured fields by shape, as the cause serializer does. They
@@ -835,6 +841,11 @@ export class BaseError<T extends string> extends Error {
     if (details !== undefined) json.details = details;
 
     return json;
+  }
+
+  /** A fresh cause walk that holds the root as the ancestor of its whole tree. */
+  static #rootWalk(root: object): CauseWalk {
+    return { seen: new Set([root]), path: new Set([root]) };
   }
 
   /**
@@ -1175,7 +1186,7 @@ export class BaseError<T extends string> extends Error {
       while (current != null) {
         // A primitive has no links and cannot close a cycle, so it renders
         // each time it repeats.
-        if (typeof current === "object" && current !== null) {
+        if (typeof current === "object") {
           if (render.path.has(current)) {
             BaseError.#renderLine(render, prefix, CIRCULAR_CAUSE_CHAIN_MARKER);
             return;

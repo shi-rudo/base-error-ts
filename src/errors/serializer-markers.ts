@@ -8,7 +8,7 @@
 /** A node that is its own ancestor: the cause graph has a cycle. */
 export const CIRCULAR_CAUSE_CHAIN_MARKER = "[Circular cause chain]";
 
-/** A node that the same walk already wrote in full, without a cycle. */
+/** A node that the same walk already wrote, without a cycle. */
 export const SHARED_CAUSE_MARKER = "[Shared cause]";
 
 /** A chain cut at the cause-depth cap. */

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { BaseError, StructuredError } from "../index.js";
+import {
+  BaseError,
+  StructuredAggregateError,
+  StructuredError,
+} from "../index.js";
 
 const SHARED = "[Shared cause]";
 const CIRCULAR = "[Circular cause chain]";
@@ -36,7 +40,7 @@ describe("a cause shared by two branches", () => {
     ]);
   });
 
-  it("is shared across the cause and the members of the root", () => {
+  it("is logged in full in both the cause and the members of the root", () => {
     const upstream = new Error("upstream timed out");
     const root = Object.assign(new BaseError("root", upstream), {
       errors: [upstream],
@@ -45,7 +49,33 @@ describe("a cause shared by two branches", () => {
     const log = root.toLogObject();
 
     expect((log.cause as Log).message).toBe("upstream timed out");
-    expect((log.errors as unknown[])[0]).toBe(SHARED);
+    expect(((log.errors as unknown[])[0] as Log).message).toBe(
+      "upstream timed out",
+    );
+  });
+
+  it("keeps a member that is also the cause of its aggregate through fromJSON", () => {
+    const first = new StructuredError({
+      code: "UPSTREAM_DOWN",
+      category: "UPSTREAM",
+      retryable: true,
+      message: "upstream down",
+    });
+    const batch = new StructuredAggregateError({
+      code: "BATCH_FAILED",
+      category: "BATCH",
+      retryable: false,
+      message: "batch failed",
+      errors: [first],
+      cause: first,
+    });
+
+    const restored = StructuredError.fromJSON(
+      JSON.parse(JSON.stringify(batch)) as unknown,
+    );
+
+    const members = (restored as unknown as { errors: unknown[] }).errors;
+    expect(members[0]).toMatchObject({ code: "UPSTREAM_DOWN" });
   });
 
   it("stays readable under an allow-list", () => {
