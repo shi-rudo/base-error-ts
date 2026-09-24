@@ -35,6 +35,7 @@ import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
   MAX_CAUSE_DEPTH_MARKER,
   MAX_LOG_SIZE_MARKER,
+  SHARED_CAUSE_MARKER,
   UNSERIALIZABLE_CAUSE_MARKER,
   UNSERIALIZABLE_VALUE_MARKER,
   moreAggregatedErrorsMarker,
@@ -85,9 +86,20 @@ const REDACTION_CYCLE_MARKER = "[Circular reference]";
 const REDACTION_SIZE_MARKER = "[Max redaction size exceeded]";
 const REDACTION_READ_CUT = Symbol("redaction.read.cut");
 
-/** One `toString` render: the objects on it, its line budget, and its output. */
-type ChainRender = {
+/**
+ * The nodes of one walk over a cause graph, in the log and in `toString`.
+ * `seen` holds every node that the walk already wrote, so each node is
+ * written in full once and a later occurrence is the shared marker. `path`
+ * holds the ancestors of the current node, so a node on it closes a cycle and
+ * is the circular marker. The root starts on both.
+ */
+type CauseWalk = {
   readonly seen: Set<unknown>;
+  readonly path: Set<unknown>;
+};
+
+/** One `toString` render: its cause walk, its line budget, and its output. */
+type ChainRender = CauseWalk & {
   readonly budget: LogBuildContext["budget"];
   readonly lines: string[];
   cut: boolean;
@@ -790,9 +802,12 @@ export class BaseError<T extends string> extends Error {
       );
       if (value !== undefined) json[key] = value;
     }
+    // One walk for the cause and the members, so a node in both is written
+    // in full once.
+    const walk: CauseWalk = { seen: new Set([this]), path: new Set([this]) };
     json.cause = this.#serializeCause(
       readProperty(this, "cause"),
-      new Set(),
+      walk,
       0,
       json,
       "cause",
@@ -804,12 +819,7 @@ export class BaseError<T extends string> extends Error {
     // the same bounded, cycle-safe serialization as an aggregate cause.
     const aggregate = readMembers(this, MAX_AGGREGATE_MEMBERS);
     if (aggregate !== undefined && aggregate.total > 0) {
-      json.errors = this.#serializeAggregate(
-        aggregate,
-        new Set([this]),
-        1,
-        context,
-      );
+      json.errors = this.#serializeAggregate(aggregate, walk, 1, context);
     }
 
     // Read structured fields by shape, as the cause serializer does. They
@@ -1085,6 +1095,7 @@ export class BaseError<T extends string> extends Error {
   public override toString(): string {
     const render: ChainRender = {
       seen: new Set<unknown>(),
+      path: new Set<unknown>(),
       budget: { nodes: 0, limit: MAX_LOG_NODES },
       lines: [],
       cut: false,
@@ -1118,8 +1129,9 @@ export class BaseError<T extends string> extends Error {
    * members gets a count on its own line, and each member is rendered as its
    * own chain, indented one level deeper. `head` prefixes the first line: a
    * member starts with a bullet at the indent of its parent, and its own chain
-   * keeps the deeper `indent`. The `seen` set is shared across the whole tree,
-   * so a cycle or a repeated branch ends with a marker instead of recursing.
+   * keeps the deeper `indent`. The cause walk (see {@link CauseWalk}) spans the
+   * whole tree, so a cycle and a shared node end with their marker instead of
+   * recursing.
    *
    * `seen` bounds only repeated objects. The line budget bounds a tree that
    * grows while the render reads it, for example through a getter that returns
@@ -1157,72 +1169,85 @@ export class BaseError<T extends string> extends Error {
     let prefix = head;
     let nodeDepth = depth;
     let nextCauseDepth = causeDepth;
-
-    while (current != null) {
-      // A primitive has no links and cannot close a cycle, so it renders
-      // each time it repeats.
-      if (typeof current === "object") {
-        if (render.seen.has(current)) {
-          BaseError.#renderLine(render, prefix, CIRCULAR_CAUSE_CHAIN_MARKER);
-          return;
-        }
-        render.seen.add(current);
-      }
-
-      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
-      const total = aggregate === undefined ? 0 : aggregate.total;
-      const suffix = total > 0 ? ` (+${total} aggregated)` : "";
-      const node = `${BaseError.#renderNode(current)}${suffix}`;
-      if (!BaseError.#renderLine(render, prefix, node)) return;
-
-      const shown = aggregate === undefined ? [] : aggregate.members;
-      for (const member of shown) {
-        // A hole reads as undefined. It keeps its slot, as in the log, so the
-        // count on the node line matches the list.
-        if (member === undefined || member === null) {
-          if (!BaseError.#renderLine(render, `${indent}  - `, String(member))) {
+    // Each spine node of this chain is an ancestor of the nodes after it.
+    const entered: object[] = [];
+    try {
+      while (current != null) {
+        // A primitive has no links and cannot close a cycle, so it renders
+        // each time it repeats.
+        if (typeof current === "object" && current !== null) {
+          if (render.path.has(current)) {
+            BaseError.#renderLine(render, prefix, CIRCULAR_CAUSE_CHAIN_MARKER);
             return;
           }
-          continue;
+          if (render.seen.has(current)) {
+            BaseError.#renderLine(render, prefix, SHARED_CAUSE_MARKER);
+            return;
+          }
+          render.seen.add(current);
+          render.path.add(current);
+          entered.push(current);
         }
-        BaseError.#renderChain(
-          member,
-          render,
-          `${indent}  - `,
-          `${indent}    `,
-          nodeDepth + 1,
-          nodeDepth + 2,
-        );
-        if (render.cut) return;
-      }
-      if (
-        total > shown.length &&
-        !BaseError.#renderLine(
-          render,
-          `${indent}  `,
-          moreAggregatedErrorsMarker(total - shown.length),
-        )
-      ) {
-        return;
-      }
 
-      // The linear spine is bounded the way the serializer bounds it: a cause
-      // that would land past the cap is the depth marker, and a missing or
-      // null cause ends the chain without one. Only the hops up to the cap
-      // are read, so the length of the chain never sets the cost.
-      const cause = readProperty(current, "cause");
-      if (cause != null && nextCauseDepth >= MAX_CAUSE_DEPTH) {
-        BaseError.#renderLine(
-          render,
-          `${indent}Caused by: `,
-          MAX_CAUSE_DEPTH_MARKER,
-        );
-        return;
+        const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
+        const total = aggregate === undefined ? 0 : aggregate.total;
+        const suffix = total > 0 ? ` (+${total} aggregated)` : "";
+        const node = `${BaseError.#renderNode(current)}${suffix}`;
+        if (!BaseError.#renderLine(render, prefix, node)) return;
+
+        const shown = aggregate === undefined ? [] : aggregate.members;
+        for (const member of shown) {
+          // A hole reads as undefined. It keeps its slot, as in the log, so the
+          // count on the node line matches the list.
+          if (member === undefined || member === null) {
+            if (
+              !BaseError.#renderLine(render, `${indent}  - `, String(member))
+            ) {
+              return;
+            }
+            continue;
+          }
+          BaseError.#renderChain(
+            member,
+            render,
+            `${indent}  - `,
+            `${indent}    `,
+            nodeDepth + 1,
+            nodeDepth + 2,
+          );
+          if (render.cut) return;
+        }
+        if (
+          total > shown.length &&
+          !BaseError.#renderLine(
+            render,
+            `${indent}  `,
+            moreAggregatedErrorsMarker(total - shown.length),
+          )
+        ) {
+          return;
+        }
+
+        // The linear spine is bounded the way the serializer bounds it: a cause
+        // that would land past the cap is the depth marker, and a missing or
+        // null cause ends the chain without one. Only the hops up to the cap
+        // are read, so the length of the chain never sets the cost.
+        const cause = readProperty(current, "cause");
+        if (cause != null && nextCauseDepth >= MAX_CAUSE_DEPTH) {
+          BaseError.#renderLine(
+            render,
+            `${indent}Caused by: `,
+            MAX_CAUSE_DEPTH_MARKER,
+          );
+          return;
+        }
+        current = cause;
+        prefix = `${indent}Caused by: `;
+        nodeDepth = nextCauseDepth;
+        nextCauseDepth++;
       }
-      current = cause;
-      prefix = `${indent}Caused by: `;
-      nodeDepth = nextCauseDepth;
-      nextCauseDepth++;
+    } finally {
+      for (const node of entered) render.path.delete(node);
     }
   }
 
@@ -1388,8 +1413,8 @@ export class BaseError<T extends string> extends Error {
    * field taken off a native error is copied as data (see serializeLogData),
    * so the log object shares no reference with the cause and the consumer's
    * `JSON.stringify` never meets a bigint or a cycle the cause carried.
-   * Uses a seen set to detect circular cause chains, and a depth bound so an
-   * acyclic-but-very-deep chain is capped instead of recursing unbounded.
+   * Uses a cause walk (see {@link CauseWalk}) to mark cycles and shared nodes,
+   * and a depth bound so an acyclic but very deep chain is capped.
    *
    * Total per node: each foreign read is guarded, and a value that still
    * defeats serialization (a Proxy whose traps throw) becomes a marker, so one
@@ -1402,14 +1427,14 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ #serializeCause(
     cause: unknown,
-    seen: Set<unknown>,
+    walk: CauseWalk,
     depth: number,
     holder: object,
     key: string,
     context: LogBuildContext,
   ): unknown {
     try {
-      return this.#serializeCauseNode(cause, seen, depth, holder, key, context);
+      return this.#serializeCauseNode(cause, walk, depth, holder, key, context);
     } catch {
       return BaseError.#markSerializerMarker(
         holder,
@@ -1421,7 +1446,7 @@ export class BaseError<T extends string> extends Error {
 
   /*#__PURE__*/ #serializeCauseNode(
     cause: unknown,
-    seen: Set<unknown>,
+    walk: CauseWalk,
     depth: number,
     holder: object,
     key: string,
@@ -1446,96 +1471,121 @@ export class BaseError<T extends string> extends Error {
     }
 
     if (BaseError.#isNativeError(cause)) {
-      if (seen.has(cause)) {
+      if (walk.path.has(cause)) {
         return BaseError.#markSerializerMarker(
           holder,
           key,
           CIRCULAR_CAUSE_CHAIN_MARKER,
         );
       }
-      seen.add(cause);
-
-      // Every field is a foreign read: a cause is whatever the caller threw,
-      // and this runs in a catch path, so a throwing getter reads as absent.
-      // Every value is copied as data (see serializeLogData): the log object
-      // must not share a reference with the cause, and the consumer's
-      // JSON.stringify must not meet a bigint or a cycle the cause carried.
-      const serialized: Record<string, unknown> = {
-        name: BaseError.#serializeEnvelopeField(
-          readProperty(cause, "name"),
-          context,
-        ),
-        message: BaseError.#serializeEnvelopeField(
-          readProperty(cause, "message"),
-          context,
-        ),
-        stack: BaseError.#serializeEnvelopeField(
-          readProperty(cause, "stack"),
-          context,
-        ),
-      };
-
-      // Preserve StructuredError fields if present (duck-typing). This is the
-      // only route for a foreign cause: a plain `Error` carrying these fields,
-      // a cross-realm instance and a Proxy have no reachable hook to ask.
-      for (const key of ["code", "category", "retryable", "details"]) {
-        const value =
-          key === "details"
-            ? serializeLogData(readProperty(cause, key), context)
-            : BaseError.#serializeEnvelopeField(
-                readProperty(cause, key),
-                context,
-              );
-        if (value !== undefined) serialized[key] = value;
-      }
-
-      // A cause of this realm says what it is, through the one hook a fixed
-      // roster cannot replace. The library's own key names win, so a hook
-      // cannot forge an envelope field or a bounded link, and every value is
-      // copied as data like the rest of the node.
-      Object.assign(serialized, this.#nodeOwnFields(cause, context));
-
-      // An aggregate's members (`AggregateError.errors`, and any error-like
-      // value carrying the same shape) are own but **non-enumerable** on every
-      // supported runtime, so `JSON.stringify` and `Object.entries` drop them
-      // exactly like `message`/`stack`. Read explicitly, by shape rather than
-      // by `instanceof AggregateError`, so cross-realm and custom fan-out
-      // errors serialize too. Without this the branch failures that produced
-      // the error never reach the log at all.
-      const aggregate = readMembers(cause, MAX_AGGREGATE_MEMBERS);
-      if (aggregate !== undefined && aggregate.total > 0) {
-        serialized.errors = this.#serializeAggregate(
-          aggregate,
-          seen,
-          depth + 1,
-          context,
+      if (walk.seen.has(cause)) {
+        return BaseError.#markSerializerMarker(
+          holder,
+          key,
+          SHARED_CAUSE_MARKER,
         );
       }
-
-      // Recursively serialize nested causes
-      const nested = readProperty(cause, "cause");
-      if (nested !== undefined) {
-        serialized.cause = this.#serializeCause(
-          nested,
-          seen,
-          depth + 1,
-          serialized,
-          "cause",
-          context,
-        );
+      walk.seen.add(cause);
+      walk.path.add(cause);
+      try {
+        return this.#serializeErrorNode(cause, walk, depth, context);
+      } finally {
+        walk.path.delete(cause);
       }
-
-      // The cause's own sticky policy runs last, over the node and the subtree
-      // serialized above it, so it covers the cause's descendants exactly as
-      // it does when the cause logs itself. Bottom-up by construction: every
-      // deeper node applied its own policy first. The enclosing error's
-      // redactor walks the result afterwards.
-      const redactor = BaseError.#redactorOf(cause);
-      return redactor === undefined ? serialized : redactor(serialized);
     }
 
     // A cause that is not an error is data.
     return serializeLogData(cause, context, "cause", depth);
+  }
+
+  /**
+   * Writes one error node that the walk reaches for the first time: its
+   * envelope, its structured fields, its own fields, its members and its
+   * cause, masked by its own sticky policy last.
+   */
+  /*#__PURE__*/ #serializeErrorNode(
+    cause: Error,
+    walk: CauseWalk,
+    depth: number,
+    context: LogBuildContext,
+  ): unknown {
+    // Every field is a foreign read: a cause is whatever the caller threw,
+    // and this runs in a catch path, so a throwing getter reads as absent.
+    // Every value is copied as data (see serializeLogData): the log object
+    // must not share a reference with the cause, and the consumer's
+    // JSON.stringify must not meet a bigint or a cycle the cause carried.
+    const serialized: Record<string, unknown> = {
+      name: BaseError.#serializeEnvelopeField(
+        readProperty(cause, "name"),
+        context,
+      ),
+      message: BaseError.#serializeEnvelopeField(
+        readProperty(cause, "message"),
+        context,
+      ),
+      stack: BaseError.#serializeEnvelopeField(
+        readProperty(cause, "stack"),
+        context,
+      ),
+    };
+
+    // Preserve StructuredError fields if present (duck-typing). This is the
+    // only route for a foreign cause: a plain `Error` carrying these fields,
+    // a cross-realm instance and a Proxy have no reachable hook to ask.
+    for (const key of ["code", "category", "retryable", "details"]) {
+      const value =
+        key === "details"
+          ? serializeLogData(readProperty(cause, key), context)
+          : BaseError.#serializeEnvelopeField(
+              readProperty(cause, key),
+              context,
+            );
+      if (value !== undefined) serialized[key] = value;
+    }
+
+    // A cause of this realm says what it is, through the one hook a fixed
+    // roster cannot replace. The library's own key names win, so a hook
+    // cannot forge an envelope field or a bounded link, and every value is
+    // copied as data like the rest of the node.
+    Object.assign(serialized, this.#nodeOwnFields(cause, context));
+
+    // An aggregate's members (`AggregateError.errors`, and any error-like
+    // value carrying the same shape) are own but **non-enumerable** on every
+    // supported runtime, so `JSON.stringify` and `Object.entries` drop them
+    // exactly like `message`/`stack`. Read explicitly, by shape rather than
+    // by `instanceof AggregateError`, so cross-realm and custom fan-out
+    // errors serialize too. Without this the branch failures that produced
+    // the error never reach the log at all.
+    const aggregate = readMembers(cause, MAX_AGGREGATE_MEMBERS);
+    if (aggregate !== undefined && aggregate.total > 0) {
+      serialized.errors = this.#serializeAggregate(
+        aggregate,
+        walk,
+        depth + 1,
+        context,
+      );
+    }
+
+    // Recursively serialize nested causes
+    const nested = readProperty(cause, "cause");
+    if (nested !== undefined) {
+      serialized.cause = this.#serializeCause(
+        nested,
+        walk,
+        depth + 1,
+        serialized,
+        "cause",
+        context,
+      );
+    }
+
+    // The cause's own sticky policy runs last, over the node and the subtree
+    // serialized above it, so it covers the cause's descendants exactly as
+    // it does when the cause logs itself. Bottom-up by construction: every
+    // deeper node applied its own policy first. The enclosing error's
+    // redactor walks the result afterwards.
+    const redactor = BaseError.#redactorOf(cause);
+    return redactor === undefined ? serialized : redactor(serialized);
   }
 
   /** The fixed envelope must never turn a scalar decision into a size marker. */
@@ -1560,13 +1610,14 @@ export class BaseError<T extends string> extends Error {
   /**
    * Serializes an aggregate's members. The reader already capped them at
    * {@link MAX_AGGREGATE_MEMBERS}; the count it reports marks the
-   * remainder. Members share the enclosing `seen` set, so an error reachable
-   * from more than one branch is rendered at its first occurrence and marked
-   * afterwards, and the walk terminates on a self-referencing aggregate.
+   * remainder. Members share the enclosing cause walk, so an error reachable
+   * from more than one branch is written at its first occurrence and marked
+   * as shared afterwards, and a self-referencing aggregate ends in the
+   * circular marker.
    */
   /*#__PURE__*/ #serializeAggregate(
     aggregate: AggregateMembers,
-    seen: Set<unknown>,
+    walk: CauseWalk,
     depth: number,
     context: LogBuildContext,
   ): unknown[] {
@@ -1585,7 +1636,7 @@ export class BaseError<T extends string> extends Error {
       serialized.push(
         this.#serializeCause(
           error,
-          seen,
+          walk,
           depth,
           serialized,
           String(serialized.length),

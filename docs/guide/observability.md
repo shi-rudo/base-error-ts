@@ -69,8 +69,10 @@ cross-realm and custom aggregates serialize the same way.
 
 Each aggregate node is capped at 100 members (the remainder collapses to a
 `"[100 more aggregated errors]"` marker), shares the chain's depth cap of 100,
-and is cycle-safe: an error already serialized higher up is marked rather than
-walked again.
+and is cycle-safe. An error that is its own ancestor ends in `[Circular cause
+chain]`. An error that the log already wrote in full, for example the same
+upstream failure in two branches, ends in `[Shared cause]`. `toString()` uses
+the same two markers.
 
 `toString()` counts the members on the aggregate's line and renders each one
 indented below it, so the one-line render shows the shape of the failure too.

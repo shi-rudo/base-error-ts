@@ -872,13 +872,11 @@ describe("BaseError", () => {
       (errorA as unknown as Record<string, unknown>).cause = errorB;
 
       const json = errorA.toJSON();
-      // Should serialize without infinite recursion
-      // A -> B -> A(seen) -> "[Circular cause chain]"
+
+      // A is the root and an ancestor of B, so B's cause closes the cycle.
       const causeB = json.cause as Record<string, unknown>;
       expect(causeB.message).toBe("B");
-      const causeA = causeB.cause as Record<string, unknown>;
-      expect(causeA.message).toBe("A");
-      expect(causeA.cause).toBe("[Circular cause chain]");
+      expect(causeB.cause).toBe("[Circular cause chain]");
     });
 
     it("caps a very deep (non-circular) cause chain instead of recursing unbounded", () => {
