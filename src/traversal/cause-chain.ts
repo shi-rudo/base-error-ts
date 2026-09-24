@@ -72,7 +72,7 @@ function* traverseCauseTree(
   yield error;
 
   const cause = readProperty(error, "cause");
-  if (cause !== undefined) {
+  if (cause !== undefined && cause !== null) {
     yield* traverseCauseTree(cause, depth + 1, options, seen, budget);
   }
   const aggregate = readMembers(error, budget.nodes);
@@ -124,7 +124,7 @@ function* traverseCauseChain(
     yield current;
 
     const cause = readProperty(current, "cause");
-    if (cause === undefined) return;
+    if (cause === undefined || cause === null) return;
     current = cause;
   }
 }

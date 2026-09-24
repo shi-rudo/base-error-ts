@@ -3,8 +3,10 @@ import {
   getRootCause,
   findInCauseChain,
   filterCauseChain,
+  isErrorWithCause,
   someCauseChain,
   everyCauseChain,
+  toStructuredError,
 } from "../index.js";
 import { StructuredError } from "../index.js";
 
@@ -84,10 +86,10 @@ describe("getRootCause", () => {
     expect(getRootCause(error)).toBe("plain string cause");
   });
 
-  it("handles null cause", () => {
+  it("treats a null cause as no cause (returns the error itself)", () => {
     const error = new Error("test") as ErrorWithCause;
     error.cause = null;
-    expect(getRootCause(error)).toBe(null);
+    expect(getRootCause(error)).toBe(error);
   });
 
   it("treats an explicit undefined cause as no cause (returns the error itself)", () => {
@@ -114,6 +116,29 @@ describe("getRootCause", () => {
     const error = new Error("test") as ErrorWithCause;
     error.cause = { foo: "bar" };
     expect(getRootCause(error)).toEqual({ foo: "bar" });
+  });
+});
+
+describe("a null cause", () => {
+  it("does not count as a cause for isErrorWithCause", () => {
+    const error = Object.assign(new Error("test"), { cause: null });
+
+    expect(isErrorWithCause(error)).toBe(false);
+  });
+
+  it("ends the chain of toStructuredError(null) at the structured error", () => {
+    const error = toStructuredError(null);
+
+    expect(getRootCause(error)).toBe(error);
+    expect(filterCauseChain(error, () => true)).toEqual([error]);
+  });
+
+  it("ends the chain in the tree traversal too", () => {
+    const error = Object.assign(new Error("test"), { cause: null });
+
+    const visited = filterCauseChain(error, () => true, { aggregates: true });
+
+    expect(visited).toEqual([error]);
   });
 });
 

@@ -1,5 +1,15 @@
 # Migration Guide
 
+## Next major: a null cause is no cause
+
+`isErrorWithCause` and the cause-chain helpers now treat `cause: null` like
+`cause: undefined`: the chain ends there. `getRootCause(error)` returns
+`error` for a `null` cause, where it returned `null`, and
+`isErrorWithCause({ cause: null })` returns `false`.
+
+If code compared `getRootCause(error)` with `null` to detect a thrown `null`,
+read the slot instead: `error.cause === null`.
+
 ## Next major: shared cause marker
 
 A cause that the same walk already wrote, without a cycle, is now
