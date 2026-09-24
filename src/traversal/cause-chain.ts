@@ -1,4 +1,4 @@
-import { readMembers, readProperty } from "../errors/guarded-read.js";
+import { readCause, readMembers } from "../errors/guarded-read.js";
 import {
   DEFAULT_TRAVERSAL_NODES,
   MAX_CAUSE_DEPTH,
@@ -71,7 +71,7 @@ function* traverseCauseTree(
   budget.nodes--;
   yield error;
 
-  const cause = readProperty(error, "cause");
+  const cause = readCause(error);
   if (cause !== undefined) {
     yield* traverseCauseTree(cause, depth + 1, options, seen, budget);
   }
@@ -123,7 +123,7 @@ function* traverseCauseChain(
     seen.add(current);
     yield current;
 
-    const cause = readProperty(current, "cause");
+    const cause = readCause(current);
     if (cause === undefined) return;
     current = cause;
   }

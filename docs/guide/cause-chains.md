@@ -52,6 +52,12 @@ if (someChainRetryable(error)) {
 `isErrorWithCause(value)` and `isRetryableStructuredError(value)` are type
 guards for narrowing unknown values while traversing.
 
+A nullish `cause` counts as no cause, as in .NET and Java: every helper stops
+there, and `getRootCause` returns the error that holds it. The slot keeps the
+value, so `getRootCause(error).cause === null` still tells that `null` was
+thrown. A `null` member of an aggregate is a rejection reason and stays a
+member.
+
 ## Aggregate errors: opt in
 
 By default the helpers follow `cause` and nothing else. An `AggregateError`

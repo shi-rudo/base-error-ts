@@ -19,6 +19,7 @@ import {
 } from "./log-position.js";
 import {
   isArrayValue,
+  readCause,
   readMembers,
   readOwnKeys,
   readPrototype,
@@ -1243,8 +1244,8 @@ export class BaseError<T extends string> extends Error {
         // that would land past the cap is the depth marker, and a missing or
         // null cause ends the chain without one. Only the hops up to the cap
         // are read, so the length of the chain never sets the cost.
-        const cause = readProperty(current, "cause");
-        if (cause != null && nextCauseDepth >= MAX_CAUSE_DEPTH) {
+        const cause = readCause(current);
+        if (cause !== undefined && nextCauseDepth >= MAX_CAUSE_DEPTH) {
           BaseError.#renderLine(
             render,
             `${indent}Caused by: `,

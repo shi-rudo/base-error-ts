@@ -1,5 +1,26 @@
 # Migration Guide
 
+## Next major: a null cause is no cause
+
+`isErrorWithCause` and the cause-chain helpers now treat `cause: null` like
+`cause: undefined`: the chain ends there. `getRootCause(error)` returns
+`error` for a `null` cause, where it returned `null`, and
+`isErrorWithCause({ cause: null })` returns `false`.
+
+A chain predicate no longer receives `null`. Check code that uses
+`everyCauseChain`, `someCauseChain`, `findInCauseChain` or `filterCauseChain`
+on a chain that can end in a thrown `null`. `getRootCauseRetryable` now reads
+the error that holds the `null` and returns its own `retryable`.
+
+If code compared `getRootCause(error)` with `null` to detect a thrown `null`,
+check the `cause` slot of the root instead. The root is the deepest error, and
+its slot still holds the `null`:
+
+```ts
+const root = getRootCause(error) as { cause?: unknown };
+const threwNull = root.cause === null;
+```
+
 ## Next major: shared cause marker
 
 A cause that the same walk already wrote, without a cycle, is now
