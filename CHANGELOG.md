@@ -20,6 +20,8 @@
 
 ### Breaking changes (next major)
 
+- **A shared cause is no longer labeled as a cycle.** The log object and `toString` kept one `seen` set for the whole walk, so any node that appeared a second time became `[Circular cause chain]`. For `new AggregateError([upstream, upstream])` the second branch claimed a cycle that does not exist. The walks now tell the two cases apart. A node that is its own ancestor still ends in `[Circular cause chain]`. A node that the same walk already wrote ends in the new `[Shared cause]` marker, which stays readable under `redactAllow` and survives `fromJSON`. The log now treats the root as the ancestor of its whole tree, as `toString` already did. A chain that returns to the root ends in the circular marker at the same node on both surfaces. Before, the log wrote the root a second time. Code that matched `[Circular cause chain]` for a shared node now sees `[Shared cause]`. See `MIGRATION.md`.
+
 - **Public logs created during own-fields processing skip own-fields hooks.** This applies across instances and includes callbacks while copying the hook result. Nested logs keep fixed diagnostic fields, bounded causes, and redaction. Subsequent calls run hooks normally. This prevents recursive hooks from exhausting the host stack without adding marker fields or changing traversal budgets.
 
 - **Built-in redaction shares a 100,000-read allowance across classification and traversal.** It charges key inspections and value reads before performing them, including non-enumerable keys and cause-array indices. Exhaustion returns the safe envelope with `[Max redaction size exceeded]` as its message. Correctly typed decision fields keep their values. This can stop oversized input before the data-node limit.
