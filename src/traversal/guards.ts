@@ -1,23 +1,17 @@
 import { isStructuredError } from "../errors/guards.js";
-import { readProperty } from "../errors/guarded-read.js";
+import { readCause, readProperty } from "../errors/guarded-read.js";
 
 /**
- * Checks if a value has a non-empty `cause` (duck-typing).
- *
- * A nullish `cause` counts as no cause, as in .NET, Java and the `??`
- * operator. That covers `new Error(msg, { cause: undefined })` and the
- * `cause: null` that `toStructuredError(null)` installs, so chain traversal
- * stops there instead of stepping onto a spurious nullish node. A `cause`
- * getter that throws counts as no cause too: the guard runs in catch paths
- * and must not throw.
+ * Checks if a value has a non-empty `cause` (duck-typing). A nullish `cause`
+ * and a `cause` getter that throws count as no cause, so chain traversal stops
+ * there.
  *
  * @param value - The value to check
  * @returns True if the value has a `cause` property whose value is neither
  *   `undefined` nor `null`
  */
 export function isErrorWithCause(value: unknown): value is { cause: unknown } {
-  const cause = readProperty(value, "cause");
-  return cause !== undefined && cause !== null;
+  return readCause(value) !== undefined;
 }
 
 /**

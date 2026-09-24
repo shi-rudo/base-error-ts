@@ -36,6 +36,18 @@ export function readPropertyResult(
 }
 
 /**
+ * Reads the `cause` link of a foreign value for a walk over the chain. A
+ * nullish cause is no cause, as in .NET and Java and as the `??` operator reads
+ * it, so the link reads as `undefined`, like a missing link or a throwing
+ * getter. A serializer that copies the slot as data reads it with
+ * {@link readProperty} instead.
+ */
+export function readCause(value: unknown): unknown {
+  const cause = readProperty(value, "cause");
+  return cause === null ? undefined : cause;
+}
+
+/**
  * Reads one member of an argument, which can be an object or a function.
  * {@link readProperty} treats a function as having no properties, which suits
  * cause links. A value that is neither reads as a missing member.
