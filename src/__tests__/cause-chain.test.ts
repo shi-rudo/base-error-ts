@@ -6,6 +6,8 @@ import {
   isErrorWithCause,
   someCauseChain,
   everyCauseChain,
+  getRootCauseRetryable,
+  isStructuredError,
   toStructuredError,
 } from "../index.js";
 import { StructuredError } from "../index.js";
@@ -131,6 +133,42 @@ describe("a null cause", () => {
 
     expect(getRootCause(error)).toBe(error);
     expect(filterCauseChain(error, () => true)).toEqual([error]);
+  });
+
+  it("lets getRootCauseRetryable read the error itself", () => {
+    const error = toStructuredError(null, { retryable: true });
+
+    expect(getRootCauseRetryable(error)).toBe(true);
+  });
+
+  it("is not a node that a chain predicate judges", () => {
+    const error = toStructuredError(null);
+
+    expect(everyCauseChain(error, isStructuredError)).toBe(true);
+  });
+
+  it("stays in the cause slot of the root, where a thrown null shows", () => {
+    const error = new StructuredError({
+      code: "WRAPPED",
+      category: "INTERNAL",
+      retryable: false,
+      message: "wrapped",
+      cause: toStructuredError(null),
+    });
+
+    const root = getRootCause(error) as { cause?: unknown };
+
+    expect(root.cause).toBe(null);
+  });
+
+  it("keeps a null aggregate member as a member", () => {
+    const aggregate = new AggregateError([null], "rejected with null");
+
+    const visited = filterCauseChain(aggregate, () => true, {
+      aggregates: true,
+    });
+
+    expect(visited).toEqual([aggregate, null]);
   });
 
   it("ends the chain in the tree traversal too", () => {
