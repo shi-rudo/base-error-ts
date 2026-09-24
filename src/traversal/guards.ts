@@ -10,7 +10,9 @@ import { readCause, readProperty } from "../errors/guarded-read.js";
  * @returns True if the value has a `cause` property whose value is neither
  *   `undefined` nor `null`
  */
-export function isErrorWithCause(value: unknown): value is { cause: unknown } {
+export function isErrorWithCause(
+  value: unknown,
+): value is { cause: NonNullable<unknown> } {
   return readCause(value) !== undefined;
 }
 
