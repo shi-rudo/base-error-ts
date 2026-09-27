@@ -62,47 +62,30 @@ describe("denied diagnostic fields stay absent from redaction recovery", () => {
     },
   );
 
-  it.each(["name", "code", "category", "retryable"])(
-    "does not recover denied %s after a later mask throws",
-    (key) => {
-      const calls: string[] = [];
-      const error = new SecretDiagnosis("diagnosis").redact([key, "secret"], {
-        mask(_value, currentKey) {
-          calls.push(currentKey);
-          if (currentKey === "secret") return throwingMask();
-          return "[REDACTED]";
-        },
-      });
+  it.each([
+    "name",
+    "code",
+    "category",
+    "retryable",
+    "timestamp",
+    "timestampIso",
+  ])("does not recover denied %s after a later mask throws", (key) => {
+    const calls: string[] = [];
+    const error = new SecretDiagnosis("diagnosis").redact([key, "secret"], {
+      mask(_value, currentKey) {
+        calls.push(currentKey);
+        if (currentKey === "secret") return throwingMask();
+        return "[REDACTED]";
+      },
+    });
 
-      const log = error.toLogObject();
+    const log = error.toLogObject();
 
-      expect(log.message).toBe("[log redaction failed]");
-      expect(log).not.toHaveProperty(key);
-      expect(log).not.toHaveProperty("details");
-      expect(calls).toEqual([key, "secret"]);
-    },
-  );
-
-  it.each(["timestamp", "timestampIso"])(
-    "does not recover either form of the time after %s is denied and a later mask throws",
-    (key) => {
-      const calls: string[] = [];
-      const error = new SecretDiagnosis("diagnosis").redact([key, "secret"], {
-        mask(_value, currentKey) {
-          calls.push(currentKey);
-          if (currentKey === "secret") return throwingMask();
-          return "[REDACTED]";
-        },
-      });
-
-      const log = error.toLogObject();
-
-      expect(log.message).toBe("[log redaction failed]");
-      expect(log).not.toHaveProperty("timestamp");
-      expect(log).not.toHaveProperty("timestampIso");
-      expect(calls).toEqual(["timestamp", "timestampIso", "secret"]);
-    },
-  );
+    expect(log.message).toBe("[log redaction failed]");
+    expect(log).not.toHaveProperty(key);
+    expect(log).not.toHaveProperty("details");
+    expect(calls).toEqual([key, "secret"]);
+  });
 
   it("honors denied names when reflection fails after successful masking", () => {
     const error = new SecretDiagnosis("diagnosis").redact(["name"]);
