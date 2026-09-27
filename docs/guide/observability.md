@@ -374,7 +374,9 @@ It is for reconstruction **within one trust/bounded-context boundary**:
 
 It is lenient (malformed input → a safe `UNKNOWN_ERROR` envelope, never throws)
 and prototype-pollution-safe (whitelisted fields only). It restores the cause
-chain and the original `stack`/`timestamp`. It reconstructs a
+chain with the `stack` of each node, and the original `timestamp` of the root.
+The log writes no time for a cause, so a nested cause carries the time of the
+reconstruction, not the time at which it was thrown. It reconstructs a
 `StructuredError` only (`code`, `category`, `retryable`, `details`); there are no
 user/localized messages to restore (those are not part of the error model).
 

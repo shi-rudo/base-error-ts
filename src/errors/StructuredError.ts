@@ -145,10 +145,12 @@ export class StructuredError<
    * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable); malformed input yields that
    * envelope instead of throwing; only whitelisted fields are read (no
    * prototype pollution). `details` is copied shallowly (the top level is
-   * decoupled from the payload; nested values stay shared). The original
-   * `stack`/`timestamp` and the cause chain are restored. Reconstructed
-   * fields are **not** an authority on trust: whoever produced the payload
-   * can forge them.
+   * decoupled from the payload; nested values stay shared). The cause chain
+   * is restored with the `stack` of each node. The root keeps its original
+   * `timestamp`. The log writes no time for a cause, as other platforms do not
+   * either, so a nested cause carries the time of the reconstruction.
+   * Reconstructed fields are **not** an authority on trust: whoever produced
+   * the payload can forge them.
    *
    * Always returns a base `StructuredError`: subclass identity and behavior are
    * **not** restored (a `ValidationError` round-trips to a `StructuredError`,
