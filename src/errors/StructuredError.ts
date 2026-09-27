@@ -218,18 +218,19 @@ export class StructuredError<
       readProperty(obj, "stack"),
       "string",
     );
-    StructuredError.#rehydrate(
-      error,
-      "timestamp",
+    const time = StructuredError.#originalTime(
       readProperty(obj, "timestamp"),
-      "number",
-    );
-    StructuredError.#rehydrate(
-      error,
-      "timestampIso",
       readProperty(obj, "timestampIso"),
-      "string",
     );
+    if (time !== undefined) {
+      StructuredError.#rehydrate(error, "timestamp", time, "number");
+      StructuredError.#rehydrate(
+        error,
+        "timestampIso",
+        new Date(time).toISOString(),
+        "string",
+      );
+    }
 
     // A structured error can carry aggregate members too (a fan-out error that
     // sets its own `errors`). The log serializer reads them by shape, so the
@@ -262,6 +263,27 @@ export class StructuredError<
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * The original instant of a payload, taken from one source, so that the
+   * restored `timestamp` and `timestampIso` cannot disagree: the numeric
+   * `timestamp` first, else a parseable `timestampIso`. A value outside the
+   * date range does not count, because `toISOString` throws for it. Returns
+   * `undefined` to keep the time of the reconstruction.
+   */
+  static #originalTime(
+    timestamp: unknown,
+    timestampIso: unknown,
+  ): number | undefined {
+    const iso =
+      typeof timestampIso === "string" ? Date.parse(timestampIso) : undefined;
+    for (const candidate of [timestamp, iso]) {
+      if (typeof candidate !== "number") continue;
+      const instant = new Date(candidate).getTime();
+      if (Number.isFinite(instant)) return instant;
+    }
+    return undefined;
   }
 
   static #rehydrate(
