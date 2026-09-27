@@ -169,6 +169,9 @@ Redaction selects keys, not matching values. Denying `name` masks its stack head
 but leaves `code` unchanged. Denying `code` alone leaves `name` and its stack header unchanged.
 This also applies when the error appears as a cause.
 
+The log states the time in two keys, `timestamp` and `timestampIso`. To hide
+the time, deny both. Denying one key masks that key only.
+
 ```ts
 const error = new StructuredError({
   code: "TENANT_9931_SECRET", // Deliberately sensitive code for this example.
