@@ -356,8 +356,9 @@ Sentry.captureException(error, { extra: error.toLogObject() });
 ## Reconstructing: `StructuredError.fromJSON`
 
 `fromJSON` is the inverse of `toJSON`: it rebuilds a typed `StructuredError`
-(restoring `code`/`category`/`retryable`/`details`, the original
-`stack`/`timestamp`, and the cause chain) from the serialized shape.
+(restoring `code`/`category`/`retryable`/`details`, the cause chain with the
+`stack` of each node, and the original `timestamp` of the root) from the
+serialized shape.
 
 ```ts
 const err = StructuredError.fromJSON(payload); // payload: unknown

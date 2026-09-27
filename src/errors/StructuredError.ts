@@ -21,6 +21,11 @@ type StructuredFieldReads = {
   readonly details: unknown;
 };
 
+/** True for a number that `Date` accepts, so `toISOString` does not throw. */
+function isDateInstant(value: number): boolean {
+  return Number.isFinite(new Date(value).getTime());
+}
+
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
  *
@@ -222,15 +227,7 @@ export class StructuredError<
       readProperty(obj, "timestamp"),
       readProperty(obj, "timestampIso"),
     );
-    if (time !== undefined) {
-      StructuredError.#rehydrate(error, "timestamp", time, "number");
-      StructuredError.#rehydrate(
-        error,
-        "timestampIso",
-        new Date(time).toISOString(),
-        "string",
-      );
-    }
+    if (time !== undefined) StructuredError.#restoreTime(error, time);
 
     // A structured error can carry aggregate members too (a fan-out error that
     // sets its own `errors`). The log serializer reads them by shape, so the
@@ -267,23 +264,42 @@ export class StructuredError<
 
   /**
    * The original instant of a payload, taken from one source, so that the
-   * restored `timestamp` and `timestampIso` cannot disagree: the numeric
-   * `timestamp` first, else a parseable `timestampIso`. A value outside the
-   * date range does not count, because `toISOString` throws for it. Returns
-   * `undefined` to keep the time of the reconstruction.
+   * restored `timestamp` and `timestampIso` cannot disagree. The numeric
+   * `timestamp` wins as it is. Only without one does the ISO string count, and
+   * only in the exact form that `toISOString` writes: a string without an
+   * offset reads as local time, and engines parse other formats differently.
+   * A value outside the date range does not count, because `toISOString`
+   * throws for it. Returns `undefined` to keep the time of the reconstruction.
    */
   static #originalTime(
     timestamp: unknown,
     timestampIso: unknown,
   ): number | undefined {
-    const iso =
-      typeof timestampIso === "string" ? Date.parse(timestampIso) : undefined;
-    for (const candidate of [timestamp, iso]) {
-      if (typeof candidate !== "number") continue;
-      const instant = new Date(candidate).getTime();
-      if (Number.isFinite(instant)) return instant;
+    if (typeof timestamp === "number" && isDateInstant(timestamp)) {
+      return timestamp;
     }
-    return undefined;
+    if (typeof timestampIso !== "string") return undefined;
+    const parsed = Date.parse(timestampIso);
+    return isDateInstant(parsed) &&
+      new Date(parsed).toISOString() === timestampIso
+      ? parsed
+      : undefined;
+  }
+
+  /** Writes both time fields from one instant. */
+  static #restoreTime(target: object, time: number): void {
+    const fields = [
+      ["timestamp", time],
+      ["timestampIso", new Date(time).toISOString()],
+    ] as const;
+    for (const [key, value] of fields) {
+      Object.defineProperty(target, key, {
+        value,
+        configurable: true,
+        writable: true,
+        enumerable: true,
+      });
+    }
   }
 
   static #rehydrate(

@@ -32,7 +32,7 @@
 
 ### Fixed
 
-- **`fromJSON` restores a time pair that agrees.** It restored `timestamp` and `timestampIso` separately. After `redact(["timestamp"])` the log carried `"[REDACTED]"` next to the real ISO string. The restored error then kept the reconstruction time in `timestamp` next to the original ISO string. A payload with `timestamp: Infinity` restored `Infinity`. `fromJSON` now takes one instant, the numeric `timestamp` first, else a parseable `timestampIso`, and writes both fields from it. A value outside the date range counts as missing, so the reconstruction time stays, and both fields match.
+- **`fromJSON` restores a time pair that agrees.** It restored `timestamp` and `timestampIso` separately. After `redact(["timestamp"])` the log carried `"[REDACTED]"` next to the real ISO string. The restored error then kept the reconstruction time in `timestamp` next to the original ISO string. A payload with `timestamp: Infinity` restored `Infinity`. `fromJSON` now takes one instant and writes both fields from it. The numeric `timestamp` wins as it is. Without one, the ISO string counts only in the exact form that `toISOString` writes, because a string without an offset reads as local time. A value outside the date range counts as missing, so the reconstruction time stays, and both fields match.
 
 - **`Retry-After` holds only plain digits.** The retry-after check accepted any non-negative integer. `String()` writes a number of 1e21 or more in exponent notation, so `retryAfter: 1e21` produced the header `retry-after: 1e+21`, which RFC 9110 does not allow. The check now requires a safe integer, which always prints as its exact digits. A larger value is ignored, like a negative one.
 

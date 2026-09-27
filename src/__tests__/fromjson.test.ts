@@ -88,6 +88,39 @@ describe("StructuredError.fromJSON", () => {
       expect(restored.timestampIso).toBe("1970-01-01T00:00:00.000Z");
     });
 
+    it("ignores an ISO string that is not the canonical form of its instant", () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.UTC(2026, 8, 27, 12));
+
+      for (const timestampIso of ["2026-09-27T00:00:00", "Sep 27 2026"]) {
+        const restored = StructuredError.fromJSON({
+          code: "X",
+          category: "Y",
+          retryable: true,
+          message: "m",
+          timestamp: "[REDACTED]",
+          timestampIso,
+        });
+
+        expect(restored.timestamp).toBe(Date.UTC(2026, 8, 27, 12));
+      }
+    });
+
+    it("restores a fractional numeric timestamp unchanged", () => {
+      const restored = StructuredError.fromJSON({
+        code: "X",
+        category: "Y",
+        retryable: true,
+        message: "m",
+        timestamp: 1748505600000.7,
+      });
+
+      expect(restored.timestamp).toBe(1748505600000.7);
+      expect(restored.timestampIso).toBe(
+        new Date(1748505600000.7).toISOString(),
+      );
+    });
+
     it("keeps a matching reconstruction time for a timestamp outside the date range", () => {
       for (const timestamp of [Infinity, 1e300, Number.NaN]) {
         const restored = StructuredError.fromJSON({
