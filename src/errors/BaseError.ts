@@ -247,7 +247,9 @@ export class BaseError<T extends string> extends Error {
    * member, a header that repeats the node's own `name: message` is rewritten
    * with the masked fields and keeps its frames, and a stack that does not
    * start with that header is handed to the mask as a whole. {@link toString}
-   * masks a deny-listed technical message as well. The `err.stack` property
+   * masks a deny-listed technical message as well. Denying `"timestamp"` or
+   * `"timestampIso"` masks both, because they state one instant in two forms.
+   * The `err.stack` property
    * and Node's `console.log(err)` inspection (which prints that property) stay
    * unredacted. When redaction matters, log errors only through a structured
    * serializer that hits `toJSON`, never via string interpolation.
@@ -258,6 +260,11 @@ export class BaseError<T extends string> extends Error {
   public redact(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
     const denied = new Set(keys);
+    // The time is one fact in two forms, so denying either form denies both.
+    if (denied.has("timestamp") || denied.has("timestampIso")) {
+      denied.add("timestamp");
+      denied.add("timestampIso");
+    }
     this.#messageMask = denied.has("message") ? mask : undefined;
     // A denied `stack` is masked whole by the walk, so the header pass is
     // needed only when a header component is denied without `stack`.

@@ -32,6 +32,8 @@
 
 ### Fixed
 
+- **Denying one form of the time masks both.** `redact(["timestamp"])` masked the number and left `timestampIso` readable, which states the same instant. The reverse held too. Denying either key now masks both, as denying `name` or `message` already covers the stack header. The recovery envelope after a throwing mask leaves both out as well.
+
 - **`fromJSON` restores a time pair that agrees.** It restored `timestamp` and `timestampIso` separately. After `redact(["timestamp"])` the log carried `"[REDACTED]"` next to the real ISO string. The restored error then kept the reconstruction time in `timestamp` next to the original ISO string. A payload with `timestamp: Infinity` restored `Infinity`. `fromJSON` now takes one instant, the numeric `timestamp` first, else a parseable `timestampIso`, and writes both fields from it. A value outside the date range counts as missing, so the reconstruction time stays, and both fields match.
 
 - **`Retry-After` holds only plain digits.** The retry-after check accepted any non-negative integer. `String()` writes a number of 1e21 or more in exponent notation, so `retryAfter: 1e21` produced the header `retry-after: 1e+21`, which RFC 9110 does not allow. The check now requires a safe integer, which always prints as its exact digits. A larger value is ignored, like a negative one.

@@ -169,6 +169,9 @@ Redaction selects keys, not matching values. Denying `name` masks its stack head
 but leaves `code` unchanged. Denying `code` alone leaves `name` and its stack header unchanged.
 This also applies when the error appears as a cause.
 
+The time is the one exception to the key rule. `timestamp` and `timestampIso`
+state one instant in two forms, so denying either key masks both.
+
 ```ts
 const error = new StructuredError({
   code: "TENANT_9931_SECRET", // Deliberately sensitive code for this example.

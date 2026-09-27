@@ -1023,3 +1023,42 @@ describe("the redaction walker drops function-valued leaves", () => {
     expect(JSON.stringify(err)).not.toContain("hunter2");
   });
 });
+
+describe("redact: the time in two forms", () => {
+  function timed(): StructuredError<string, string> {
+    return new StructuredError({
+      code: "TIMED",
+      category: "TEST",
+      retryable: false,
+      message: "timed",
+    });
+  }
+
+  it("masks timestampIso when timestamp is denied", () => {
+    const log = timed().redact(["timestamp"]).toLogObject();
+
+    expect(log.timestamp).toBe("[REDACTED]");
+    expect(log.timestampIso).toBe("[REDACTED]");
+  });
+
+  it("masks timestamp when timestampIso is denied", () => {
+    const log = timed().redact(["timestampIso"]).toLogObject();
+
+    expect(log.timestamp).toBe("[REDACTED]");
+    expect(log.timestampIso).toBe("[REDACTED]");
+  });
+
+  it("keeps both forms out of the recovery envelope when the mask throws", () => {
+    const log = timed()
+      .redact(["timestamp"], {
+        mask: () => {
+          throw new Error("mask failed");
+        },
+      })
+      .toLogObject();
+
+    expect(log.message).toBe("[log redaction failed]");
+    expect("timestamp" in log).toBe(false);
+    expect("timestampIso" in log).toBe(false);
+  });
+});
