@@ -770,7 +770,7 @@ export class BaseError<T extends string> extends Error {
    * Successful output is not validated, copied, or implicitly redacted again.
    * The consumer owns its shape, JSON safety, and sensitive content.
    * A synchronous throw returns the pre-call diagnostic fields without payload.
-   * Shared input mutations, including root `details`, are not rolled back.
+   * Shared input mutations, including a cause's custom output, are not rolled back.
    * Public logging calls inside the callback start independent builds.
    * The consumer must bound those calls and terminate the callback.
    *
@@ -840,7 +840,9 @@ export class BaseError<T extends string> extends Error {
       );
       if (value !== undefined) json[key] = value;
     }
-    const details = readProperty(this, "details");
+    // The root writes its diagnosis and its cause links before its data, so
+    // oversized details cannot cut the chain that explains the failure.
+    const details = serializeLogData(readProperty(this, "details"), context);
     if (details !== undefined) json.details = details;
 
     return json;

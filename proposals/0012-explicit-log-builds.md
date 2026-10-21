@@ -11,7 +11,7 @@ The library reads the fixed envelope itself, independently of `buildOwnLogFields
 `StructuredError` uses this assembly directly, so a subclass cannot replace its fields through the data hook.
 The legacy record copier, continuation, cut suffix, and multi-stage fallback are removed.
 Each instance property is read through the guarded reader; an unreadable field does not discard its siblings.
-Root `details` keeps its existing value semantics. This decision does not migrate root details to the data copier.
+This decision does not migrate root `details` to the data copier. Proposal 0015 does.
 
 The library retains its bounded data copier in `src/errors/log-data.ts`.
 It is not a general JSON serializer and is not a new package export.
