@@ -86,7 +86,7 @@ describe("StructuredError", () => {
       });
 
       expect(error.timestamp).toBe(mockDate.getTime());
-      expect(error.timestampIso).toBe(mockDate.toISOString());
+      expect(error.toLogObject().timestampIso).toBe(mockDate.toISOString());
     });
 
     it("should have _tag discriminant", () => {

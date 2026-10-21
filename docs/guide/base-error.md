@@ -34,15 +34,19 @@ new BaseError(
 
 ## Properties
 
-| Property       | Description                                                  |
-| -------------- | ------------------------------------------------------------ |
-| `name`         | Error type name (`T`)                                        |
-| `_tag`         | Discriminant for narrowing, defaults to the constructor name |
-| `message`      | Technical message (for logs)                                 |
-| `cause`        | Native cause where supported, preserved cross-runtime        |
-| `stack`        | Richest stack the host can provide                           |
-| `timestamp`    | Epoch-ms number                                              |
-| `timestampIso` | ISO-8601 string                                              |
+| Property    | Description                                                  |
+| ----------- | ------------------------------------------------------------ |
+| `name`      | Error type name (`T`)                                        |
+| `_tag`      | Discriminant for narrowing, defaults to the constructor name |
+| `message`   | Technical message (for logs)                                 |
+| `cause`     | Native cause where supported, preserved cross-runtime        |
+| `stack`     | Richest stack the host can provide                           |
+| `timestamp` | Epoch-ms number                                              |
+
+The error stores its time once, in `timestamp`. The log object also writes it
+as an ISO-8601 string, `timestampIso`, which each log build derives from
+`timestamp`. For the ISO string in code, call
+`new Date(err.timestamp).toISOString()`.
 
 `BaseError` gives you automatic name inference, cause chaining, cross-runtime
 stack capture and timestamps out of the box.
@@ -286,8 +290,10 @@ See [Observability & logging](./observability) and
 
 ### Log object compatibility
 
-The root reads `name`, `message`, `timestamp`, `timestampIso`, and `stack` in
-that order, followed by `cause`, aggregate members, and structured fields.
+The root reads `name`, `message`, `timestamp`, and `stack` in that order,
+followed by `cause`, aggregate members, and structured fields. It writes
+`timestampIso` after `timestamp`, from the same read. If `timestamp` is not a
+number in the date range of `Date`, the log omits `timestampIso`.
 Undefined or unreadable fields are omitted, except for the own `cause` slot.
 `StructuredError` fields are read independently of the own-fields hook.
 Root `details` retains its existing in-process value semantics; redaction walks

@@ -142,6 +142,29 @@ cause links precede data expansion. The shared allowance stays at 100,000
 foreign reads. Regression tests count accesses separately from this timing
 measurement. These host measurements do not establish workerd throughput.
 
+## The time of an error in one field
+
+A paired run on Node 24.21.0, macOS arm64, compares `5470473` with the change
+that derives `timestampIso` in each log build (`base-error-ts-2le`). Both
+bundles come from the tsup configuration of the repository. Values are median
+microseconds per `toLogObject()` call.
+
+| Input | Sticky root policy | `5470473` | Derived `timestampIso` |
+| --- | --- | ---: | ---: |
+| Shallow cause with details | none | 2.83 | 3.37 |
+| Shallow cause with details | deny secret | 10.10 | 11.48 |
+| 100-member aggregate | none | 176.35 | 176.70 |
+| 100-member aggregate | deny secret | 559.57 | 556.71 |
+| 100-node cause chain | none | 171.62 | 176.51 |
+| 100-node cause chain | deny secret | 545.44 | 557.79 |
+
+The shallow case without a policy rises by about 0.5 microseconds. One
+`toISOString` call costs about 0.4 microseconds on this host. The construction
+no longer makes that call: a loop over `new BaseError("x")` fell from about 6.1
+to 5.9 microseconds. The redacted shallow case rises by about 1.4
+microseconds, and its sample range is wide (up to 36.53). The large cases
+differ by at most 3%, and their sample ranges overlap.
+
 ## Reproduce
 
 The scenario and timing code is

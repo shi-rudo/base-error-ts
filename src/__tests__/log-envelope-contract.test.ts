@@ -17,10 +17,6 @@ class RequestFailure extends StructuredError<"REQUEST_FAILED", "UPSTREAM"> {
     Object.defineProperties(this, {
       stack: { configurable: true, value: "REQUEST_FAILED: request failed" },
       timestamp: { configurable: true, value: 0 },
-      timestampIso: {
-        configurable: true,
-        value: "1970-01-01T00:00:00.000Z",
-      },
     });
   }
 
@@ -123,8 +119,6 @@ describe("the library owns the root log envelope", () => {
     "category",
     "retryable",
     "details",
-    "timestamp",
-    "timestampIso",
     "cause",
   ])("preserves unrelated root fields when %s is unreadable", (key) => {
     const error = new RequestFailure();
@@ -141,5 +135,24 @@ describe("the library owns the root log envelope", () => {
 
     expect(log).toMatchObject(expected);
     expect(() => JSON.stringify(log)).not.toThrow();
+  });
+
+  it("omits both time keys and preserves the other root fields when timestamp is unreadable", () => {
+    const error = new RequestFailure();
+    Object.defineProperty(error, "timestamp", {
+      configurable: true,
+      get() {
+        throw new Error("unreadable root property");
+      },
+    });
+    const expected = { ...expectedEnvelope };
+    delete expected.timestamp;
+    delete expected.timestampIso;
+
+    const log = error.toLogObject();
+
+    expect(log).toMatchObject(expected);
+    expect(log).not.toHaveProperty("timestamp");
+    expect(log).not.toHaveProperty("timestampIso");
   });
 });

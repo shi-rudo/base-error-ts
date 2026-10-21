@@ -67,14 +67,7 @@ describe("log build guards", () => {
     expect(JSON.stringify(log)).not.toContain("FORGED");
   });
 
-  it.each([
-    "name",
-    "code",
-    "category",
-    "retryable",
-    "timestamp",
-    "timestampIso",
-  ])(
+  it.each(["name", "code", "category", "retryable", "timestamp"])(
     "does not recover a consumer container under %s when redaction fails",
     (key) => {
       const error = new BaseError("probe").redactAllow([]);

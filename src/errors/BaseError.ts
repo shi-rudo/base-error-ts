@@ -32,6 +32,7 @@ import {
   type AggregateMembers,
 } from "./guarded-read.js";
 import type { JsonSafeValue } from "./json-safe.js";
+import { toTimestampIso } from "./timestamp-iso.js";
 import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
   MAX_CAUSE_DEPTH_MARKER,
@@ -161,15 +162,12 @@ export class BaseError<T extends string> extends Error {
 
   public override readonly name: T;
 
-  /** Epoch-ms timestamp (numeric) */
-  public readonly timestamp: number = Date.now();
-
   /**
-   * ISO-8601 timestamp (string) for log aggregators that prefer text. Derived
-   * from {@link timestamp} (one clock read), so the two can never disagree
-   * across a millisecond boundary.
+   * Epoch-ms timestamp (numeric). The log object also states it as an
+   * ISO-8601 string, `timestampIso`, which each log build derives from this
+   * field.
    */
-  public readonly timestampIso: string = new Date(this.timestamp).toISOString();
+  public readonly timestamp: number = Date.now();
 
   /** Rich, filtered stack where the host supports it. */
   public override readonly stack?: string;
@@ -794,17 +792,19 @@ export class BaseError<T extends string> extends Error {
   /** The library owns the envelope; each foreign field is read independently. */
   #baseLogObject(context: LogBuildContext): Record<string, unknown> {
     const json: Record<string, unknown> = {};
-    for (const key of [
-      "name",
-      "message",
-      "timestamp",
-      "timestampIso",
-      "stack",
-    ]) {
-      const value = BaseError.#serializeEnvelopeField(
-        readProperty(this, key),
-        context,
-      );
+    const name = readProperty(this, "name");
+    const message = readProperty(this, "message");
+    // Both time keys come from one read, so they state one instant.
+    const timestamp = readProperty(this, "timestamp");
+    const envelope: ReadonlyArray<readonly [string, unknown]> = [
+      ["name", name],
+      ["message", message],
+      ["timestamp", timestamp],
+      ["timestampIso", toTimestampIso(timestamp)],
+      ["stack", readProperty(this, "stack")],
+    ];
+    for (const [key, read] of envelope) {
+      const value = BaseError.#serializeEnvelopeField(read, context);
       if (value !== undefined) json[key] = value;
     }
     // The cause and the members get a walk each, so a node in both stays in
@@ -893,7 +893,11 @@ export class BaseError<T extends string> extends Error {
   #dataErrorEnvelope(): Record<string, unknown> {
     const log: Record<string, unknown> = {};
     for (const key of [...BaseError.#SAFE_TRIAGE_KEYS, "message", "stack"]) {
-      const value = readProperty(this, key);
+      // The ISO form derives from the timestamp that this envelope holds.
+      const value =
+        key === "timestampIso"
+          ? toTimestampIso(log.timestamp)
+          : readProperty(this, key);
       if (
         value === null ||
         typeof value === "string" ||
