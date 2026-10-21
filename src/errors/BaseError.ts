@@ -644,7 +644,7 @@ export class BaseError<T extends string> extends Error {
    * - while the hook and its returned fields are processed, nested public
    *   log calls skip own-fields hooks on all instances from this package;
    * - every key that carries a name this library writes is dropped rather
-   *   than obeyed, and `inspectOwnLogFields` reports each one;
+   *   than obeyed;
    * - a node carries at most 100 of these fields, and
    *   the reader stops there;
    * - a throw, or a return that is not a record, costs these fields and never

@@ -63,6 +63,7 @@ Consumer callbacks and reflection traps must terminate. The library cannot inter
 ## Contract diagnostics
 
 `inspectOwnLogFields` is an explicit consumer-test function.
+Proposal 0017 removes it before its release: a test asserts on the log object instead.
 It inspects a returned record without executing getters or serialization callbacks.
 It reports reserved names such as `details`, unsupported values, and inspection limits.
 The inspector checks up to 1,000 root keys and continues past the 100-field retention limit.

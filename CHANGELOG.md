@@ -4,8 +4,6 @@
 
 ### Added
 
-- **Optional contract inspection for consumer tests.** `inspectOwnLogFields(record)` reports reserved names, unsupported values, accessors, cycles, and bounds through `OwnLogFieldsIssue` paths. It does not execute getters or serialization callbacks and never runs implicitly during logging.
-
 - **`OwnLogFields` describes data contributed by a subclass.** Import this type for a `buildOwnLogFields()` override or a `satisfies` check. It describes a readonly record whose values are JSON primitives, readonly arrays, or nested records. JSON primitives include `null`. Convert dates, collections, and bigints explicitly. The base hook retains its broader signature for source compatibility. Runtime guards remain necessary.
 
 - **A cause keeps the fields its own class declares.** `buildLogObject()` was the extension point for a subclass's own fields, and that promise held for an error logged directly and broke for the same error one level down, because a cause node was assembled from a fixed key roster. A wrapper at a boundary is the normal case, so the wrapping decided whether the data survived, not the error class: a responder held the error code but not the fields the code refers to. A subclass now declares its fields by overriding the new `buildOwnLogFields()`, and those fields appear at every depth of every chain that wraps the error. The fields a class declares for itself are composed separately from the hook, so `StructuredError` keeps `code`, `category`, `retryable` and `details` whatever a subclass returns, and its diagnostic fields remain available. The fixed roster stays as the only route for a foreign cause, which has no reachable hook.
@@ -85,7 +83,6 @@
 - **Changing stack getters cannot expose denied message text.** Stack-header masking uses the name, message, and stack values captured during the redaction copy. It no longer walks the raw cause graph a second time. A 60,000-member array returned by a cause policy needs 60,000 index reads instead of 120,000.
 
 - **Budget exhaustion preserves scalar cause decisions.** Already-read envelope values such as `code: 0` and `retryable: false` retain their value and type. Non-scalar envelope fields are omitted after exhaustion without further expansion.
-- **Contract inspection separates read width from retained fields.** It inspects up to 1,000 root keys, including reserved names after index 100. Skipped keys do not cause a false 100-field width report.
 - **Redaction keeps the depth cuts of the log copy.** The copy starts each data field at depth zero, including fields on plain-object causes, and redaction adds no depth cap of its own. It no longer cuts copied fields one level early.
 
 - **Public log builds use explicit traversal contexts.** Nested data errors receive their diagnostic view directly, without calling their `toJSON` override. Public calls retain an independent allowance; calls made during own-fields processing skip own-fields hooks. The data copier has independent native-JSON compatibility and adversarial tests. Private-brand recognition avoids unbudgeted prototype traversal when copied data is inspected for nested errors.

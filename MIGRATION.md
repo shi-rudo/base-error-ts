@@ -214,12 +214,6 @@ During own-fields processing, nested public log calls retain diagnostics and red
 This scope includes getters and serialization callbacks while the library copies the hook result.
 Subsequent public calls run their hooks normally. Consumer callbacks still need to terminate.
 The library projects nested data errors directly without invoking their `toJSON` overrides.
-Use the exported `inspectOwnLogFields(record)` in consumer tests to detect
-reserved names such as `details`, unsupported values, getters, cycles, and limits.
-It returns issues with `path` and `reason`; valid records return `[]`.
-The checker inspects up to 1,000 root keys and reports more than 100 valid data fields as a width limit.
-Skipped keys do not count toward that retention limit.
-The checker never runs implicitly in the log path and adds no log fields.
 
 Deny-list masking of message text in stack headers uses values captured during the copy.
 It does not read source getters or cause-array indices a second time.

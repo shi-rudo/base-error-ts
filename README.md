@@ -65,8 +65,6 @@ const status = matchError(err, {
 
 For additional log fields, override `buildOwnLogFields()` and use the exported
 `OwnLogFields` return type. These fields survive when the error becomes a cause.
-Use `inspectOwnLogFields(record)` in consumer tests to find reserved names and
-non-data values before logging. It returns diagnostic issues without adding log fields.
 For an optional field, return `requestId: this.requestId ?? null`, or omit its key.
 
 The next major removes `buildLogObject()`.

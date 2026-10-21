@@ -124,28 +124,14 @@ keeps its `Record<string, unknown>` signature so existing overrides remain compa
 
 ### Check the contract in consumer tests
 
-Use `inspectOwnLogFields` on the record your hook returns. It reports reserved
-names, unsupported values, accessors, cycles, and inspection limits with paths.
-It does not execute getters or serialization callbacks, and never runs implicitly
-while logging. Proxy reflection traps still execute and cannot be interrupted.
+Assert on the log object in a test. The log drops a reserved key, copies each
+value as data, and keeps at most 100 fields per node:
 
 ```ts
-import { inspectOwnLogFields } from "@shirudo/base-error";
+const log = new ConcurrencyConflictError(3, 4, "R").toLogObject();
 
-expect(inspectOwnLogFields({ requestId: "R" })).toEqual([]);
-expect(inspectOwnLogFields({ details: "lost" })).toEqual([
-  { path: ["details"], reason: "reserved-key" },
-]);
+expect(log).toMatchObject({ expectedVersion: 3, actualVersion: 4, requestId: "R" });
 ```
-
-A test subclass can expose `super.buildOwnLogFields()` through a public test
-method. Inspect that method's result to check the actual hook implementation.
-The checker reports at most 100 issues and uses the data depth and node limits.
-It inspects up to 1,000 root keys, including keys after the 100-field retention limit.
-It reports a width limit for more than 100 valid data fields or more than 1,000 root keys.
-Skipped keys do not count as valid data fields. Other contract violations have their own issues.
-An empty result means the inspected record satisfies the recommended data contract.
-It does not predict the remaining budget when that record sits in a larger log.
 
 The hook supplies data; the library assembles the envelope, traverses causes,
 and applies redaction. The consumer's logging adapter selects the log level,
