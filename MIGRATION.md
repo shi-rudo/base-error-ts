@@ -191,15 +191,14 @@ Root `details` is copied as data, like cause data. See [Next major: root details
 
 Copied log numbers follow JSON conversion at every depth: `NaN` and positive or negative `Infinity` become `null`; `-0` becomes `0`.
 This includes own fields, root and cause `details`, and fixed numeric envelope fields, even after budget exhaustion.
-Finite numbers retain their values. Successful custom-redactor output keeps its separate contract.
+Finite numbers retain their values. Successful output of the logged error's own custom redactor keeps its separate contract.
 
 Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
 data field the reader could not expand. It never labels that cut as a cycle.
 Already-read scalar envelope fields survive exhaustion, including `code` and `retryable: false`.
 After exhaustion, non-scalar envelope fields are omitted without expansion.
-Redaction preserves the empty containers that the serializer produced at its depth cap.
-Both walkers start each data field at depth zero, including fields on plain-object causes.
+The copy starts each data field at depth zero, including fields on plain-object causes, and redaction adds no depth cap of its own.
 Redaction can retain one more data level than before; the data depth cap remains 100.
 Failed property reads, serialization callbacks, primitive conversions, and key enumeration now produce `[Unserializable value]` at the affected value.
 Readable siblings remain in objects and arrays. The marker receives normal key-based redaction and contains no exception text.
@@ -227,7 +226,8 @@ Recovery does not call the mask again. Undenied typed diagnostic fields retain t
 ### Custom redactor failures
 
 `redactWith` keeps its synchronous `Record<string, unknown>` callback signature.
-Successful returns retain their existing behavior and require no migration.
+Successful returns of the logged error retain their existing behavior and require no migration.
+As the cause of another error, the output is now copied; see the redaction section of this release.
 The consumer owns output shape, JSON safety, sensitive content, and callback termination.
 
 A thrown callback now recovers diagnostic fields captured before invocation.
@@ -235,7 +235,7 @@ For example, the failure record retains `code: "PERMANENT"` and `retryable: fals
 even if the callback overwrites those values and then throws.
 Deleting `code` or replacing it with a throwing getter no longer removes the original readable code from recovery.
 Recovery omits payload, stack, and links and keeps the existing failure message.
-Callback mutations to shared objects, such as the custom output of a cause, are not rolled back.
+The callback receives copies only, so its mutations cannot reach an error.
 
 Do not rely on partially transformed metadata after an exception.
 Return a complete record for a successful transformation.

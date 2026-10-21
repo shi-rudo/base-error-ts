@@ -8,7 +8,7 @@ knowing.
 
 This is the most important one. `toJSON()` is an alias of `toLogObject()`, so the
 default JSON serialization is the **full, unredacted** payload: technical
-message, stack, cause chain and raw `details`.
+message, stack, cause chain and full `details`.
 
 ```ts
 JSON.stringify(error); // ← full technical dump

@@ -261,9 +261,9 @@ followed by `cause`, aggregate members, and structured fields. It writes
 number in the date range of `Date`, the log omits `timestampIso`.
 Undefined or unreadable fields are omitted, except for the own `cause` slot.
 `StructuredError` fields are read independently of the own-fields hook.
-Root `details` retains its existing in-process value semantics; redaction walks
-it when configured. Cause details and own-hook values use bounded data copies.
-Custom redactors remain consumer callbacks and can replace their node's log.
+Root and cause `details` and own-hook values use bounded data copies, and
+redaction walks the copy. Custom redactors remain consumer callbacks and can
+replace their node's log.
 
 The reproducible performance comparison is in
 [the serialization measurement](./log-serialization-performance.md).

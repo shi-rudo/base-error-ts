@@ -399,7 +399,7 @@ export class BaseError<T extends string> extends Error {
    * across instances while retaining envelopes, causes, and redaction.
    *
    * ⚠️ This is a **log** serialization: it carries the technical message, stack,
-   * cause chain and raw `details`. **Never return it to a client.** Anything that
+   * cause chain and full `details`. **Never return it to a client.** Anything that
    * auto-serializes the error (`JSON.stringify`, `res.json(err)`, `Response.json`,
    * `return err`) reaches {@link toJSON}, which is an alias of this method, and
    * leaks the same payload. For client-safe output use the `public-error`
@@ -615,7 +615,7 @@ export class BaseError<T extends string> extends Error {
   /**
    * JSON serialization for logging-oriented consumers. Alias of
    * {@link toLogObject}, so it returns the same **log** shape: technical message,
-   * stack, cause chain and raw `details`.
+   * stack, cause chain and full `details`.
    *
    * ⚠️ Because `JSON.stringify(err)`, `res.json(err)`, `Response.json(err)` and
    * `return err` all route through `toJSON`, sending an error down any of those
