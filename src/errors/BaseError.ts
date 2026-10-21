@@ -309,7 +309,7 @@ export class BaseError<T extends string> extends Error {
    * key of the array that holds it, so a list of tokens is masked as a whole
    * unless that key is allowed.
    * Only the library's own structural envelope is kept: the fixed top-level
-   * fields ({@link ROOT_ENVELOPE_KEYS}: `name`/`message`/`stack`/
+   * fields (`name`/`message`/`stack`/
    * `code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`)
    * and a cause's top-level structural envelope keys (`name`/`message`/`stack`/
    * `code`/`category`/`retryable`). Any other top-level field (e.g. one a
@@ -907,7 +907,7 @@ export class BaseError<T extends string> extends Error {
    * The fields this error contributes to its own log object, beyond the
    * envelope this class writes. Override this to add fields; return a fresh
    * record and nothing else.
-   * Use {@link OwnLogFields} as the override's return type to check data fields.
+   * Use `OwnLogFields` as the override's return type to check data fields.
    * The base signature accepts unknown values for compatibility and runtime guards.
    * The hook must finish synchronously; its work is not bounded by the serializer.
    *
@@ -923,12 +923,12 @@ export class BaseError<T extends string> extends Error {
    * - while the hook and its returned fields are processed, nested public
    *   log calls skip own-fields hooks on all instances from this package;
    * - every key that carries a name this library writes is dropped rather
-   *   than obeyed, and {@link RESERVED_NODE_KEYS} is the list;
-   * - a node carries at most {@link MAX_OWN_LOG_FIELDS} of these fields, and
+   *   than obeyed, and `inspectOwnLogFields` reports each one;
+   * - a node carries at most 100 of these fields, and
    *   the reader stops there;
    * - a throw, or a return that is not a record, costs these fields and never
    *   the node. A getter that throws leaves an unserializable-value marker;
-   * - every value is copied as data (see {@link serializeLogData}),
+   * - every value is copied as data,
    *   so the log shares no reference with the error.
    *
    * That copy follows JSON value conversions. A `Date` becomes its ISO string, a `Map`
@@ -1087,7 +1087,7 @@ export class BaseError<T extends string> extends Error {
    * paths leaks the full technical payload to the client. **Never serialize an
    * error straight into a response.** Produce a client payload through the
    * `public-error` subpath (`project` / `toProblem`) instead. This shape is also
-   * the input that {@link StructuredError.fromJSON} reconstructs, which is why it
+   * the input that `StructuredError.fromJSON` reconstructs, which is why it
    * intentionally retains the stack and cause chain.
    */
   public toJSON(): Record<string, unknown> {
