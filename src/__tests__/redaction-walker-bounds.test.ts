@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { BaseError } from "../errors/BaseError.js";
 import { StructuredError } from "../errors/StructuredError.js";
 
+import { causeWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
+
 const FAIL_CLOSED = "[log redaction failed]";
 const DEPTH_MARKER = "[Max redaction depth exceeded]";
 const CYCLE_MARKER = "[Circular reference]";
@@ -204,18 +206,20 @@ describe("redaction walker: the cause spine is depth-capped", () => {
 });
 
 describe("redaction walker: a cycle is a marker, not a hundred nested clones", () => {
-  it("marks a back-reference in the error's own details at its first repeat", () => {
+  it("marks a back-reference in uncopied details at its first repeat", () => {
     const order: Log = { id: "o1", password: "hunter2", items: [] as Log[] };
     for (let index = 0; index < 10; index++) {
       (order.items as Log[]).push({ sku: `sku-${index}`, order });
     }
-    const error = new OuterError(undefined, { order }).redact(["password"]);
+    const error = new OuterError(causeWithRawDetails({ order })).redact([
+      "password",
+    ]);
 
     const log = error.toLogObject();
 
     const json = JSON.stringify(log);
     expect(json.length).toBeLessThan(10_000);
-    const logged = (log.details as Log).order as Log;
+    const logged = (rawDetailsOf(log) as Log).order as Log;
     expect(logged.id).toBe("o1");
     expect(logged.password).toBe("[REDACTED]");
     const items = logged.items as Log[];
@@ -225,14 +229,16 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
     expect(items[9]?.order).toBe(CYCLE_MARKER);
   });
 
-  it("marks a self-referencing array", () => {
+  it("marks a self-referencing array in uncopied details", () => {
     const list: unknown[] = ["a"];
     list.push(list);
-    const error = new OuterError(undefined, { list }).redact(["password"]);
+    const error = new OuterError(causeWithRawDetails({ list })).redact([
+      "password",
+    ]);
 
     const log = error.toLogObject();
 
-    expect((log.details as Log).list).toEqual(["a", CYCLE_MARKER]);
+    expect((rawDetailsOf(log) as Log).list).toEqual(["a", CYCLE_MARKER]);
   });
 
   it("clones a shared reference once per reference when there is no cycle", () => {
@@ -252,11 +258,13 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
   it("keeps the cycle marker readable under an allow-list", () => {
     const node: Log = { keep: "v" };
     node.self = node;
-    const error = new OuterError(undefined, { node }).redactAllow(["keep"]);
+    const error = new OuterError(causeWithRawDetails({ node })).redactAllow([
+      "keep",
+    ]);
 
     const log = error.toLogObject();
 
-    expect((log.details as Log).node).toEqual({
+    expect((rawDetailsOf(log) as Log).node).toEqual({
       keep: "v",
       self: CYCLE_MARKER,
     });

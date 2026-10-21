@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { BaseError } from "../errors/BaseError.js";
 import { StructuredError } from "../errors/StructuredError.js";
 
+import { causeWithRawDetails } from "./raw-log-data.fixture.js";
+
 type Log = Record<string, unknown>;
 
 class OwnFieldsError extends BaseError<"OwnFieldsError"> {
@@ -77,15 +79,15 @@ describe("log build guards", () => {
   ])(
     "does not recover a consumer container under %s when redaction fails",
     (key) => {
-      const error = new BaseError("probe").redactAllow([]);
-      Object.defineProperty(error, key, { value: { token: "SECRET" } });
-      Object.defineProperty(error, "details", {
-        value: {
+      const error = new BaseError(
+        "probe",
+        causeWithRawDetails({
           get value() {
             throw new Error("read failed");
           },
-        },
-      });
+        }),
+      ).redactAllow([]);
+      Object.defineProperty(error, key, { value: { token: "SECRET" } });
 
       const log = error.toLogObject();
 
