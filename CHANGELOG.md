@@ -132,6 +132,8 @@
 
 ### Documentation
 
+- **The README and the getting-started guide state the TypeScript matrix that CI checks.** The declarations need TypeScript 5.0 or a later version, and `lib` ES2020 or a later version. They resolve under `node16`, `nodenext` and `bundler`, for an ES module and for a CommonJS module. `node10` works with TypeScript 5 and 6, and TypeScript 7 removed it. A new CI job installs the packed tarball into fresh projects outside the repository and compiles a consumer with TypeScript 5.0.4, the latest 6.x and the latest release. The job fails when a declared value export is missing at runtime, or when a runtime export has no declaration. It also loads both entry points through `import` and `require`.
+
 - **`publicIssues()` passes the validator's `message` through, and the docs say so.** The whitelist drops validator extras such as a `received` field, but `message` is whitelisted and crosses unchanged. The default messages of Valibot and ArkType embed the rejected value, and so does Zod 3 for `enum`; Zod 4 does not. The validation guide, the pitfalls page, and the JSDoc name the pass-through and show the safe projection (`pointer` and `code` only, or `mapIssue`). A test pins the pass-through.
 
 ## 8.3.0 - 2026-08-22
