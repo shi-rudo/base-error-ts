@@ -10,6 +10,16 @@ export default defineConfig({
   lastUpdated: true,
   cleanUrls: true,
 
+  vite: {
+    build: {
+      // Vite's default browser targets with Safari 14.1 instead of 14.0.
+      // esbuild 0.28 counts destructuring as supported from Safari 14.1 and
+      // cannot lower it, so the "safari14" target fails the build. This is
+      // the target of the docs site; the package targets ES2020 (tsconfig).
+      target: ["es2020", "edge88", "firefox78", "chrome87", "safari14.1"],
+    },
+  },
+
   themeConfig: {
     nav: [
       { text: "Guide", link: "/guide/getting-started" },
