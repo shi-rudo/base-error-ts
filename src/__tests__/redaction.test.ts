@@ -797,6 +797,53 @@ describe("redactAllow keeps the serializer's own cause markers readable", () => 
   });
 });
 
+describe("redactAllow treats a primitive under a root link as data", () => {
+  it("masks a primitive cause of the root", () => {
+    const log = new BaseError("outer", "password=hunter2")
+      .redactAllow([])
+      .toLogObject();
+
+    expect(log.cause).toBe("[REDACTED]");
+  });
+
+  it("masks primitive details of the root", () => {
+    const log = new StructuredError({
+      code: "C",
+      category: "X",
+      retryable: false,
+      message: "m",
+      details: "token=abc" as never,
+    })
+      .redactAllow([])
+      .toLogObject();
+
+    expect(log.details).toBe("[REDACTED]");
+  });
+
+  it("keeps the serializer's marker in the cause slot of the root", () => {
+    const error = new BaseError("loops to itself");
+    Object.defineProperty(error, "cause", { value: error });
+
+    const log = error.redactAllow([]).toLogObject();
+
+    expect(log.cause).toBe("[Circular cause chain]");
+  });
+
+  it("keeps a null cause of the root as null", () => {
+    const log = new BaseError("outer", null).redactAllow([]).toLogObject();
+
+    expect(log.cause).toBeNull();
+  });
+
+  it("keeps a primitive cause of the root when the allow-list names cause", () => {
+    const log = new BaseError("outer", "visible")
+      .redactAllow(["cause"])
+      .toLogObject();
+
+    expect(log.cause).toBe("visible");
+  });
+});
+
 describe("redactAllow treats a container under an envelope name as data", () => {
   const wrap = (cause: unknown) =>
     new StructuredError({

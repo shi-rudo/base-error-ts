@@ -258,7 +258,11 @@ deep cause. An `errors` value that is not a list is data, bounded by the data
 depth. A cycle in the data (an object
 that reaches itself) is written as `[Circular reference]` at its first repeat.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
-structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`);
+structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`).
+The top-level `cause` and `details` are links, not envelope fields. A primitive
+under them is data and is masked: a thrown string as the cause of the logged
+error, or a string as its `details`. The `cause` slot keeps only a marker of the
+serializer, or an absent or `null` cause;
 but **any other field on a cause is data** and is masked, so a plain object that
 merely _resembles_ a structured error can't smuggle siblings through. The
 envelope fields are primitives: an **object or array under an envelope name**

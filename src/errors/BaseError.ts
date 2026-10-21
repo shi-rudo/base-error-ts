@@ -1,6 +1,6 @@
 import {
   ENVELOPE_KEYS,
-  ROOT_ENVELOPE_KEYS,
+  ROOT_ENVELOPE_LEAF_KEYS,
   RESERVED_NODE_KEYS,
 } from "./log-field-keys.js";
 import {
@@ -310,9 +310,12 @@ export class BaseError<T extends string> extends Error {
    * unless that key is allowed.
    * Only the library's own structural envelope is kept: the fixed top-level
    * fields (`name`/`message`/`stack`/
-   * `code`/`category`/`retryable`/`timestamp`/`timestampIso`/`cause`/`details`)
+   * `code`/`category`/`retryable`/`timestamp`/`timestampIso`)
    * and a cause's top-level structural envelope keys (`name`/`message`/`stack`/
-   * `code`/`category`/`retryable`). Any other top-level field (e.g. one a
+   * `code`/`category`/`retryable`). The top-level `cause` and `details` are
+   * links, not envelope leaves: a primitive under them is data, and the
+   * `cause` slot keeps only a serializer marker or an absent cause. Any other
+   * top-level field (e.g. one a
    * subclass adds via `buildOwnLogFields`) is data: its leaves are masked unless
    * allow-listed. A cause's foreign fields (anything outside that fixed set,
    * and everything nested beneath them) are treated as data, so a plain object
@@ -345,9 +348,12 @@ export class BaseError<T extends string> extends Error {
         log,
         (key, value, region: RedactRegion, leaf) => {
           if (!leaf) return BaseError.#RECURSE;
-          // Leaf. Keep iff the region permits this key.
+          // Leaf. Keep iff the region permits this key. The root writes its
+          // cause slot without a cause too, and an absent cause is no data.
           const kept =
-            (region === "root" && ROOT_ENVELOPE_KEYS.has(key)) ||
+            (region === "root" &&
+              (ROOT_ENVELOPE_LEAF_KEYS.has(key) ||
+                (key === "cause" && value == null))) ||
             allow.has(key) ||
             (region === "cause" && ENVELOPE_KEYS.has(key));
           return kept ? value : BaseError.#applyMask(mask, value, key);
@@ -663,7 +669,7 @@ export class BaseError<T extends string> extends Error {
         }
         if (typeof val === "function") continue;
         if (
-          region === "cause" &&
+          region !== "data" &&
           BaseError.#hasSerializerMarker(value, key, val)
         ) {
           out[key] = BaseError.#markSerializerMarker(out, key, val);
