@@ -60,8 +60,8 @@ At runtime, an out-of-contract return receives no shape check.
 `JSON.stringify(error)` can therefore throw on custom output even after `toLogObject()` returns successfully.
 
 The input is not a detached snapshot of every reachable value.
-Root `details` retains its original reference.
-Custom outputs from earlier cause policies can also retain consumer references.
+Custom outputs from earlier cause policies can retain consumer references.
+Root `details` is a copy since proposal 0015.
 Mutation can affect those references even if the callback subsequently throws.
 Failure recovery does not roll back consumer state.
 

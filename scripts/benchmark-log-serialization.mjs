@@ -30,6 +30,10 @@ function scenario({ BaseError, StructuredError }, shape, sticky) {
         context: { region: "eu" },
       },
     });
+  if (shape === "root") {
+    const error = make();
+    return sticky ? error.redact(["secret"]) : error;
+  }
   let cause;
   if (shape === "shallow") cause = make();
   if (shape === "fanout100")
@@ -42,7 +46,7 @@ function scenario({ BaseError, StructuredError }, shape, sticky) {
   return sticky ? error.redact(["secret"]) : error;
 }
 const results = [];
-for (const shape of ["shallow", "fanout100", "chain100"]) {
+for (const shape of ["root", "shallow", "fanout100", "chain100"]) {
   for (const sticky of [false, true]) {
     const runs = revisions.map(({ label, api }) => ({
       label,

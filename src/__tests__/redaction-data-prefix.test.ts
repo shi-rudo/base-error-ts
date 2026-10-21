@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { StructuredError } from "../index.js";
+
+import { errorWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 
 type Mode = "allow" | "deny";
 type Reads = {
@@ -34,13 +35,7 @@ function hiddenRecord(reads: Reads, customPrototype = false) {
 }
 
 function redactDetails(details: Record<string, unknown>, mode: Mode) {
-  const error = new StructuredError({
-    code: "PREFIX",
-    category: "TEST",
-    retryable: false,
-    message: "diagnosis",
-    details,
-  });
+  const error = errorWithRawDetails(details, "diagnosis");
   return (
     mode === "allow"
       ? error.redactAllow(["first"])
@@ -84,7 +79,7 @@ describe.each<Mode>(["allow", "deny"])("%s redaction data prefix", (mode) => {
       const log = redactDetails(details, mode);
 
       expectBoundedReads({ ...reads });
-      expect.soft(log.details).toEqual({
+      expect.soft(rawDetailsOf(log)).toEqual({
         first: "kept-scalar",
         masked: "[REDACTED]",
         big: sizeMarker,
@@ -108,7 +103,7 @@ describe.each<Mode>(["allow", "deny"])("%s redaction data prefix", (mode) => {
     const log = redactDetails({ items }, mode);
 
     expectBoundedReads({ ...reads });
-    const retained = (log.details as { items: unknown[] }).items;
+    const retained = (rawDetailsOf(log) as { items: unknown[] }).items;
     expect(retained[0]).toEqual({ first: "kept-scalar", masked: "[REDACTED]" });
     expect(retained[retained.length - 1]).toBe(sizeMarker);
     expect(retained.length).toBeLessThan(items.length);
@@ -141,7 +136,10 @@ describe.each<Mode>(["allow", "deny"])("%s redaction data prefix", (mode) => {
     const log = redactDetails(details, mode);
 
     expectBoundedReads({ ...reads });
-    expect(log.details).toEqual({ first: "kept-scalar", masked: "[REDACTED]" });
+    expect(rawDetailsOf(log)).toEqual({
+      first: "kept-scalar",
+      masked: "[REDACTED]",
+    });
     expect(JSON.stringify(log)).not.toContain(secret);
   });
 });
@@ -160,7 +158,7 @@ describe.each<Mode>(["allow", "deny"])(
       const log = redactDetails(details, mode);
 
       expectBoundedReads({ ...reads });
-      expect(log.details).toEqual({
+      expect(rawDetailsOf(log)).toEqual({
         first: "kept-scalar",
         masked: "[REDACTED]",
         big: sizeMarker,
@@ -175,7 +173,7 @@ describe.each<Mode>(["allow", "deny"])(
       const log = redactDetails(details, mode);
 
       expectBoundedReads({ ...reads });
-      expect(log.details).toBe(sizeMarker);
+      expect(rawDetailsOf(log)).toBe(sizeMarker);
       expect(JSON.stringify(log)).not.toContain(secret);
     });
   },
