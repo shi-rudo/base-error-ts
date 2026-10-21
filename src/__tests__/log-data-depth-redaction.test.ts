@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BaseError, StructuredError } from "../index.js";
+import { BaseError } from "../index.js";
+
+import { errorWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 
 type Log = Record<string, unknown>;
 type Mode = "none" | "deny" | "allow";
@@ -118,22 +120,13 @@ describe.each(routes)("copied data depth: $name", ({ build, read }) => {
   );
 });
 
-describe("raw root details keep the redaction depth bound", () => {
+describe("raw custom redactor output keeps the redaction depth bound", () => {
   it.each<Mode>(["deny", "allow"])(
-    "cuts unprocessed root details at 100 edges under %s policy",
+    "cuts uncopied details at 100 edges under %s policy",
     (mode) => {
-      const error = apply(
-        new StructuredError({
-          code: "DEEP",
-          category: "TEST",
-          retryable: false,
-          message: "raw details",
-          details: objects(130),
-        }),
-        mode,
-      );
+      const error = apply(errorWithRawDetails(objects(130)), mode);
 
-      const data = error.toLogObject().details;
+      const data = rawDetailsOf(error.toLogObject());
 
       expect(endOf(data)).toEqual({
         edges: 100,
@@ -142,7 +135,7 @@ describe("raw root details keep the redaction depth bound", () => {
     },
   );
 
-  it("does not read descendants beyond the raw details depth bound", () => {
+  it("does not read descendants beyond the depth bound of uncopied details", () => {
     let reads = 0;
     let data: Log = { secret: "PRIVATE" };
     for (let index = 0; index < 130; index++) {
@@ -154,15 +147,9 @@ describe("raw root details keep the redaction depth bound", () => {
         },
       };
     }
-    const error = new StructuredError({
-      code: "DEEP",
-      category: "TEST",
-      retryable: false,
-      message: "raw details",
-      details: data,
-    }).redact([]);
+    const error = errorWithRawDetails(data).redact([]);
 
-    const result = error.toLogObject().details;
+    const result = rawDetailsOf(error.toLogObject());
 
     expect(endOf(result)).toEqual({
       edges: 100,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../index.js";
 
+import { causeWithRawDetails } from "./raw-log-data.fixture.js";
+
 type Log = Record<string, unknown>;
 class SecretDiagnosis extends BaseError<"SecretDiagnosis"> {
   readonly code = 0;
@@ -88,11 +90,15 @@ describe("denied diagnostic fields stay absent from redaction recovery", () => {
   });
 
   it("honors denied names when reflection fails after successful masking", () => {
-    const error = new SecretDiagnosis("diagnosis").redact(["name"]);
-    Object.defineProperty(error.details, "unreadable", {
+    const unreadable = { secret: "private-payload" };
+    Object.defineProperty(unreadable, "unreadable", {
       enumerable: true,
       get: throwingMask,
     });
+    const error = new SecretDiagnosis(
+      "diagnosis",
+      causeWithRawDetails(unreadable),
+    ).redact(["name"]);
 
     const log = error.toLogObject();
 

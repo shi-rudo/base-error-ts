@@ -1,6 +1,11 @@
 import { describe, it, expect } from "vitest";
 import { hostileProxy } from "./hostile-values.fixture.js";
 import { StructuredError, BaseError } from "../index.js";
+import {
+  causeWithRawDetails,
+  errorWithRawDetails,
+  rawDetailsOf,
+} from "./raw-log-data.fixture.js";
 
 class TestError extends BaseError<"TestError"> {}
 
@@ -123,7 +128,7 @@ describe("log redaction", () => {
       category: "C",
       retryable: false,
       message: "deep details",
-      details: { ssn: "secret", nested: deep },
+      cause: causeWithRawDetails({ ssn: "secret", nested: deep }),
     });
 
     const log = err.redact(["ssn"]).toLogObject();
@@ -132,7 +137,9 @@ describe("log redaction", () => {
     expect(log.message).toBe("deep details");
     expect(log.code).toBe("DEEP");
     // Shallow sensitive key is still masked.
-    expect((log.details as Record<string, unknown>).ssn).toBe("[REDACTED]");
+    expect((rawDetailsOf(log) as Record<string, unknown>).ssn).toBe(
+      "[REDACTED]",
+    );
     // The deep subtree is truncated by a marker rather than overflowing.
     expect(JSON.stringify(log)).toContain("[Max redaction depth exceeded]");
   });
@@ -352,33 +359,28 @@ describe("log redaction", () => {
       expect(d.keep).toBe("ok");
     });
 
-    it("redact preserves non-plain detail values (Date/Set) instead of collapsing to {}", () => {
+    it("redact preserves non-plain values (Date/Set) in uncopied details instead of collapsing to {}", () => {
       const when = new Date("2020-01-01T00:00:00.000Z");
-      const err = new StructuredError({
-        code: "D",
-        category: "Z",
-        retryable: false,
-        message: "m",
-        details: { when, tags: new Set(["a"]), userId: "1" },
+      const err = errorWithRawDetails({
+        when,
+        tags: new Set(["a"]),
+        userId: "1",
       }).redact(["password"]); // non-matching key
 
-      const d = err.toLogObject().details as Record<string, unknown>;
+      const d = rawDetailsOf(err.toLogObject()) as Record<string, unknown>;
       expect(d.when).toBe(when); // not rebuilt into {}
       expect(d.tags).toBeInstanceOf(Set);
       expect(d.userId).toBe("1");
     });
 
-    it("redactAllow masks a non-allowed non-plain detail value without collapsing allowed ones", () => {
+    it("redactAllow masks a non-allowed non-plain value in uncopied details without collapsing allowed ones", () => {
       const when = new Date("2020-01-01T00:00:00.000Z");
-      const err = new StructuredError({
-        code: "D",
-        category: "Z",
-        retryable: false,
-        message: "m",
-        details: { when, kept: new Date("2021-01-01T00:00:00.000Z") },
+      const err = errorWithRawDetails({
+        when,
+        kept: new Date("2021-01-01T00:00:00.000Z"),
       }).redactAllow(["kept"]);
 
-      const d = err.toLogObject().details as Record<string, unknown>;
+      const d = rawDetailsOf(err.toLogObject()) as Record<string, unknown>;
       expect(d.when).toBe("[REDACTED]"); // not allowed -> masked
       expect(d.kept).toBeInstanceOf(Date); // allowed -> preserved, not collapsed
     });
@@ -927,21 +929,22 @@ describe("the redaction walker drops function-valued leaves", () => {
       details: { password: "hunter2", config },
     });
 
-  it("deny-list: an own toJSON under details cannot re-materialize a masked key", () => {
-    const err = withConfig({
-      toJSON() {
-        return { password: "hunter2-via-toJSON" };
+  it("deny-list: an own toJSON under uncopied details cannot re-materialize a masked key", () => {
+    const err = errorWithRawDetails({
+      password: "hunter2",
+      config: {
+        toJSON() {
+          return { password: "hunter2-via-toJSON" };
+        },
       },
     }).redact(["password"]);
 
     const log = err.toLogObject();
-    const config = (log.details as Record<string, unknown>).config as Record<
-      string,
-      unknown
-    >;
+    const config = (rawDetailsOf(log) as Record<string, unknown>)
+      .config as Record<string, unknown>;
     expect(typeof config.toJSON).toBe("undefined");
     expect(JSON.stringify(err)).not.toContain("hunter2");
-    expect(JSON.stringify(log.details)).toBe(
+    expect(JSON.stringify(rawDetailsOf(log))).toBe(
       '{"password":"[REDACTED]","config":{}}',
     );
   });

@@ -10,6 +10,8 @@ import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
 import { cloneJsonSafe } from "../errors/json-safe.js";
 import { PublicErrorCatalog } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
+
+import { causeWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 import { toProblem } from "../public-error/toProblem.js";
 
 /**
@@ -230,8 +232,14 @@ describe("walker node budget counts every value", () => {
     }
   }
 
-  it("keeps diagnosis and decisions when a wide data tree exhausts redaction reads", () => {
-    const error = new WideError().redact(["password"]);
+  it("keeps diagnosis and decisions when a wide uncopied data tree exhausts redaction reads", () => {
+    const error = new StructuredError({
+      code: "WIDE",
+      category: "TEST",
+      retryable: false,
+      message: "wide",
+      cause: causeWithRawDetails({ ids }),
+    }).redact(["password"]);
 
     const log = error.toLogObject();
 
@@ -242,7 +250,7 @@ describe("walker node budget counts every value", () => {
       message: "wide",
     });
     expect(log.stack).toEqual(expect.any(String));
-    const retained = (log.details as { ids: unknown[] }).ids;
+    const retained = (rawDetailsOf(log) as { ids: unknown[] }).ids;
     expect(retained[0]).toBe(0);
     expect(retained[retained.length - 1]).toBe(SIZE_MARKER);
     expect(retained.length).toBeLessThan(ids.length);
