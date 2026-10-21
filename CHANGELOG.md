@@ -2,7 +2,7 @@
 
 ## 9.0.0 - 2026-10-21
 
-Threat-model release (proposal 0017). An untrusted value is safe for any input, and consumer code runs inside one `try`/`catch`. The log copies every value that it reads, root `details` included. Redaction walks that copy, adds no marker of its own, and runs 33% to 40% faster. `redactAllow` no longer keeps a primitive cause or primitive `details` of the logged error in plaintext. `publicIssues()` leaves the validator message out, and the error stores its time once. A subclass declares its own log fields with `buildOwnLogFields()`, which replaces `buildLogObject()` and survives at every depth of a cause chain. A `null` cause is no cause, and a shared cause is no longer labeled as a cycle. CI checks the packed package against TypeScript 5.0 to 7 and every supported module resolution. See `MIGRATION.md`.
+Threat-model release (proposal 0017). An untrusted value is safe for any input, and consumer code runs inside one `try`/`catch`. The log copies every value that it reads, root `details` included. Redaction walks that copy, adds no marker of its own, and takes 33% to 40% less time. `redactAllow` no longer keeps a primitive cause or primitive `details` of the logged error in plaintext. `publicIssues()` leaves the validator message out, and the error stores its time once. A subclass declares its own log fields with `buildOwnLogFields()`, which replaces `buildLogObject()` and survives at every depth of a cause chain. A `null` cause is no cause, and a shared cause is no longer labeled as a cycle. CI checks the packed package against TypeScript 5.0 to 7 and every supported module resolution. See `MIGRATION.md`.
 
 ### Breaking Changes
 

@@ -1,6 +1,6 @@
 # Explicit log builds and checked consumer fields
 
-Status: implemented on PR #23; release: unreleased.
+Status: implemented on PR #23; release: 9.0.0.
 
 ## Responsibility
 

@@ -208,12 +208,7 @@ function maskStackHeader(
       message === "" ? [`${name}: `, name] : [`${name}: ${message}`];
     for (const header of headers) {
       if (stack === header || stack.startsWith(`${header}\n`)) {
-        try {
-          return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
-        } catch {
-          // A custom mask can return a value that cannot render as text.
-          return "[REDACTED]";
-        }
+        return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
       }
     }
   }

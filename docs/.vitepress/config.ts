@@ -2,7 +2,6 @@ import { defineConfig } from "vitepress";
 
 import packageJson from "../../package.json";
 
-// The version menu names the major release of the package.
 const majorVersion = packageJson.version.split(".")[0];
 
 // https://vitepress.dev/reference/site-config

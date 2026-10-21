@@ -5,8 +5,9 @@
 v9 applies a threat model to the error model (proposal 0017). The log copies
 every value that it reads, root `details` included, and redaction walks that
 copy. `publicIssues()` leaves the validator message out, the error stores its
-time once, and `buildOwnLogFields()` replaces `buildLogObject()`. Each section
-names one change and its migration.
+time once, and `buildOwnLogFields()` replaces `buildLogObject()`. A `null`
+cause ends a cause chain, and a shared cause reads `[Shared cause]` instead of
+`[Circular cause chain]`. Each section names one change and its migration.
 
 ### Redaction walks plain data
 

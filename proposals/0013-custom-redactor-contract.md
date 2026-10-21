@@ -1,6 +1,6 @@
 # Custom redactors and failure recovery
 
-Status: implemented on PR #23; release: unreleased.
+Status: implemented on PR #23; release: 9.0.0.
 Tracking: `base-error-ts-vpo`.
 
 ## Decision
