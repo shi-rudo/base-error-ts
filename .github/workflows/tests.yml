@@ -112,6 +112,31 @@ jobs:
       - name: Run the runtime smoke on Deno
         run: deno run scripts/runtime-smoke.mjs
 
+  # VitePress fails the build on a dead internal link, so the build is the
+  # link check of the docs site.
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build the docs site
+        run: pnpm docs:build
+      - name: Check that each guide page was generated
+        run: |
+          for page in docs/guide/*.md; do
+            html="docs/.vitepress/dist/guide/$(basename "$page" .md).html"
+            test -s "$html" || { echo "missing page: $html"; exit 1; }
+          done
+
   # Runs the runtime-pure suite on the real Workers runtime (workerd via
   # miniflare) to catch edge-incompatibilities Node cannot (accidental globals,
   # captureStackTrace assumptions, Node-only APIs).
@@ -136,3 +161,25 @@ jobs:
 
       - name: Run tests on workerd
         run: pnpm test:workers
+
+  # Installs the packed tarball into fresh fixtures outside the repository and
+  # compiles a consumer with TypeScript 5.0.4, the latest 6.x and the latest
+  # release, in each supported module-resolution mode.
+  packed-consumer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Build package
+        run: pnpm exec tsup
+      - name: Check the packed package as a consumer
+        run: node scripts/verify-packed-consumer.mjs

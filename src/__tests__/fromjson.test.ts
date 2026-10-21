@@ -52,10 +52,12 @@ describe("StructuredError.fromJSON", () => {
       const restored = StructuredError.fromJSON(original.toJSON());
       expect(restored.stack).toBe(original.stack);
       expect(restored.timestamp).toBe(original.timestamp);
-      expect(restored.timestampIso).toBe(original.timestampIso);
+      expect(restored.toLogObject().timestampIso).toBe(
+        original.toLogObject().timestampIso,
+      );
     });
 
-    it("derives both times from the ISO string when the timestamp is masked", () => {
+    it("restores the time from the ISO string when the timestamp is masked", () => {
       const original = new StructuredError({
         code: "X",
         category: "Y",
@@ -69,10 +71,12 @@ describe("StructuredError.fromJSON", () => {
       const restored = StructuredError.fromJSON(payload);
 
       expect(restored.timestamp).toBe(original.timestamp);
-      expect(restored.timestampIso).toBe(original.timestampIso);
+      expect(restored.toLogObject().timestampIso).toBe(
+        original.toLogObject().timestampIso,
+      );
     });
 
-    it("derives the ISO string from the numeric timestamp", () => {
+    it("takes the numeric timestamp over a disagreeing ISO string", () => {
       const payload = {
         code: "X",
         category: "Y",
@@ -85,7 +89,9 @@ describe("StructuredError.fromJSON", () => {
       const restored = StructuredError.fromJSON(payload);
 
       expect(restored.timestamp).toBe(0);
-      expect(restored.timestampIso).toBe("1970-01-01T00:00:00.000Z");
+      expect(restored.toLogObject().timestampIso).toBe(
+        "1970-01-01T00:00:00.000Z",
+      );
     });
 
     it("ignores an ISO string that is not the canonical form of its instant", () => {
@@ -116,7 +122,7 @@ describe("StructuredError.fromJSON", () => {
       });
 
       expect(restored.timestamp).toBe(1748505600000.7);
-      expect(restored.timestampIso).toBe(
+      expect(restored.toLogObject().timestampIso).toBe(
         new Date(1748505600000.7).toISOString(),
       );
     });
@@ -132,7 +138,7 @@ describe("StructuredError.fromJSON", () => {
         });
 
         expect(Number.isFinite(restored.timestamp)).toBe(true);
-        expect(restored.timestampIso).toBe(
+        expect(restored.toLogObject().timestampIso).toBe(
           new Date(restored.timestamp).toISOString(),
         );
       }

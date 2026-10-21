@@ -88,6 +88,8 @@ equivalent error: `code`, `category`, `retryable`, `details`, `message`,
 - **Original identity preserved.** `stack` and `timestamp`/`timestampIso` are
   taken from the payload (a reconstruction represents the original failure, not
   a new one), not regenerated.
+  Since proposal 0016, the error holds the time in `timestamp` only, and
+  `timestampIso` is a fallback source for it.
 - **Cause chain rebuilt recursively.** Each serialized cause becomes a
   reconstructed error: structured shape → nested `StructuredError`; plain
   error shape (`name`/`message`/`stack`) → a basic error; primitive → kept

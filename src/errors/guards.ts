@@ -101,8 +101,7 @@ export function isAllOf<
  *   await someOperation();
  * } catch (error) {
  *   if (isBaseError(error)) {
- *     console.log(error.timestamp);    // TypeScript knows this exists
- *     console.log(error.timestampIso);
+ *     console.log(error.timestamp); // TypeScript knows this exists
  *   }
  * }
  * ```

@@ -194,6 +194,9 @@ To read it locally, run `pnpm docs:dev`.
 
 - Node.js 20 or a later version. Modern browsers and edge runtimes work too.
 - TypeScript 5.0 or a later version, with `strict` mode, for full type safety.
+- `lib` ES2020 or a later version.
+- Module resolution `node16`, `nodenext` or `bundler`. `node10` works with
+  TypeScript 5 and 6, and TypeScript 7 removed it.
 - The package ships ESM, CommonJS, and type declarations.
 
 ## License
