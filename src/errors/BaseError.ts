@@ -40,6 +40,7 @@ import {
   SHARED_CAUSE_MARKER,
   UNSERIALIZABLE_CAUSE_MARKER,
   UNSERIALIZABLE_VALUE_MARKER,
+  isCauseSpineMarker,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
 import {
@@ -625,17 +626,11 @@ export class BaseError<T extends string> extends Error {
             // it promises: an aggregate's members are arbitrary values (a
             // `Promise.allSettled` reason need not be an `Error`), and `errors` is
             // not an envelope key, so a string member is data like any other.
-            const slot = String(index);
             const decision =
-              region === "cause" &&
-              BaseError.#hasSerializerMarker(value, slot, item)
+              region === "cause" && isCauseSpineMarker(item)
                 ? BaseError.#RECURSE
                 : decide(key, item, region, true);
-            const redacted = decision === BaseError.#RECURSE ? item : decision;
-            if (redacted === item) {
-              BaseError.#copySerializerMarker(value, items, slot, item);
-            }
-            items.push(redacted);
+            items.push(decision === BaseError.#RECURSE ? item : decision);
           } catch (error) {
             if (error !== REDACTION_READ_CUT) throw error;
             items.push(REDACTION_SIZE_MARKER);
@@ -668,11 +663,8 @@ export class BaseError<T extends string> extends Error {
           header[key] = val;
         }
         if (typeof val === "function") continue;
-        if (
-          region !== "data" &&
-          BaseError.#hasSerializerMarker(value, key, val)
-        ) {
-          out[key] = BaseError.#markSerializerMarker(out, key, val);
+        if (region !== "data" && key === "cause" && isCauseSpineMarker(val)) {
+          out[key] = val;
           continue;
         }
         // A leaf's keep/mask decision is made in the region it *lives in* (the
@@ -707,9 +699,6 @@ export class BaseError<T extends string> extends Error {
           } else {
             out[key] = decision;
           }
-          if (out[key] === val) {
-            BaseError.#copySerializerMarker(value, out, key, val);
-          }
         } catch (error) {
           if (error !== REDACTION_READ_CUT) throw error;
           out[key] = REDACTION_SIZE_MARKER;
@@ -724,49 +713,6 @@ export class BaseError<T extends string> extends Error {
     }
   }
 
-  // Strings cannot carry provenance. Track the emitted slot and exact value
-  // privately, so a consumer's matching string or changed slot is still data.
-  static readonly #serializerMarkers = new WeakMap<
-    object,
-    Map<string, string>
-  >();
-
-  /*#__PURE__*/ static #hasSerializerMarker(
-    holder: object,
-    key: string,
-    value: unknown,
-  ): value is string {
-    return (
-      typeof value === "string" &&
-      BaseError.#serializerMarkers.get(holder)?.get(key) === value
-    );
-  }
-
-  /*#__PURE__*/ static #markSerializerMarker(
-    holder: object,
-    key: string,
-    marker: string,
-  ): string {
-    let markers = BaseError.#serializerMarkers.get(holder);
-    if (markers === undefined) {
-      markers = new Map();
-      BaseError.#serializerMarkers.set(holder, markers);
-    }
-    markers.set(key, marker);
-    return marker;
-  }
-
-  /*#__PURE__*/ static #copySerializerMarker(
-    source: object,
-    target: object,
-    key: string,
-    value: unknown,
-  ): void {
-    if (BaseError.#hasSerializerMarker(source, key, value)) {
-      BaseError.#markSerializerMarker(target, key, value);
-    }
-  }
-
   /**
    * Sets a trusted, synchronous transform of the complete log record.
    * Sticky; the last policy wins, replacing any earlier built-in policy.
@@ -777,9 +723,6 @@ export class BaseError<T extends string> extends Error {
    * Shared input mutations, including a cause's custom output, are not rolled back.
    * Public logging calls inside the callback start independent builds.
    * The consumer must bound those calls and terminate the callback.
-   *
-   * Consumer copies do not transfer serializer-marker provenance. An outer
-   * redactor treats copied marker strings as data under its normal key policy.
    *
    * ⚠️ Scope: applies to the **log object** only. A custom redactor cannot be
    * mapped onto the one-line {@link toString} render, so `toString`,
@@ -819,8 +762,6 @@ export class BaseError<T extends string> extends Error {
       readProperty(this, "cause"),
       BaseError.#rootWalk(this),
       0,
-      json,
-      "cause",
       context,
     );
 
@@ -1461,18 +1402,12 @@ export class BaseError<T extends string> extends Error {
     cause: unknown,
     walk: CauseWalk,
     depth: number,
-    holder: object,
-    key: string,
     context: LogBuildContext,
   ): unknown {
     try {
-      return this.#serializeCauseNode(cause, walk, depth, holder, key, context);
+      return this.#serializeCauseNode(cause, walk, depth, context);
     } catch {
-      return BaseError.#markSerializerMarker(
-        holder,
-        key,
-        UNSERIALIZABLE_CAUSE_MARKER,
-      );
+      return UNSERIALIZABLE_CAUSE_MARKER;
     }
   }
 
@@ -1480,8 +1415,6 @@ export class BaseError<T extends string> extends Error {
     cause: unknown,
     walk: CauseWalk,
     depth: number,
-    holder: object,
-    key: string,
     context: LogBuildContext,
   ): unknown {
     if (cause === undefined || cause === null) {
@@ -1489,33 +1422,21 @@ export class BaseError<T extends string> extends Error {
     }
 
     if (context.budget.nodes >= context.budget.limit) {
-      return BaseError.#markSerializerMarker(holder, key, MAX_LOG_SIZE_MARKER);
+      return MAX_LOG_SIZE_MARKER;
     }
 
     context.budget.nodes++;
 
     if (depth >= MAX_CAUSE_DEPTH) {
-      return BaseError.#markSerializerMarker(
-        holder,
-        key,
-        MAX_CAUSE_DEPTH_MARKER,
-      );
+      return MAX_CAUSE_DEPTH_MARKER;
     }
 
     if (BaseError.#isNativeError(cause)) {
       if (walk.path.has(cause)) {
-        return BaseError.#markSerializerMarker(
-          holder,
-          key,
-          CIRCULAR_CAUSE_CHAIN_MARKER,
-        );
+        return CIRCULAR_CAUSE_CHAIN_MARKER;
       }
       if (walk.seen.has(cause)) {
-        return BaseError.#markSerializerMarker(
-          holder,
-          key,
-          SHARED_CAUSE_MARKER,
-        );
+        return SHARED_CAUSE_MARKER;
       }
       walk.seen.add(cause);
       walk.path.add(cause);
@@ -1601,14 +1522,7 @@ export class BaseError<T extends string> extends Error {
     // Recursively serialize nested causes
     const nested = readProperty(cause, "cause");
     if (nested !== undefined) {
-      serialized.cause = this.#serializeCause(
-        nested,
-        walk,
-        depth + 1,
-        serialized,
-        "cause",
-        context,
-      );
+      serialized.cause = this.#serializeCause(nested, walk, depth + 1, context);
     }
 
     // The cause's own sticky policy runs last, over the node and the subtree
@@ -1656,36 +1570,15 @@ export class BaseError<T extends string> extends Error {
     const serialized: unknown[] = [];
     for (const error of aggregate.members) {
       if (context.budget.nodes >= context.budget.limit) {
-        serialized.push(
-          BaseError.#markSerializerMarker(
-            serialized,
-            String(serialized.length),
-            MAX_LOG_SIZE_MARKER,
-          ),
-        );
+        serialized.push(MAX_LOG_SIZE_MARKER);
         return serialized;
       }
-      serialized.push(
-        this.#serializeCause(
-          error,
-          walk,
-          depth,
-          serialized,
-          String(serialized.length),
-          context,
-        ),
-      );
+      serialized.push(this.#serializeCause(error, walk, depth, context));
     }
 
     const dropped = aggregate.total - serialized.length;
     if (dropped > 0) {
-      serialized.push(
-        BaseError.#markSerializerMarker(
-          serialized,
-          String(serialized.length),
-          moreAggregatedErrorsMarker(dropped),
-        ),
-      );
+      serialized.push(moreAggregatedErrorsMarker(dropped));
     }
     return serialized;
   }

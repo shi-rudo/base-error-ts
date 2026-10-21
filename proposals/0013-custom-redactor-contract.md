@@ -77,6 +77,7 @@ The library cannot distinguish that behavior from an intentional transformation.
 Consumers must test the final emitted event and keep secrets out of structural metadata.
 Custom message changes do not automatically scrub `stack`, `toString()`, or runtime inspection.
 Consumer copies do not transfer private serializer-marker provenance.
+Since proposal 0017, redaction recognizes a serializer marker by its value, and no provenance exists.
 
 ### Failure recovery
 

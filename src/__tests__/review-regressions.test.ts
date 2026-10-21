@@ -171,7 +171,7 @@ it("charges non-enumerable hook key inspections across aggregate branches", () =
   expect(inspections).toBeLessThanOrEqual(100_001);
 });
 
-it("preserves only emitted aggregate size markers under a sticky allow-list", () => {
+it("keeps aggregate size markers, emitted or equal by value, under a sticky allow-list", () => {
   const large = Object.assign(new Error("large"), {
     details: Array(100_001).fill(1),
   });
@@ -186,7 +186,7 @@ it("preserves only emitted aggregate size markers under a sticky allow-list", ()
   const cause = log.cause as Log;
   const aggregate = cause.cause as Log;
   const errors = aggregate.errors as unknown[];
-  expect(errors[0]).toBe("[REDACTED]");
+  expect(errors[0]).toBe("[Max log size exceeded]");
   expect(errors[2]).toBe("[Max log size exceeded]");
   expect(errors[1]).toMatchObject({ details: "[REDACTED]" });
 });

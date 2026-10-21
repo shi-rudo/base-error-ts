@@ -271,32 +271,33 @@ a cause, so a leaf inside it is masked whatever it is called. The
 classification is by position, not by shape. (The
 technical `message` is structural here; scrub free text in it with `redactWith`.)
 
-### Serializer marker provenance
+### Serializer markers on the cause spine
 
-The serializer keeps its own cause markers readable through redaction.
-The exception requires a recorded output container, property or array index,
-and unchanged marker value. Matching text alone does not qualify.
+The serializer writes a marker where it refused to expand a cause, for example
+`[Circular cause chain]` or `[100 more aggregated errors]`. `redactAllow` keeps
+such a marker readable in two places only: in a `cause` slot, and as a member
+of an `errors` list. It recognizes a marker by its value.
 
 ```ts
 new BaseError("outer", {
   cause: "[Unserializable cause]",
-  errors: ["[4111111111111111 more aggregated errors]"],
+  errors: ["[2 more aggregated errors]"],
+  note: "[Shared cause]",
   secret: "S",
 }).redactAllow([]).toLogObject().cause;
-// { cause: "[REDACTED]", errors: ["[REDACTED]"], secret: "[REDACTED]" }
+// {
+//   cause: "[Unserializable cause]",
+//   errors: ["[2 more aggregated errors]"],
+//   note: "[REDACTED]",
+//   secret: "[REDACTED]",
+// }
 ```
 
-The built-in redactors preserve provenance when they copy an unchanged marker.
-Private metadata adds no fields or symbols to the log object.
-Consumer copies, including JSON round-trips, do not transfer provenance.
-An outer redactor treats those copied strings as data unless their key is
-allowed by its policy. Changing a recorded marker value also removes its
-exemption. A custom redactor that keeps the original container and value
-retains their provenance.
-
-This exception applies on the cause spine. It does not exempt own log fields
-or values in `details`. The fixed root envelope keeps its existing policy.
-`StructuredError.fromJSON()` reconstructs data, not marker provenance.
+A string of your own that equals a marker therefore stays readable in those two
+places. It carries the marker text only, and in `[N more aggregated errors]` a
+number. Everywhere else, in `details`, in own log fields, and under any other
+key of a cause, a marker string is data and the policy masks it. A deny-list
+masks a denied key whatever it holds.
 
 ### Custom redactor contract
 
@@ -321,7 +322,6 @@ Policy registration is last-wins.
 A successful callback can replace `code`, change `retryable`, or reintroduce sensitive data.
 An enclosing error's built-in policy still processes a cause's custom output.
 Custom output from errors inside copied data still passes through the data copier.
-Consumer copies do not transfer serializer-marker provenance.
 
 The input can contain shared references.
 In particular, the record that a cause's own redactor returned reaches the callback as it is.

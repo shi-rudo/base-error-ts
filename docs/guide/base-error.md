@@ -204,9 +204,9 @@ Failed reads of fixed cause-envelope fields remain absent, including on plain-ob
 This prevents a failed `retryable` read from becoming a truthy marker string.
 
 The marker is a **value**, not an extra diagnostic key. On a data field it is
-masked under `redactAllow([])`. Only a marker emitted on a cause link or aggregate
-slot has the private provenance that can preserve it there. Matching consumer
-text gets no exception. Root assembly reads a fixed list of instance properties.
+masked under `redactAllow([])`. Only a `cause` slot and a list of aggregate
+members keep a serializer marker readable, recognized by its value. Root
+assembly reads a fixed list of instance properties.
 JavaScript key enumeration is eager, and consumer callbacks cannot be
 interrupted; the budget limits the library's subsequent reads and expansion.
 
