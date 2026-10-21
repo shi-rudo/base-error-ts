@@ -1,5 +1,34 @@
 # Migration Guide
 
+## Next major: `timestampIso` is a log key only
+
+The error stores its time once, in `timestamp`. The log object still writes
+`timestampIso` after `timestamp`, and each log build derives it from
+`timestamp`.
+
+- `err.timestampIso` is gone. TypeScript reports each read, and JavaScript
+  gets `undefined`. Derive the string from `timestamp`:
+
+  ```ts
+  // Before
+  const occurredAt = err.timestampIso;
+
+  // After
+  const occurredAt = new Date(err.timestamp).toISOString();
+  ```
+
+- `Object.keys(err)`, `{ ...err }` and `for…in` no longer list
+  `timestampIso`. A logger that copies the own properties of an error, such
+  as the default `err` serializer of pino, writes `timestamp` only. To get
+  both keys and the redaction policy, log `err.toLogObject()`.
+- If a subclass or your code sets `timestamp`, the log states that instant in
+  both keys. Remove code that set `timestampIso` to match. The log ignores an
+  own `timestampIso` property.
+- If `timestamp` is not a number in the date range of `Date`, the log omits
+  `timestampIso`. Before, the log wrote the string from the construction.
+- `fromJSON` writes `timestamp` only. If the payload has no usable
+  `timestamp`, it still takes the time from `timestampIso`.
+
 ## Next major: root details are copied as log data
 
 The log object copies the `details` of the error itself, as it already copied

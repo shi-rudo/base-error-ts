@@ -51,7 +51,7 @@ function expectRootDiagnosis(log: Log, outer: BaseError<string>) {
     category: "PERMANENT",
     retryable: false,
     timestamp: outer.timestamp,
-    timestampIso: outer.timestampIso,
+    timestampIso: new Date(outer.timestamp).toISOString(),
   });
   expect.soft(log.stack).toEqual(expect.any(String));
 }

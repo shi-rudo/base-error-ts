@@ -15,7 +15,6 @@ function paymentFailure(): StructuredError<"PAYMENT_FAILED", "UPSTREAM"> {
   });
   Object.defineProperties(error, {
     timestamp: { value: 0 },
-    timestampIso: { value: "1970-01-01T00:00:00.000Z" },
   });
   return error;
 }
@@ -179,7 +178,6 @@ describe("custom redactor failure preserves the original safe envelope", () => {
       category: { value: false },
       retryable: { value: "yes" },
       timestamp: { value: NaN },
-      timestampIso: { value: 0 },
     });
     error.redactWith((raw) => {
       Object.assign(raw, {
