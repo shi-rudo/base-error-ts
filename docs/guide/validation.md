@@ -62,25 +62,33 @@ Issues are **not** exposed by default. There is no exception to
 extras) are kept for logs; surfacing them to a client is an explicit opt-in, and
 only a fixed whitelist can ever cross.
 
-`publicIssues()` yields that whitelist: `{ message, path, code?, pointer? }`,
-**never** raw validator extras (a Zod-native issue may carry the rejected input
-value in a `received` field; that field never reaches the wire). A `pointer`
-string (e.g. `"address.zip"`) is derived from the path for HTTP clients. It
-joins the segments with dots and is not an RFC 6901 JSON Pointer
-(`"/address/zip"`).
+`publicIssues()` yields that whitelist: `{ path?, pointer?, code? }`. It
+**never** carries raw validator extras (a Zod-native issue may carry the
+rejected input value in a `received` field; that field never reaches the wire),
+and it leaves out the `message` of an issue. A `pointer` string (e.g.
+`"address.zip"`) is derived from the path for HTTP clients. It joins the
+segments with dots and is not an RFC 6901 JSON Pointer (`"/address/zip"`).
 
 ```ts
 v.publicIssues();
+// [{ path: ["email"], pointer: "email" }]
+```
+
+### Messages cross only on opt-in
+
+The default messages of Valibot and ArkType embed the rejected value
+(`Invalid email: Received "…"` and `must be an email address (was "…")`), and
+so does Zod 3 for `enum`; Zod 4 does not. The `message` of an issue therefore
+crosses only when you pass `messages: true`. Pass it only for messages that you
+wrote:
+
+```ts
+v.publicIssues({ messages: true });
 // [{ message: "Enter a valid email.", path: ["email"], pointer: "email" }]
 ```
 
-`message` is part of the whitelist and crosses **unchanged**. That is safe for
-messages you wrote. It is not safe for every validator's default messages.
-Valibot and ArkType embed the rejected value in theirs
-(`Invalid email: Received "…"` and `must be an email address (was "…")`), and so
-does Zod 3 for `enum`; Zod 4 does not. When the messages are not yours, project
-`pointer` and `code` only and let the client render the text from the code, as
-`examples/voucher-service/public-errors.ts` does:
+When the messages are not yours, let the client render the text from the code,
+as `examples/voucher-service/public-errors.ts` does:
 
 ```ts
 projectFields: (error: ValidationError) =>
@@ -96,12 +104,13 @@ boundary. Project it onto a public view via the
 allowlist that lets vetted error data through:
 
 ```ts
+import type { PublicIssue } from "@shirudo/base-error";
 import { LocalizedMessageSet } from "@shirudo/base-error/public-error";
 import type { PublicErrorDescriptor } from "@shirudo/base-error/public-error";
 
 const validationDescriptor: PublicErrorDescriptor<
   ValidationError,
-  { issues: ReturnType<ValidationError["publicIssues"]> }
+  { issues: PublicIssue[] }
 > = {
   publicCode: "VALIDATION_FAILED",
   status: 422,
@@ -109,13 +118,22 @@ const validationDescriptor: PublicErrorDescriptor<
     baseLocale: "en",
     messages: { en: "Please correct the highlighted fields." },
   }),
-  projectDetails: (error) => ({ issues: error.publicIssues() }),
+  projectDetails: (error) => ({ issues: error.publicIssues({ messages: true }) }),
 };
 ```
 
+### Path keys
+
+Each path segment carries only its key. A validator can attach more to a
+segment: Valibot puts the parent input and the rejected value there. That data
+never crosses. A key that is no property key, such as an object key of a `Map`,
+crosses as `null`.
+
 ### Custom wire shape
 
-Use `mapIssue` to emit any per-issue shape your client expects:
+Use `mapIssue` to emit any per-issue shape your client expects. The mapper
+replaces the whitelist and receives the raw issue with all validator extras, so
+it decides on its own what crosses:
 
 ```ts
 v.publicIssues({
