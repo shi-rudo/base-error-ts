@@ -22,8 +22,10 @@ import {
   type WalkPosition,
 } from "./log-position.js";
 import {
+  CIRCULAR_OBJECT_MARKER_KEYS,
   MAX_LOG_SIZE_MARKER,
   UNSERIALIZABLE_VALUE_MARKER,
+  circularObjectMarker,
 } from "./serializer-markers.js";
 import {
   MAX_CAUSE_DEPTH,
@@ -228,10 +230,9 @@ export function serializeLogData(
 }
 
 /**
- * Creates a more useful representation of circular objects for debugging.
- * Instead of just "[object Object]", it extracts key information. Total:
- * the constructor and key reads are foreign, and a Proxy whose traps throw
- * gets the bare marker instead of an exception.
+ * The circular-object marker of a repeated ancestor. Total: the constructor
+ * and key reads are foreign, and a Proxy whose traps throw gets the bare
+ * marker instead of an exception.
  */
 function serializeCircularObject(
   obj: object,
@@ -239,13 +240,14 @@ function serializeCircularObject(
 ): string {
   try {
     const type = readConstructorName(obj) || "Object";
-    const keys = Array.from(readOwnEnumerableKeys(obj, 6, context.budget));
-    const keyInfo =
-      keys.length > 0 ? ` with keys: [${keys.slice(0, 5).join(", ")}]` : "";
-    const moreKeys = keys.length > 5 ? "..." : "";
-
-    return `[Circular ${type}${keyInfo}${moreKeys}]`;
+    // One key past the named ones tells the marker that more keys exist.
+    const keys = readOwnEnumerableKeys(
+      obj,
+      CIRCULAR_OBJECT_MARKER_KEYS + 1,
+      context.budget,
+    );
+    return circularObjectMarker(type, Array.from(keys));
   } catch {
-    return "[Circular Object]";
+    return circularObjectMarker("Object", []);
   }
 }

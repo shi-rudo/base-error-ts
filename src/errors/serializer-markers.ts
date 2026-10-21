@@ -27,6 +27,24 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
 /** Work omitted because the shared log-build allowance is exhausted. */
 export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 
+/** Most keys that the circular-object marker names. */
+export const CIRCULAR_OBJECT_MARKER_KEYS = 5;
+
+/**
+ * A data object that is its own ancestor, named by its type and its first
+ * keys. The marker sits in data, so a policy masks it like any other data
+ * value. One key beyond {@link CIRCULAR_OBJECT_MARKER_KEYS} adds "...".
+ */
+export function circularObjectMarker(
+  type: string,
+  keys: readonly string[],
+): string {
+  const named = keys.slice(0, CIRCULAR_OBJECT_MARKER_KEYS);
+  const keyInfo = named.length > 0 ? ` with keys: [${named.join(", ")}]` : "";
+  const more = keys.length > CIRCULAR_OBJECT_MARKER_KEYS ? "..." : "";
+  return `[Circular ${type}${keyInfo}${more}]`;
+}
+
 const CAUSE_SPINE_MARKERS: ReadonlySet<string> = new Set([
   CIRCULAR_CAUSE_CHAIN_MARKER,
   SHARED_CAUSE_MARKER,
