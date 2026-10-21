@@ -1,14 +1,13 @@
 /**
- * Raw data for the redaction walker. The library copies every value that it
- * reads from an error, so the walker meets uncopied data only in the custom
- * redactor output of a cause. The policy of the outer error processes that
- * output as it is.
+ * Data that a consumer hands to the log through the custom redactor of a
+ * cause. The log copies that output with the bounded copier, then the policy
+ * of the outer error walks the copy.
  */
 import { BaseError, StructuredError } from "../index.js";
 
 type Log = Record<string, unknown>;
 
-/** A cause whose custom redactor output carries `details` uncopied. */
+/** A cause whose custom redactor output carries `details` as given. */
 export function causeWithRawDetails(
   details: unknown,
   message = "raw details",
@@ -21,7 +20,7 @@ export function causeWithRawDetails(
   }).redactWith((log) => ({ ...log, details }));
 }
 
-/** An outer error whose cause hands `details` uncopied to its policy. */
+/** An outer error whose cause returns `details` from its custom policy. */
 export function errorWithRawDetails(
   details: unknown,
   message = "original",

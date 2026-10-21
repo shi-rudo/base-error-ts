@@ -77,6 +77,7 @@ The library cannot distinguish that behavior from an intentional transformation.
 Consumers must test the final emitted event and keep secrets out of structural metadata.
 Custom message changes do not automatically scrub `stack`, `toString()`, or runtime inspection.
 Consumer copies do not transfer private serializer-marker provenance.
+Since proposal 0017, redaction recognizes a serializer marker by its value, and no provenance exists.
 
 ### Failure recovery
 
@@ -99,6 +100,8 @@ The recovery rules belong to the invoked policy, even if its callback registers 
 The replacement governs subsequent calls.
 It adds `message: "[log redaction failed]"` and drops payload, stack, and links.
 Built-in read exhaustion retains its distinct `[Max redaction size exceeded]` message.
+Since proposal 0017, built-in redaction has no read allowance, and this message no longer occurs.
+The log copies the output of a cause's custom redactor before the policy of an enclosing error walks it.
 The library never substitutes a size-marker string for a captured boolean decision.
 
 The snapshot does not certify that original structural strings contain no secrets.

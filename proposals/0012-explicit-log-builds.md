@@ -24,6 +24,7 @@ Foreign reads remain guarded. Descriptor inspections and copied values consume a
 Redaction and serialization share one position rule in `log-position.ts`.
 Private container provenance preserves serializer depth cuts through redaction copies.
 At the depth cap, redaction emits a fresh empty container and copies no consumer fields.
+Proposal 0017 supersedes both rules: redaction walks the log copy only and has no depth cap of its own.
 After node exhaustion, already-read scalar envelope fields retain their values and types.
 Non-scalar envelope fields are omitted without expansion. This preserves decisions such as `retryable: false`.
 
@@ -47,6 +48,8 @@ Explicit public calls from consumer code still start independent bounded builds.
 
 ## Redaction read allowance
 
+Proposal 0017 removes this allowance. Redaction walks the log copy, which the log budget already bounds.
+
 Each built-in policy walk has one explicit allowance for classification, key inspections, and value reads.
 The guard and the copy loop share it, including non-enumerable keys and cause-array indices.
 The limit uses the existing 100,000 data allowance and can precede the separate value-node limit.
@@ -60,6 +63,7 @@ Consumer callbacks and reflection traps must terminate. The library cannot inter
 ## Contract diagnostics
 
 `inspectOwnLogFields` is an explicit consumer-test function.
+Proposal 0017 removes it before its release: a test asserts on the log object instead.
 It inspects a returned record without executing getters or serialization callbacks.
 It reports reserved names such as `details`, unsupported values, and inspection limits.
 The inspector checks up to 1,000 root keys and continues past the 100-field retention limit.

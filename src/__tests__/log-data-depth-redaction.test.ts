@@ -132,22 +132,19 @@ describe.each(routes)("copied data depth: $name", ({ build, read }) => {
   );
 });
 
-describe("raw custom redactor output keeps the redaction depth bound", () => {
+describe("the details of a custom cause policy keep the data depth bound", () => {
   it.each<Mode>(["deny", "allow"])(
-    "cuts uncopied details at 100 edges under %s policy",
+    "cuts the details at 100 edges under %s policy",
     (mode) => {
       const error = apply(errorWithRawDetails(objects(130)), mode);
 
       const data = rawDetailsOf(error.toLogObject());
 
-      expect(endOf(data)).toEqual({
-        edges: 100,
-        terminal: "[Max redaction depth exceeded]",
-      });
+      expect(endOf(data)).toEqual({ edges: 100, terminal: {} });
     },
   );
 
-  it("does not read descendants beyond the depth bound of uncopied details", () => {
+  it("does not read descendants beyond the depth bound of the details", () => {
     let reads = 0;
     let data: Log = { secret: "PRIVATE" };
     for (let index = 0; index < 130; index++) {
@@ -163,10 +160,7 @@ describe("raw custom redactor output keeps the redaction depth bound", () => {
 
     const result = rawDetailsOf(error.toLogObject());
 
-    expect(endOf(result)).toEqual({
-      edges: 100,
-      terminal: "[Max redaction depth exceeded]",
-    });
+    expect(endOf(result)).toEqual({ edges: 100, terminal: {} });
     expect(reads).toBe(100);
   });
 });

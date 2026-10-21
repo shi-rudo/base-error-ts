@@ -116,11 +116,11 @@ describe("log redaction", () => {
     expect((log.details as Record<string, unknown>).ssn).toBe("123-45-6789");
   });
 
-  it("caps redaction recursion depth instead of overflowing on deep details", () => {
+  it("caps deep details of a cause policy instead of overflowing", () => {
     // On a small isolate stack (Workers/edge) an unbounded walk could overflow
-    // at a legitimate depth and fail-close the whole log. An explicit cap keeps
-    // the walk shallow and deterministic: shallow fields survive, only the deep
-    // tail is replaced by a marker, and nothing fails closed.
+    // at a legitimate depth and fail-close the whole log. The log copies a
+    // cause policy's output with the data-depth cap: shallow fields survive,
+    // the deep tail ends in an empty container, and nothing fails closed.
     let deep: Record<string, unknown> = { bottom: "x" };
     for (let i = 0; i < 5000; i++) deep = { child: deep };
     const err = new StructuredError({
@@ -140,8 +140,16 @@ describe("log redaction", () => {
     expect((rawDetailsOf(log) as Record<string, unknown>).ssn).toBe(
       "[REDACTED]",
     );
-    // The deep subtree is truncated by a marker rather than overflowing.
-    expect(JSON.stringify(log)).toContain("[Max redaction depth exceeded]");
+    // The deep subtree ends in an empty container rather than overflowing.
+    let terminal = (rawDetailsOf(log) as Record<string, unknown>).nested as
+      Record<string, unknown> | undefined;
+    let depth = 0;
+    while (terminal !== undefined && typeof terminal.child === "object") {
+      terminal = terminal.child as Record<string, unknown>;
+      depth++;
+    }
+    expect(depth).toBeLessThan(100);
+    expect(terminal).toEqual({});
   });
 
   it("does not let an own __proto__ detail key pollute the redacted clone", () => {
@@ -359,7 +367,7 @@ describe("log redaction", () => {
       expect(d.keep).toBe("ok");
     });
 
-    it("redact preserves non-plain values (Date/Set) in uncopied details instead of collapsing to {}", () => {
+    it("redact writes a Date and a Set of a cause policy's details in their JSON forms", () => {
       const when = new Date("2020-01-01T00:00:00.000Z");
       const err = errorWithRawDetails({
         when,
@@ -368,12 +376,12 @@ describe("log redaction", () => {
       }).redact(["password"]); // non-matching key
 
       const d = rawDetailsOf(err.toLogObject()) as Record<string, unknown>;
-      expect(d.when).toBe(when); // not rebuilt into {}
-      expect(d.tags).toBeInstanceOf(Set);
+      expect(d.when).toBe("2020-01-01T00:00:00.000Z");
+      expect(d.tags).toEqual({});
       expect(d.userId).toBe("1");
     });
 
-    it("redactAllow masks a non-allowed non-plain value in uncopied details without collapsing allowed ones", () => {
+    it("redactAllow masks a non-allowed Date of a cause policy's details and keeps an allowed one", () => {
       const when = new Date("2020-01-01T00:00:00.000Z");
       const err = errorWithRawDetails({
         when,
@@ -382,7 +390,7 @@ describe("log redaction", () => {
 
       const d = rawDetailsOf(err.toLogObject()) as Record<string, unknown>;
       expect(d.when).toBe("[REDACTED]"); // not allowed -> masked
-      expect(d.kept).toBeInstanceOf(Date); // allowed -> preserved, not collapsed
+      expect(d.kept).toBe("2021-01-01T00:00:00.000Z"); // allowed -> its JSON form
     });
   });
 
@@ -797,6 +805,53 @@ describe("redactAllow keeps the serializer's own cause markers readable", () => 
   });
 });
 
+describe("redactAllow treats a primitive under a root link as data", () => {
+  it("masks a primitive cause of the root", () => {
+    const log = new BaseError("outer", "password=hunter2")
+      .redactAllow([])
+      .toLogObject();
+
+    expect(log.cause).toBe("[REDACTED]");
+  });
+
+  it("masks primitive details of the root", () => {
+    const log = new StructuredError({
+      code: "C",
+      category: "X",
+      retryable: false,
+      message: "m",
+      details: "token=abc" as never,
+    })
+      .redactAllow([])
+      .toLogObject();
+
+    expect(log.details).toBe("[REDACTED]");
+  });
+
+  it("keeps the serializer's marker in the cause slot of the root", () => {
+    const error = new BaseError("loops to itself");
+    Object.defineProperty(error, "cause", { value: error });
+
+    const log = error.redactAllow([]).toLogObject();
+
+    expect(log.cause).toBe("[Circular cause chain]");
+  });
+
+  it("keeps a null cause of the root as null", () => {
+    const log = new BaseError("outer", null).redactAllow([]).toLogObject();
+
+    expect(log.cause).toBeNull();
+  });
+
+  it("keeps a primitive cause of the root when the allow-list names cause", () => {
+    const log = new BaseError("outer", "visible")
+      .redactAllow(["cause"])
+      .toLogObject();
+
+    expect(log.cause).toBe("visible");
+  });
+});
+
 describe("redactAllow treats a container under an envelope name as data", () => {
   const wrap = (cause: unknown) =>
     new StructuredError({
@@ -919,7 +974,7 @@ describe("redactAllow treats a container under an envelope name as data", () => 
   });
 });
 
-describe("the redaction walker drops function-valued leaves", () => {
+describe("a redacted log carries no function-valued leaves", () => {
   const withConfig = (config: unknown) =>
     new StructuredError({
       code: "X",
@@ -929,7 +984,7 @@ describe("the redaction walker drops function-valued leaves", () => {
       details: { password: "hunter2", config },
     });
 
-  it("deny-list: an own toJSON under uncopied details cannot re-materialize a masked key", () => {
+  it("deny-list: an own toJSON under a cause policy's details is copied, then masked", () => {
     const err = errorWithRawDetails({
       password: "hunter2",
       config: {
@@ -945,7 +1000,7 @@ describe("the redaction walker drops function-valued leaves", () => {
     expect(typeof config.toJSON).toBe("undefined");
     expect(JSON.stringify(err)).not.toContain("hunter2");
     expect(JSON.stringify(rawDetailsOf(log))).toBe(
-      '{"password":"[REDACTED]","config":{}}',
+      '{"password":"[REDACTED]","config":{"password":"[REDACTED]"}}',
     );
   });
 

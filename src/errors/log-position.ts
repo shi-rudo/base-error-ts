@@ -37,7 +37,7 @@ export function childPosition(
  * so a container found under one of those names is not the envelope. It is
  * data, and an envelope-named leaf nested inside it stays masked.
  */
-function childRegion(
+export function childRegion(
   region: LogRegion,
   key: string,
   value: unknown,

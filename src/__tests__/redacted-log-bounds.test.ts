@@ -6,8 +6,6 @@ import { StructuredError } from "../errors/StructuredError.js";
 import { causeWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 
 const FAIL_CLOSED = "[log redaction failed]";
-const DEPTH_MARKER = "[Max redaction depth exceeded]";
-const CYCLE_MARKER = "[Circular reference]";
 
 type Log = Record<string, unknown>;
 
@@ -65,6 +63,21 @@ function listSpineHops(log: Log): number {
   return hops;
 }
 
+/** Follows a list-linked cause chain to its innermost object. */
+function innermostListMember(log: Log): Log {
+  let node: unknown = log.cause;
+  let last: Log = log;
+  while (typeof node === "object" && node !== null) {
+    if (Array.isArray(node)) {
+      node = node[0];
+      continue;
+    }
+    last = node as Log;
+    node = last.cause;
+  }
+  return last;
+}
+
 /** Counts the `errors` links from a node while each holds an object. */
 function errorsObjectDepth(node: unknown): number {
   let depth = 0;
@@ -115,7 +128,7 @@ class OuterError extends StructuredError<"OUTER", "TEST", Log> {
   }
 }
 
-/** A cause policy can return data that has not passed through the serializer. */
+/** A cause policy returns its own data, which the log copies as log data. */
 class PolicyOutputError extends BaseError<"PolicyOutputError"> {
   constructor(extra: Log) {
     super(
@@ -129,7 +142,7 @@ class PolicyOutputError extends BaseError<"PolicyOutputError"> {
   }
 }
 
-describe("redaction walker: the cause spine is depth-capped", () => {
+describe("a redacted log caps the cause spine", () => {
   it("caps a plain-object cause chain deeper than the cause depth instead of dropping the log", () => {
     const error = new OuterError(plainCauseChain(3000)).redact(["password"]);
 
@@ -150,7 +163,7 @@ describe("redaction walker: the cause spine is depth-capped", () => {
 
     expect(log.message).toBe("policy output");
     expect(spineHops(log)).toBeLessThanOrEqual(101);
-    expect(innermost(log).cause).toBe(DEPTH_MARKER);
+    expect(innermost(log)).toEqual({});
   });
 
   it("caps a deep chain hanging off an aggregate member on the spine", () => {
@@ -164,7 +177,7 @@ describe("redaction walker: the cause spine is depth-capped", () => {
     const members = log.errors as unknown[];
     expect(members).toHaveLength(2);
     expect(spineHops(members[0] as Log)).toBeLessThanOrEqual(101);
-    expect(innermost(members[0] as Log).cause).toBe(DEPTH_MARKER);
+    expect(innermost(members[0] as Log)).toEqual({});
   });
 
   it("keeps a cause chain within the cause depth in full", () => {
@@ -174,7 +187,6 @@ describe("redaction walker: the cause spine is depth-capped", () => {
 
     expect(spineHops(log)).toBe(100);
     expect(innermost(log).message).toBe("leaf");
-    expect(JSON.stringify(log)).not.toContain(DEPTH_MARKER);
   });
 
   it("keeps a cause chain at the cause depth in full under an allow-list", () => {
@@ -184,7 +196,6 @@ describe("redaction walker: the cause spine is depth-capped", () => {
 
     expect(spineHops(log)).toBe(100);
     expect(innermost(log).message).toBe("leaf");
-    expect(JSON.stringify(log)).not.toContain(DEPTH_MARKER);
   });
 
   it("gives every cause node its own data-depth budget", () => {
@@ -205,8 +216,8 @@ describe("redaction walker: the cause spine is depth-capped", () => {
   });
 });
 
-describe("redaction walker: a cycle is a marker, not a hundred nested clones", () => {
-  it("marks a back-reference in uncopied details at its first repeat", () => {
+describe("a redacted log marks a cycle once, not a hundred nested clones", () => {
+  it("marks a back-reference in a cause policy's details at its first repeat", () => {
     const order: Log = { id: "o1", password: "hunter2", items: [] as Log[] };
     for (let index = 0; index < 10; index++) {
       (order.items as Log[]).push({ sku: `sku-${index}`, order });
@@ -225,11 +236,13 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
     const items = logged.items as Log[];
     expect(items).toHaveLength(10);
     expect(items[0]?.sku).toBe("sku-0");
-    expect(items[0]?.order).toBe(CYCLE_MARKER);
-    expect(items[9]?.order).toBe(CYCLE_MARKER);
+    expect(items[0]?.order).toBe(
+      "[Circular Object with keys: [id, password, items]]",
+    );
+    expect(items[9]?.order).toBe(items[0]?.order);
   });
 
-  it("marks a self-referencing array in uncopied details", () => {
+  it("marks a self-referencing array in a cause policy's details", () => {
     const list: unknown[] = ["a"];
     list.push(list);
     const error = new OuterError(causeWithRawDetails({ list })).redact([
@@ -238,7 +251,10 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
 
     const log = error.toLogObject();
 
-    expect((rawDetailsOf(log) as Log).list).toEqual(["a", CYCLE_MARKER]);
+    expect((rawDetailsOf(log) as Log).list).toEqual([
+      "a",
+      "[Circular Array with keys: [0, 1]]",
+    ]);
   });
 
   it("clones a shared reference once per reference when there is no cycle", () => {
@@ -255,7 +271,7 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
     expect(details.a).not.toBe(details.b);
   });
 
-  it("keeps the cycle marker readable under an allow-list", () => {
+  it("masks the cycle marker in data under an allow-list", () => {
     const node: Log = { keep: "v" };
     node.self = node;
     const error = new OuterError(causeWithRawDetails({ node })).redactAllow([
@@ -266,12 +282,12 @@ describe("redaction walker: a cycle is a marker, not a hundred nested clones", (
 
     expect((rawDetailsOf(log) as Log).node).toEqual({
       keep: "v",
-      self: CYCLE_MARKER,
+      self: "[REDACTED]",
     });
   });
 });
 
-describe("redaction walker: hostile foreign fields retain a bounded diagnosis", () => {
+describe("a redacted log keeps a bounded diagnosis of hostile foreign fields", () => {
   it("preserves the serializer array cut in a native cause code", () => {
     const cause = new Error("db") as Error & { code?: unknown };
     cause.code = nestedArrays(2000);
@@ -317,11 +333,18 @@ describe("redaction walker: hostile foreign fields retain a bounded diagnosis", 
     const log = error.toLogObject().cause as Log;
 
     expect(log.message).toBe("policy output");
-    expect(JSON.stringify(log.trace)).toContain(DEPTH_MARKER);
+    let terminal = log.trace as Log;
+    let depth = 0;
+    while (typeof terminal.child === "object" && terminal.child !== null) {
+      terminal = terminal.child as Log;
+      depth++;
+    }
+    expect(depth).toBeLessThanOrEqual(100);
+    expect(terminal).toEqual({});
   });
 });
 
-describe("redaction walker: what counts as a hop on the cause spine", () => {
+describe("a redacted log: what counts as a hop on the cause spine", () => {
   it("treats an object chain under the key errors as data, capped by the data depth", () => {
     const error = new OuterError(nestedErrorsObjects(150)).redact(["password"]);
 
@@ -346,7 +369,11 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
     expect(log.message).toBe("policy output");
     expect(typeof log.stack).toBe("string");
     expect(errorsObjectDepth(log)).toBeLessThanOrEqual(101);
-    expect(JSON.stringify(log.errors)).toContain(DEPTH_MARKER);
+    let terminal = log as Log;
+    while (typeof terminal.errors === "object" && terminal.errors !== null) {
+      terminal = terminal.errors as Log;
+    }
+    expect(terminal).toEqual({});
   });
 
   it("charges a cause that holds a list one hop per member, not two", () => {
@@ -355,7 +382,7 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
     const log = error.toLogObject();
 
     expect(listSpineHops(log)).toBe(81);
-    expect(JSON.stringify(log)).not.toContain(DEPTH_MARKER);
+    expect(innermostListMember(log).message).toBe("leaf");
   });
 
   it("cuts a list-linked cause chain at the same hop as an object-linked chain", () => {
@@ -396,7 +423,7 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
       node = node[0];
     }
     expect(depth).toBeLessThanOrEqual(101);
-    expect(node).toBe(DEPTH_MARKER);
+    expect(node).toBeUndefined();
   });
 
   it("charges an aggregate member one hop from the node that holds it", () => {
@@ -409,6 +436,5 @@ describe("redaction walker: what counts as a hop on the cause spine", () => {
     const member = (log.errors as Log[])[0] as Log;
     expect(spineHops(member)).toBe(98);
     expect(innermost(member).message).toBe("leaf");
-    expect(JSON.stringify(log)).not.toContain(DEPTH_MARKER);
   });
 });

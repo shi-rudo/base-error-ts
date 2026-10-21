@@ -124,28 +124,14 @@ keeps its `Record<string, unknown>` signature so existing overrides remain compa
 
 ### Check the contract in consumer tests
 
-Use `inspectOwnLogFields` on the record your hook returns. It reports reserved
-names, unsupported values, accessors, cycles, and inspection limits with paths.
-It does not execute getters or serialization callbacks, and never runs implicitly
-while logging. Proxy reflection traps still execute and cannot be interrupted.
+Assert on the log object in a test. The log drops a reserved key, copies each
+value as data, and keeps at most 100 fields per node:
 
 ```ts
-import { inspectOwnLogFields } from "@shirudo/base-error";
+const log = new ConcurrencyConflictError(3, 4, "R").toLogObject();
 
-expect(inspectOwnLogFields({ requestId: "R" })).toEqual([]);
-expect(inspectOwnLogFields({ details: "lost" })).toEqual([
-  { path: ["details"], reason: "reserved-key" },
-]);
+expect(log).toMatchObject({ expectedVersion: 3, actualVersion: 4, requestId: "R" });
 ```
-
-A test subclass can expose `super.buildOwnLogFields()` through a public test
-method. Inspect that method's result to check the actual hook implementation.
-The checker reports at most 100 issues and uses the data depth and node limits.
-It inspects up to 1,000 root keys, including keys after the 100-field retention limit.
-It reports a width limit for more than 100 valid data fields or more than 1,000 root keys.
-Skipped keys do not count as valid data fields. Other contract violations have their own issues.
-An empty result means the inspected record satisfies the recommended data contract.
-It does not predict the remaining budget when that record sits in a larger log.
 
 The hook supplies data; the library assembles the envelope, traverses causes,
 and applies redaction. The consumer's logging adapter selects the log level,
@@ -180,20 +166,13 @@ Already-read scalar envelope fields survive exhaustion. In particular, `code`
 keeps its normalized value and `retryable: false` stays boolean `false`. After exhaustion,
 non-scalar envelope fields are omitted without expansion.
 
-Redaction bounds inspection and visited values with one shared read allowance.
-Each child visit requires a charged value read. Each object occurrence is classified once,
-so repeated references are inspected again and reflect any intervening mutation.
-
 Copied log numbers use JSON conversion at every depth: `NaN` and positive or negative
 `Infinity` become `null`; `-0` becomes `0`. This includes fixed numeric envelope fields,
 even after budget exhaustion. Other finite numbers keep their values.
 Successful custom-redactor output keeps its separate contract.
 
-Redaction preserves empty containers that the serializer produced at its depth cap.
-Both walkers start each data field at depth zero and count nesting within that field.
+The copy starts each data field at depth zero and counts nesting within that field.
 The transition from an error envelope to its data field consumes no data depth.
-Private container provenance identifies these cuts. Consumer data added to a cut
-container cannot pass the redaction depth cap.
 
 A failed property read, serialization callback, primitive conversion, or key enumeration replaces
 that value with `[Unserializable value]`. Readable siblings remain in objects and arrays.
@@ -204,32 +183,18 @@ Failed reads of fixed cause-envelope fields remain absent, including on plain-ob
 This prevents a failed `retryable` read from becoming a truthy marker string.
 
 The marker is a **value**, not an extra diagnostic key. On a data field it is
-masked under `redactAllow([])`. Only a marker emitted on a cause link or aggregate
-slot has the private provenance that can preserve it there. Matching consumer
-text gets no exception. Root assembly reads a fixed list of instance properties.
+masked under `redactAllow([])`. Only a `cause` slot and a list of aggregate
+members keep a serializer marker readable, recognized by its value. Root
+assembly reads a fixed list of instance properties.
 JavaScript key enumeration is eager, and consumer callbacks cannot be
 interrupted; the budget limits the library's subsequent reads and expansion.
 
-Built-in redaction has a separate 100,000-read allowance per walk
-(`MAX_REDACTION_READS`). It covers container classification, key inspections,
-and value reads in every region. Symbols and non-enumerable keys consume it.
-A value can require multiple reads, so this limit can precede the data-node limit.
-Before expanding objects in a root or cause envelope, the policy reads and masks
-its scalar fields. It then follows cause links before data fields. Output key
-order stays unchanged, but getter and mask callback order can change.
-A read cut retains copied fields in both envelopes and data objects.
-This includes the masked message, stack, `code`, and `retryable` in an envelope.
-Arrays retain a masked prefix plus `[Max redaction size exceeded]`.
-An object subtree that cannot be inspected becomes that marker.
-For example, `details.first` survives when inspection of `details.big` exhausts
-the reads and replaces `big` with the marker.
-Later uninspected branches are cut too. Fields beyond the key-inspection allowance
-can be omitted without an extra marker key.
-If an object scan exhausts its reads before retaining any output field, the
-node becomes the size marker. A fully inspected empty node stays empty.
-This priority applies only to envelopes; a data key named `code` stays data.
-The library never passes an uninspected object through as a leaf.
-Work inside a consumer callback or reflection trap remains outside this allowance.
+Built-in redaction walks the copy, never the error. The log build copies every
+value that it reads, and the output of a cause's custom redactor and each result
+of a function mask pass through the same copier. The walk therefore meets plain
+data only, inside the 100,000-visit budget of the build, and adds no bound and no
+marker of its own (proposal 0017). If the custom output of a cause does not fit
+the remaining budget, its `cause` slot reads `[Max log size exceeded]`.
 Deny-list masking of names and messages in stack headers uses values captured during the copy.
 It does not repeat the source reads. Changing getters cannot expose a previously copied message.
 

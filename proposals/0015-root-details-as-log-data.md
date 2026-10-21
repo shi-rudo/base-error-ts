@@ -57,13 +57,14 @@ A built-in policy walks the copy.
 
 `redactWith` receives the copy. A mutation in the callback does not reach `error.details`.
 The record that a cause's own redactor returned still reaches the callback as it is.
+Proposal 0017 copies that record too.
 
 ## Costs
 
 - A logger that does not serialize to JSON sees the JSON forms instead of the rich values.
 - The root `details` count against the log budget.
 - A log call with a four-field `details` record costs about 1.4 microseconds more. `docs/guide/log-serialization-performance.md` records the measurement.
-- Raw data now reaches the redaction walker only in the custom redactor output of a cause. The walker tests use that path through `src/__tests__/raw-log-data.fixture.ts`.
+- Raw data now reaches the redaction walker only in the custom redactor output of a cause. The walker tests use that path through `src/__tests__/raw-log-data.fixture.ts`. Proposal 0017 closes that path as well.
 
 ## Compatibility
 

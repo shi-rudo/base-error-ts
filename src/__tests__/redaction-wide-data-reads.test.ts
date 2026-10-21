@@ -108,29 +108,29 @@ function checkBoundedAndMasked(
 }
 
 describe.each<Mode>(["allow", "deny"])(
-  "%s redaction read allowance",
+  "%s redaction of wide foreign details reads within the log budget",
   (mode) => {
-    it("stops reading wide enumerable values at the shared allowance", () => {
+    it("stops reading wide enumerable values at the log budget", () => {
       const foreign = foreignRecord(100_010, true);
       const log = redactDetails(foreign.value, mode, foreign.keys);
       checkBoundedAndMasked(log, foreign.value, foreign.counts);
     });
 
-    it("charges non-enumerable descriptor work shared across sibling references", () => {
+    it("charges non-enumerable descriptor work across sibling references", () => {
       const foreign = foreignRecord(60_000, false);
       const details = { first: foreign.value, second: foreign.value };
       const log = redactDetails(details, mode, ["secret"]);
       checkBoundedAndMasked(log, details, foreign.counts);
     });
 
-    it("shares the allowance with custom-prototype walkability checks", () => {
+    it("charges a custom prototype with a toJSON against the same budget", () => {
       const foreign = foreignRecord(60_000, false, true);
       const details = { first: foreign.value, second: foreign.value };
       const log = redactDetails(details, mode, ["secret"]);
       checkBoundedAndMasked(log, details, foreign.counts);
     });
 
-    it("does not retain a raw custom-prototype object when classification exhausts the allowance", () => {
+    it("does not retain a raw custom-prototype object when the budget runs out", () => {
       const foreign = foreignRecord(100_010, false, true);
       const log = redactDetails(foreign.value, mode, ["secret"]);
       checkBoundedAndMasked(log, foreign.value, foreign.counts);
@@ -141,7 +141,7 @@ describe.each<Mode>(["allow", "deny"])(
 describe.each<Mode>(["allow", "deny"])(
   "%s arrays returned by a cause policy",
   (mode) => {
-    it("bounds index reads on the cause spine and preserves safe decisions", () => {
+    it("bounds index reads of a cause policy's list and keeps the root decisions", () => {
       let reads = 0;
       const errors = Array.from({ length: 100_010 }, (_, index) => index);
       for (let index = 0; index < errors.length; index++) {
@@ -175,12 +175,7 @@ describe.each<Mode>(["allow", "deny"])(
         retryable: false,
       });
       expect(log.stack).toEqual(expect.any(String));
-      const retained = (log.cause as { errors: unknown[] }).errors;
-      expect(retained[0]).toBe(mode === "allow" ? "[REDACTED]" : null);
-      expect(retained[retained.length - 1]).toBe(
-        "[Max redaction size exceeded]",
-      );
-      expect(retained.length).toBeLessThan(errors.length);
+      expect(log.cause).toBe("[Max log size exceeded]");
     });
   },
 );

@@ -11,7 +11,7 @@ import { cloneJsonSafe } from "../errors/json-safe.js";
 import { PublicErrorCatalog } from "../public-error/PublicErrorCatalog.js";
 import { project } from "../public-error/project.js";
 
-import { causeWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
+import { causeWithRawDetails } from "./raw-log-data.fixture.js";
 import { toProblem } from "../public-error/toProblem.js";
 
 /**
@@ -215,7 +215,6 @@ describe("walker bounds agree across surfaces", () => {
 });
 
 describe("walker node budget counts every value", () => {
-  const SIZE_MARKER = "[Max redaction size exceeded]";
   const ids = Array.from({ length: 120_000 }, (_, index) => index);
 
   class WideError extends StructuredError<"WIDE", "TEST", { ids: number[] }> {
@@ -230,7 +229,7 @@ describe("walker node budget counts every value", () => {
     }
   }
 
-  it("keeps diagnosis and decisions when a wide uncopied data tree exhausts redaction reads", () => {
+  it("keeps the root diagnosis when a cause policy returns data beyond the log budget", () => {
     const error = new StructuredError({
       code: "WIDE",
       category: "TEST",
@@ -248,10 +247,7 @@ describe("walker node budget counts every value", () => {
       message: "wide",
     });
     expect(log.stack).toEqual(expect.any(String));
-    const retained = (rawDetailsOf(log) as { ids: unknown[] }).ids;
-    expect(retained[0]).toBe(0);
-    expect(retained[retained.length - 1]).toBe(SIZE_MARKER);
-    expect(retained.length).toBeLessThan(ids.length);
+    expect(log.cause).toBe("[Max log size exceeded]");
   });
 
   it("writes wide root details as the log size marker and leaves the source untouched", () => {
