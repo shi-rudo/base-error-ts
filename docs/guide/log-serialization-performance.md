@@ -190,6 +190,29 @@ to 5.9 microseconds. The redacted shallow case rises by about 1.4
 microseconds, and its sample range is wide (up to 36.53). The large cases
 differ by at most 3%, and their sample ranges overlap.
 
+## Redaction walks plain data
+
+A paired run on Node 24.21.0, macOS arm64, compares `c9e7659` with the redaction
+walk of proposal 0017, which walks the copied log object without bounds, guards
+or markers of its own. Both bundles come from the tsup configuration of the
+repository. Values are median microseconds per `toLogObject()` call.
+
+| Input | Sticky root policy | `c9e7659` | Plain-data walk |
+| --- | --- | ---: | ---: |
+| Root with details | none | 2.74 | 2.92 |
+| Root with details | deny secret | 8.13 | 5.45 |
+| Shallow cause with details | none | 3.23 | 3.15 |
+| Shallow cause with details | deny secret | 9.38 | 6.11 |
+| 100-member aggregate | none | 170.42 | 168.31 |
+| 100-member aggregate | deny secret | 564.18 | 337.74 |
+| 100-node cause chain | none | 169.55 | 173.10 |
+| 100-node cause chain | deny secret | 570.86 | 342.07 |
+
+The redacted cases fall by 33% to 40%. The walk no longer reads prototypes,
+descriptors and keys through guarded reflection, and it no longer charges a
+read allowance. The unredacted cases differ by at most 7%, and their sample
+ranges overlap.
+
 ## Reproduce
 
 The scenario and timing code is
