@@ -67,17 +67,14 @@ describe("ValidationError", () => {
   });
 
   describe("publicIssues: safe whitelist", () => {
-    it("projects message/path and derives a pointer from the path", () => {
+    it("projects path and pointer, without the message", () => {
       const v = new ValidationError("x").addIssue({
         message: "Required",
         path: ["address", "zip"],
       });
+
       expect(v.publicIssues()).toEqual([
-        {
-          message: "Required",
-          path: ["address", "zip"],
-          pointer: "address.zip",
-        },
+        { path: ["address", "zip"], pointer: "address.zip" },
       ]);
     });
 
@@ -95,7 +92,7 @@ describe("ValidationError", () => {
       expect(JSON.stringify(pub)).not.toContain("hunter2");
     });
 
-    it("passes the message through unchanged, even when a validator embedded the rejected value in it", () => {
+    it("leaves out a validator message that embeds the rejected value", () => {
       const v = new ValidationError("x").addIssue({
         message: 'Invalid email: Received "hunter2"',
         path: ["email"],
@@ -103,7 +100,59 @@ describe("ValidationError", () => {
 
       const pub = v.publicIssues();
 
-      expect(pub[0]?.message).toBe('Invalid email: Received "hunter2"');
+      expect(pub[0]).not.toHaveProperty("message");
+      expect(JSON.stringify(pub)).not.toContain("hunter2");
+    });
+
+    it("adds the message unchanged when messages is true", () => {
+      const v = new ValidationError("x").addIssue({
+        message: "Enter a valid email.",
+        path: ["email"],
+      });
+
+      const pub = v.publicIssues({ messages: true });
+
+      expect(pub).toEqual([
+        { message: "Enter a valid email.", path: ["email"], pointer: "email" },
+      ]);
+    });
+
+    it("drops the input and the value that a Valibot path item carries", () => {
+      const v = new ValidationError("x").addIssue({
+        message: "Invalid email",
+        path: [
+          {
+            type: "object",
+            origin: "value",
+            input: { email: "a@", password: "hunter2" },
+            key: "email",
+            value: "a@",
+          } as never,
+        ],
+      });
+
+      const pub = v.publicIssues();
+
+      expect(pub[0]?.path).toEqual([{ key: "email" }]);
+      expect(JSON.stringify(pub)).not.toContain("hunter2");
+    });
+
+    it("replaces a segment key that is no property key with null", () => {
+      const mapKey = { tenant: "hunter2" };
+      const v = new ValidationError("x").addIssue({
+        message: "Invalid entry",
+        path: [
+          { type: "map", origin: "key", key: mapKey, value: 1 } as never,
+          { type: "set", origin: "value", key: null, value: 2 } as never,
+          10n as never,
+        ],
+      });
+
+      const pub = v.publicIssues();
+
+      expect(pub[0]?.path).toEqual([{ key: null }, { key: null }, null]);
+      expect(pub[0]?.pointer).toBe("null.null.null");
+      expect(JSON.stringify(pub)).not.toContain("hunter2");
     });
 
     it("normalizes object path segments to { key } (segment extras never cross)", () => {
@@ -159,18 +208,15 @@ describe("ValidationError", () => {
         message: "Required",
         path: ["address", "zip"],
       });
+
       const params = v.publicIssues({
-        mapIssue: (i) =>
-          ({
-            message: i.message,
-            name: (i.path ?? []).join("."),
-            reason: i.message,
-          }) as never,
+        mapIssue: (i) => ({
+          name: (i.path ?? []).join("."),
+          reason: i.message,
+        }),
       });
-      expect(params[0]).toMatchObject({
-        name: "address.zip",
-        reason: "Required",
-      });
+
+      expect(params).toEqual([{ name: "address.zip", reason: "Required" }]);
     });
   });
 
@@ -189,9 +235,41 @@ describe("ValidationError", () => {
 
       const issues = error.publicIssues();
 
-      expect(issues).toHaveLength(1);
-      expect(issues[0]?.message).toBe("bad value");
-      expect(issues[0]?.code).toBeUndefined();
+      expect(issues).toEqual([{}]);
+    });
+
+    it("projects an issue whose message getter throws, without the message", () => {
+      const hostile = { path: ["email"] } as Record<string, unknown>;
+      Object.defineProperty(hostile, "message", {
+        get() {
+          throw new Error("message getter");
+        },
+        enumerable: true,
+      });
+      const error = new ValidationError("invalid", {
+        issues: [hostile as never],
+      });
+
+      const issues = error.publicIssues({ messages: true });
+
+      expect(issues).toEqual([{ path: ["email"], pointer: "email" }]);
+    });
+
+    it("projects a segment whose key getter throws as a null key", () => {
+      const segment = {};
+      Object.defineProperty(segment, "key", {
+        get() {
+          throw new Error("key getter");
+        },
+      });
+      const error = new ValidationError("invalid", {
+        issues: [{ message: "bad value", path: [segment as never] }],
+      });
+
+      const issues = error.publicIssues();
+
+      expect(issues[0]?.path).toEqual([{ key: null }]);
+      expect(issues[0]?.pointer).toBe("null");
     });
 
     it("projects an issue with a null path segment instead of throwing", () => {

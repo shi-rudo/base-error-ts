@@ -9,8 +9,8 @@ import { readProperty } from "./guarded-read.js";
  */
 export type ValidationIssue = {
   /**
-   * Human-readable message. It crosses `publicIssues()` unchanged, and a
-   * validator's default message can embed the rejected value.
+   * Human-readable message. A validator's default message can embed the
+   * rejected value, so `publicIssues()` leaves it out unless `messages` is true.
    */
   readonly message: string;
   /** Path to the offending value (Standard Schema form). */
@@ -19,8 +19,18 @@ export type ValidationIssue = {
 
 /** The fixed, client-safe shape an issue takes on the wire. */
 export type PublicIssue = {
-  message: string;
-  path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
+  /**
+   * Included only when `messages` is true and the source issue carried a
+   * string message.
+   */
+  message?: string;
+  /**
+   * The path of the source issue, with each key copied. `null` stands for a
+   * key that is no property key, such as an object key of a `Map`.
+   */
+  path?: ReadonlyArray<
+    PropertyKey | null | { readonly key: PropertyKey | null }
+  >;
   /** Included only when the source issue carried one. */
   code?: string;
   /**
@@ -46,13 +56,11 @@ export type ValidationErrorOptions<
 /** Options for {@link ValidationError.publicIssues}. */
 export type PublicIssuesOptions = {
   /**
-   * Fully customize the wire shape (e.g. RFC-7807 `{ name, reason }`).
-   * Replaces the default whitelist entirely: a custom mapper receives the raw
-   * issue (validator extras included) and must apply its own whitelist,
-   * including copying `path` and narrowing object segments to `{ key }` if it
-   * forwards them.
+   * Adds the `message` of each issue. The default messages of Valibot and
+   * ArkType (and of Zod 3 for `enum`) embed the rejected value. Set it only
+   * for messages that you wrote.
    */
-  mapIssue?: (issue: ValidationIssue) => PublicIssue;
+  readonly messages?: boolean;
 };
 
 /**
@@ -115,30 +123,65 @@ export class ValidationError<
   }
 
   /**
-   * Projection of the issues for a client. Returns only the fixed whitelist
-   * (`message`, `path`, `code?`, `pointer?`); raw validator extras are never included.
-   * `message` crosses unchanged, and the default messages of Valibot and ArkType
-   * (and of Zod 3 for `enum`) embed the rejected value. When the messages are
-   * not yours, project `pointer` and `code` only, or provide `mapIssue` to emit
-   * a fully custom wire shape (e.g. RFC-7807 `{ name, reason }`).
+   * Projection of the issues for a client with a custom wire shape, such as
+   * RFC 7807 `{ name, reason }`. The mapper replaces the default whitelist. It
+   * receives the raw issue with all validator extras, so it applies its own
+   * whitelist.
    */
-  public publicIssues(options?: PublicIssuesOptions): PublicIssue[] {
-    const mapIssue = options?.mapIssue ?? ValidationError.#defaultProjection;
-    return this.#issues.map(mapIssue);
+  public publicIssues<TWire>(options: {
+    readonly mapIssue: (issue: ValidationIssue) => TWire;
+  }): TWire[];
+  /**
+   * Projection of the issues for a client. Returns only the fixed whitelist
+   * `path`, `pointer` and `code`, and never the raw validator extras. The
+   * `message` crosses only when `messages` is true, because a validator's
+   * default message can embed the rejected value.
+   */
+  public publicIssues(options?: PublicIssuesOptions): PublicIssue[];
+  public publicIssues(
+    options?: PublicIssuesOptions & {
+      readonly mapIssue?: (issue: ValidationIssue) => unknown;
+    },
+  ): unknown[] {
+    const mapIssue = options?.mapIssue;
+    if (mapIssue !== undefined) return this.#issues.map(mapIssue);
+    const withMessages = options?.messages === true;
+    return this.#issues.map((issue) =>
+      ValidationError.#defaultProjection(issue, withMessages),
+    );
   }
 
-  static #defaultProjection(issue: ValidationIssue): PublicIssue {
-    const out: PublicIssue = { message: issue.message };
-    if (issue.path !== undefined) {
+  static #defaultProjection(
+    issue: ValidationIssue,
+    withMessages: boolean,
+  ): PublicIssue {
+    const out: PublicIssue = {};
+    if (withMessages) {
+      const message = readProperty(issue, "message");
+      if (typeof message === "string") out.message = message;
+    }
+    const path = readProperty(issue, "path");
+    if (Array.isArray(path)) {
       // Fresh copy with object segments narrowed to { key }: a validator may
-      // attach internals to segment objects, and the whitelist must not carry
-      // them (or a shared array reference) to the wire.
-      out.path = issue.path.map((segment) =>
+      // attach internals to segment objects (Valibot puts the parent input and
+      // the rejected value there), and the whitelist must not carry them (or a
+      // shared array reference) to the wire.
+      const segments = path.map((segment: unknown) =>
         typeof segment === "object" && segment !== null
-          ? { key: segment.key }
-          : segment,
+          ? {
+              key: ValidationError.#toPropertyKey(readProperty(segment, "key")),
+            }
+          : ValidationError.#toPropertyKey(segment),
       );
-      out.pointer = ValidationError.#toPointer(issue.path);
+      out.path = segments;
+      out.pointer = segments
+        .map((segment) =>
+          typeof segment === "object" && segment !== null
+            ? segment.key
+            : segment,
+        )
+        .map((key) => String(key))
+        .join(".");
     }
     const code = readProperty(issue, "code");
     if (typeof code === "string") {
@@ -147,14 +190,13 @@ export class ValidationError<
     return out;
   }
 
-  static #toPointer(
-    path: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>,
-  ): string {
-    return path
-      .map((segment) =>
-        typeof segment === "object" && segment !== null ? segment.key : segment,
-      )
-      .map((key) => String(key))
-      .join(".");
+  // A `Map` key can be any value. Only a property key names a field without
+  // carrying data of its own.
+  static #toPropertyKey(key: unknown): PropertyKey | null {
+    return typeof key === "string" ||
+      typeof key === "number" ||
+      typeof key === "symbol"
+      ? key
+      : null;
   }
 }
