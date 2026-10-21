@@ -27,18 +27,23 @@ logger.error(error.toLogObject());
 
 It includes the technical `message`, `stack`, the **full serialized cause
 chain**, timestamps, and (for [`StructuredError`](./structured-error)) `code`,
-`category`, `retryable` and raw `details`.
+`category`, `retryable` and `details`.
 
 `toJSON()` is an alias, so `JSON.stringify(error)` produces the same log-grade
 output.
 
-Every cause in the chain is copied as data. Its `details`, and any other field
-a `StructuredError` cause carries, reach the log object JSON-safe and decoupled
-from the cause: a `Date` becomes its ISO string, a bigint field its decimal
-string, and a value JSON cannot take (a cycle, a bigint nested in an object, a
-throwing `toJSON`) becomes a `[Circular …]` marker. A later mutation of the
-cause does not change a log object already built. The error's own `details`
-stay raw.
+Every `details` in the log object is copied as data: the `details` of the error
+itself, the `details` of each cause, and any other field that a
+`StructuredError` cause carries. The copy is JSON-safe and decoupled from the
+error. A `Date` becomes its ISO string, a bigint its decimal string, and a cycle
+a `[Circular …]` marker. An unreadable value or a throwing `toJSON` becomes
+`[Unserializable value]`. A later mutation of an error does not change a log
+object already built, and `error.details` keeps its original value in the
+process.
+
+The error writes its cause chain before its own `details`, so oversized details
+cannot cut the chain that explains the failure. Details beyond the log budget of
+100,000 nodes become `[Max log size exceeded]`.
 
 ### Aggregate causes
 
@@ -300,8 +305,8 @@ Custom output from errors inside copied data still passes through the data copie
 Consumer copies do not transfer serializer-marker provenance.
 
 The input can contain shared references.
-In particular, root `details` retains its original in-process value.
-Callback mutations can affect that value even if the callback subsequently throws.
+In particular, the record that a cause's own redactor returned reaches the callback as it is.
+Callback mutations can affect that record even if the callback subsequently throws.
 The library does not roll back consumer state.
 
 If the callback throws, recovery uses diagnostic fields captured **before** invocation.

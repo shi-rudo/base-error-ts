@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BaseError } from "../index.js";
+import { BaseError, StructuredError } from "../index.js";
 
 import { errorWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 
@@ -52,6 +52,18 @@ function apply(error: BaseError<string>, mode: Mode): BaseError<string> {
 }
 
 const routes = [
+  {
+    name: "root details",
+    build: (data: unknown): BaseError<string> =>
+      new StructuredError({
+        code: "DEEP",
+        category: "TEST",
+        retryable: false,
+        message: "root details",
+        details: data as Log,
+      }),
+    read: (log: Log): unknown => log.details,
+  },
   {
     name: "own hook field at root",
     build: (data: unknown): BaseError<string> => new DataError(data),

@@ -1,5 +1,31 @@
 # Migration Guide
 
+## Next major: root details are copied as log data
+
+The log object copies the `details` of the error itself, as it already copied
+the `details` of each cause. `error.details` keeps its original value; only the
+log object changes.
+
+- A `Date` becomes its ISO string, a `bigint` its decimal string, and a `Map`,
+  a `Set` or a native `Error` becomes `{}`. `NaN` and `Infinity` become `null`.
+- `JSON.stringify(err)` no longer throws on a `bigint` or a cycle in `details`.
+- `log.details` is no longer the same object as `error.details`. A later
+  mutation of `error.details` does not change a log object already built.
+- Details beyond the log budget of 100,000 nodes become `[Max log size exceeded]`.
+
+If a logger reads rich values from the log object, read them from the error
+instead:
+
+```ts
+// before
+const at = (err.toLogObject().details as { at: Date }).at;
+// after
+const at = (err.details as { at: Date }).at;
+```
+
+A `redactWith` callback receives the copy. If a callback changed
+`raw.details` to change the error itself, change `error.details` directly.
+
 ## Next major: a null cause is no cause
 
 `isErrorWithCause` and the cause-chain helpers now treat `cause: null` like
@@ -85,11 +111,11 @@ A getter that throws costs its own field; other diagnostics and the cause surviv
 There is no legacy record inspection, inspection-cut suffix, or fallback assembly.
 Undefined or unreadable root fields are omitted, except for the own `cause` slot.
 The readable fields retain their order. `StructuredError` still adds `details` only when present.
-Root `details` keeps its existing in-process value semantics and is walked by redaction when configured.
+Root `details` is copied as data, like cause data. See [Next major: root details are copied as log data](#next-major-root-details-are-copied-as-log-data).
 
 Copied log numbers follow JSON conversion at every depth: `NaN` and positive or negative `Infinity` become `null`; `-0` becomes `0`.
-This includes own fields, cause data, and fixed numeric envelope fields, even after budget exhaustion.
-Finite numbers retain their values. Raw root `details` and successful custom-redactor output keep their separate contracts.
+This includes own fields, root and cause `details`, and fixed numeric envelope fields, even after budget exhaustion.
+Finite numbers retain their values. Successful custom-redactor output keeps its separate contract.
 
 Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
@@ -145,7 +171,7 @@ For example, the failure record retains `code: "PERMANENT"` and `retryable: fals
 even if the callback overwrites those values and then throws.
 Deleting `code` or replacing it with a throwing getter no longer removes the original readable code from recovery.
 Recovery omits payload, stack, and links and keeps the existing failure message.
-Callback mutations to shared objects, including root `details`, are not rolled back.
+Callback mutations to shared objects, such as the custom output of a cause, are not rolled back.
 
 Do not rely on partially transformed metadata after an exception.
 Return a complete record for a successful transformation.

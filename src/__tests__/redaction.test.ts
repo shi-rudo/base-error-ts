@@ -949,6 +949,22 @@ describe("the redaction walker drops function-valued leaves", () => {
     );
   });
 
+  it("deny-list: an own toJSON under root details is copied, then masked", () => {
+    const err = withConfig({
+      toJSON() {
+        return { password: "hunter2-via-toJSON" };
+      },
+    }).redact(["password"]);
+
+    const log = err.toLogObject();
+
+    expect(JSON.stringify(err)).not.toContain("hunter2");
+    expect(log.details).toEqual({
+      password: "[REDACTED]",
+      config: { password: "[REDACTED]" },
+    });
+  });
+
   it("allow-list: an own toJSON under details is dropped, not kept and not masked", () => {
     const err = withConfig({
       toJSON() {

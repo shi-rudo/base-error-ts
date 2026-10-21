@@ -66,7 +66,7 @@ describe("walker node budgets (shared-reference blowup)", () => {
     ).toThrow(/metadata must be JSON-safe/);
   });
 
-  it("log redaction cuts DAG data without replacing the diagnosis", () => {
+  it("log build cuts DAG root details without replacing the diagnosis", () => {
     const err = new StructuredError({
       code: "DAG",
       category: "C",
@@ -84,9 +84,7 @@ describe("walker node budgets (shared-reference blowup)", () => {
       message: "dag details",
     });
     expect(log.stack).toEqual(expect.any(String));
-    expect(JSON.stringify(log.details)).toContain(
-      "[Max redaction size exceeded]",
-    );
+    expect(log.details).toBe("[Max log size exceeded]");
     expect(JSON.stringify(log)).not.toContain("secret");
   });
 });
@@ -256,9 +254,13 @@ describe("walker node budget counts every value", () => {
     expect(retained.length).toBeLessThan(ids.length);
   });
 
-  it("keeps the raw details untouched without a redactor", () => {
-    const log = new WideError().toLogObject();
+  it("writes wide root details as the log size marker and leaves the source untouched", () => {
+    const error = new WideError();
 
-    expect((log.details as { ids: unknown[] }).ids).toHaveLength(120_000);
+    const log = error.toLogObject();
+
+    expect(log.details).toBe("[Max log size exceeded]");
+    expect(error.details?.ids).toBe(ids);
+    expect(ids).toHaveLength(120_000);
   });
 });

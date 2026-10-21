@@ -264,7 +264,7 @@ describe("custom redactor failure preserves the original safe envelope", () => {
 });
 
 describe("consumer-owned custom redactor effects", () => {
-  it("retains a mutation through the root details alias after the callback throws", () => {
+  it("keeps a callback mutation of the copied root details away from the error", () => {
     const error = paymentFailure();
     let suppliedDetails: unknown;
     error.redactWith((raw) => {
@@ -275,8 +275,8 @@ describe("consumer-owned custom redactor effects", () => {
 
     const log = error.toLogObject();
 
-    expect(error.details?.token).toBe("mutated-by-consumer");
-    expect(suppliedDetails).toBe(error.details);
+    expect(error.details?.token).toBe("private-token");
+    expect(suppliedDetails).not.toBe(error.details);
     expect(log).not.toHaveProperty("details");
   });
 

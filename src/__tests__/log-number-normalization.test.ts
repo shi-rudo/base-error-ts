@@ -136,7 +136,7 @@ describe("numbers in copied log values", () => {
     expect(log.array).toEqual(["[REDACTED]"]);
   });
 
-  it("retains the separate raw root-details contract", () => {
+  it("converts the numbers of root details and leaves the source untouched", () => {
     const details = { value: NaN, zero: -0 };
     const error = new StructuredError({
       code: "NUMBERS",
@@ -148,7 +148,7 @@ describe("numbers in copied log values", () => {
 
     const log = error.toLogObject();
 
-    expect(log.details).toBe(details);
+    expect(log.details).toEqual({ value: null, zero: 0 });
     expect(details.value).toBeNaN();
     expect(details.zero).toBe(-0);
   });

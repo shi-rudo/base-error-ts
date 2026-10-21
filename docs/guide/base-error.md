@@ -183,7 +183,7 @@ so repeated references are inspected again and reflect any intervening mutation.
 Copied log numbers use JSON conversion at every depth: `NaN` and positive or negative
 `Infinity` become `null`; `-0` becomes `0`. This includes fixed numeric envelope fields,
 even after budget exhaustion. Other finite numbers keep their values.
-Raw root `details` and successful custom-redactor output keep their separate contracts.
+Successful custom-redactor output keeps its separate contract.
 
 Redaction preserves empty containers that the serializer produced at its depth cap.
 Both walkers start each data field at depth zero and count nesting within that field.
