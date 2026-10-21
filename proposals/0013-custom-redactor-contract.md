@@ -157,4 +157,4 @@ The fixed snapshot work buys recovery that does not trust partially transformed 
 Successful transformations require no migration.
 Recovery now preserves original readable metadata after a callback deletes or corrupts its input.
 Code that relied on partially transformed failure metadata must change.
-The migration guide describes that change for the next major release.
+The migration guide describes that change for 9.0.0.

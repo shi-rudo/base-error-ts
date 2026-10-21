@@ -141,7 +141,7 @@ interrupt consumer code or bound the work inside a getter or callback.
 
 Fields declared here survive at **every depth of every chain that wraps this
 error**, so an adapter that wraps the error in its own type does not lose them.
-The library builds the envelope internally; `buildLogObject()` is removed in the next major.
+The library builds the envelope internally; `buildLogObject()` is removed in 9.0.0.
 
 The rules the hook lives under, because a log path must not throw and must stay
 bounded:
@@ -210,7 +210,7 @@ and `details` and drops the rest.
 
 ### Migrating from `buildLogObject()`
 
-**Breaking change for the next major:** `buildLogObject()` is removed from
+**Breaking change in 9.0.0:** `buildLogObject()` is removed from
 `BaseError` and `StructuredError`. Overrides and `super.buildLogObject()` calls
 no longer compile. JavaScript methods with that name are not called by logging.
 

@@ -72,4 +72,4 @@ A silent loss of data in a log costs more than the crafted inputs that these def
 
 ## Migration
 
-`MIGRATION.md` has the section "Next major: redaction walks plain data".
+`MIGRATION.md` has the section "Redaction walks plain data" under "v8 to v9".

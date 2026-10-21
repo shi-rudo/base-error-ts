@@ -67,12 +67,12 @@ For additional log fields, override `buildOwnLogFields()` and use the exported
 `OwnLogFields` return type. These fields survive when the error becomes a cause.
 For an optional field, return `requestId: this.requestId ?? null`, or omit its key.
 
-The next major removes `buildLogObject()`.
+9.0.0 removes `buildLogObject()`.
 TypeScript rejects old overrides and `super.buildLogObject()` calls.
 The library no longer calls JavaScript methods with that name.
 Move log layout changes to the consumer's logging adapter after redaction.
 See the [log field contract](docs/guide/base-error.md#adding-your-own-log-fields)
-and [migration guide](MIGRATION.md#next-major-log-field-hooks).
+and [migration guide](MIGRATION.md#log-field-hooks).
 
 ### Answer the client
 

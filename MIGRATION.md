@@ -1,6 +1,14 @@
 # Migration Guide
 
-## Next major: redaction walks plain data
+## v8 to v9
+
+v9 applies a threat model to the error model (proposal 0017). The log copies
+every value that it reads, root `details` included, and redaction walks that
+copy. `publicIssues()` leaves the validator message out, the error stores its
+time once, and `buildOwnLogFields()` replaces `buildLogObject()`. Each section
+names one change and its migration.
+
+### Redaction walks plain data
 
 Proposal 0017 sets a threat model. The log build copies every value that it
 reads, and redaction walks only that copy.
@@ -19,7 +27,7 @@ reads, and redaction walks only that copy.
   query or an alert matches one of them, match the marker of the copy instead:
   an empty container at the depth cap, and `[Max log size exceeded]`.
 
-## Next major: `timestampIso` is a log key only
+### `timestampIso` is a log key only
 
 The error stores its time once, in `timestamp`. The log object still writes
 `timestampIso` after `timestamp`, and each log build derives it from
@@ -48,7 +56,7 @@ The error stores its time once, in `timestamp`. The log object still writes
 - `fromJSON` writes `timestamp` only. If the payload has no usable
   `timestamp`, it still takes the time from `timestampIso`.
 
-## Next major: root details are copied as log data
+### Root details are copied as log data
 
 The log object copies the `details` of the error itself, as it already copied
 the `details` of each cause. `error.details` keeps its original value; only the
@@ -74,7 +82,7 @@ const at = (err.details as { at: Date }).at;
 A `redactWith` callback receives the copy. If a callback changed
 `raw.details` to change the error itself, change `error.details` directly.
 
-## Next major: `publicIssues()` without the message
+### `publicIssues()` without the message
 
 `publicIssues()` leaves the `message` of an issue out. A validator's default
 message can embed the rejected value, so the message now crosses only on
@@ -102,7 +110,7 @@ of `PublicIssue["path"]` admits `null` and `{ key: null }`.
 `PublicIssuesOptions` holds `messages` only. If you typed an options object
 with `mapIssue` as `PublicIssuesOptions`, pass the object literal directly.
 
-## Next major: a null cause is no cause
+### A null cause is no cause
 
 `isErrorWithCause` and the cause-chain helpers now treat `cause: null` like
 `cause: undefined`: the chain ends there. `getRootCause(error)` returns
@@ -123,7 +131,7 @@ const root = getRootCause(error) as { cause?: unknown };
 const threwNull = root.cause === null;
 ```
 
-## Next major: shared cause marker
+### Shared cause marker
 
 A cause that the same walk already wrote, without a cycle, is now
 `[Shared cause]` in the log object and in `toString`. Before, it was
@@ -138,7 +146,7 @@ repeated upstream failure across the branches of a fan-out, match
 A chain that returns to the root now ends in `[Circular cause chain]` one hop
 earlier in the log. The log no longer writes the root a second time.
 
-## Next major: log field hooks
+### Log field hooks
 
 `buildLogObject()` is removed from `BaseError` and `StructuredError`.
 Overrides and `super.buildLogObject()` calls no longer compile.
@@ -187,7 +195,7 @@ A getter that throws costs its own field; other diagnostics and the cause surviv
 There is no legacy record inspection, inspection-cut suffix, or fallback assembly.
 Undefined or unreadable root fields are omitted, except for the own `cause` slot.
 The readable fields retain their order. `StructuredError` still adds `details` only when present.
-Root `details` is copied as data, like cause data. See [Next major: root details are copied as log data](#next-major-root-details-are-copied-as-log-data).
+Root `details` is copied as data, like cause data. See [Root details are copied as log data](#root-details-are-copied-as-log-data).
 
 Copied log numbers follow JSON conversion at every depth: `NaN` and positive or negative `Infinity` become `null`; `-0` becomes `0`.
 This includes own fields, root and cause `details`, and fixed numeric envelope fields, even after budget exhaustion.
@@ -217,17 +225,17 @@ The library projects nested data errors directly without invoking their `toJSON`
 Deny-list masking of message text in stack headers uses values captured during the copy.
 It does not read source getters or cause-array indices a second time.
 
-### Deny-list failures
+#### Deny-list failures
 
 If built-in deny-list redaction fails, recovery now omits explicitly denied diagnostic fields.
 For example, a failed mask under `redact(["name"])` no longer restores the original name.
 Recovery does not call the mask again. Undenied typed diagnostic fields retain their values.
 
-### Custom redactor failures
+#### Custom redactor failures
 
 `redactWith` keeps its synchronous `Record<string, unknown>` callback signature.
 Successful returns of the logged error retain their existing behavior and require no migration.
-As the cause of another error, the output is now copied; see the redaction section of this release.
+As the cause of another error, the output is now copied; see [Redaction walks plain data](#redaction-walks-plain-data).
 The consumer owns output shape, JSON safety, sensitive content, and callback termination.
 
 A thrown callback now recovers diagnostic fields captured before invocation.

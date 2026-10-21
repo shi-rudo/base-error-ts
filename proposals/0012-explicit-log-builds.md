@@ -6,7 +6,7 @@ Status: implemented on PR #23; release: unreleased.
 
 The error model owns a bounded log representation, cause traversal, and redaction.
 Consumers own log delivery, layout, and conversion into the recommended `OwnLogFields` contract.
-The next major removes the wide `buildLogObject()` hook.
+9.0.0 removes the wide `buildLogObject()` hook.
 The library reads the fixed envelope itself, independently of `buildOwnLogFields()`.
 `StructuredError` uses this assembly directly, so a subclass cannot replace its fields through the data hook.
 The legacy record copier, continuation, cut suffix, and multi-stage fallback are removed.

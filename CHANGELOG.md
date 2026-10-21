@@ -1,22 +1,10 @@
 # Changelog
 
-## Unreleased
+## 9.0.0 - 2026-10-21
 
-### Added
+Threat-model release (proposal 0017). An untrusted value is safe for any input, and consumer code runs inside one `try`/`catch`. The log copies every value that it reads, root `details` included. Redaction walks that copy, adds no marker of its own, and runs 33% to 40% faster. `redactAllow` no longer keeps a primitive cause or primitive `details` of the logged error in plaintext. `publicIssues()` leaves the validator message out, and the error stores its time once. A subclass declares its own log fields with `buildOwnLogFields()`, which replaces `buildLogObject()` and survives at every depth of a cause chain. A `null` cause is no cause, and a shared cause is no longer labeled as a cycle. CI checks the packed package against TypeScript 5.0 to 7 and every supported module resolution. See `MIGRATION.md`.
 
-- **`OwnLogFields` describes data contributed by a subclass.** Import this type for a `buildOwnLogFields()` override or a `satisfies` check. It describes a readonly record whose values are JSON primitives, readonly arrays, or nested records. JSON primitives include `null`. Convert dates, collections, and bigints explicitly. The base hook retains its broader signature for source compatibility. Runtime guards remain necessary.
-
-- **A cause keeps the fields its own class declares.** `buildLogObject()` was the extension point for a subclass's own fields, and that promise held for an error logged directly and broke for the same error one level down, because a cause node was assembled from a fixed key roster. A wrapper at a boundary is the normal case, so the wrapping decided whether the data survived, not the error class: a responder held the error code but not the fields the code refers to. A subclass now declares its fields by overriding the new `buildOwnLogFields()`, and those fields appear at every depth of every chain that wraps the error. The fields a class declares for itself are composed separately from the hook, so `StructuredError` keeps `code`, `category`, `retryable` and `details` whatever a subclass returns, and its diagnostic fields remain available. The fixed roster stays as the only route for a foreign cause, which has no reachable hook.
-
-  The hook is consumer code, and it runs on a path that executes inside `catch`. The library catches exceptions and limits the fields it processes. It cannot interrupt consumer code; the hook must finish synchronously. A key that carries a name this library writes is dropped rather than obeyed, so a field named `category` or `details` cannot survive an allow-list. A node carries at most `MAX_OWN_LOG_FIELDS` (100) own fields, and the reader stops there. A throw, or a return that is not a record, costs the fields and never the node. A getter in the hook record that throws leaves `[Unserializable value]` at its own key. A field whose value is an error is dropped, because logging it would re-enter the log build. Every value is copied as data, at the root and on a cause alike, so the log shares no reference with the error, and a bigint or a cycle cannot make the consumer's `JSON.stringify` throw.
-
-  The hook runs once per serialized node, after its fixed fields. Its fields therefore land after the fields a class declares for itself, and a responder still finds `code` near the front of the line.
-
-  Rejected keys, hook failures, and field-width cuts remain silent. Exhausting the shared log budget replaces the current field with `[Max log size exceeded]`; later fields may be cut too. This is a value, not an extra diagnostic key, and normal data redaction applies.
-
-  `StructuredError.fromJSON` does not restore subclass fields; it reconstructs the envelope it whitelists, and a round-trip test pins that.
-
-### Breaking changes (next major)
+### Breaking Changes
 
 - **Redaction walks plain data only.** Proposal 0017 sets a threat model: an untrusted value must be safe for any input, and consumer code runs inside one `try`/`catch`. The log build copies every value that it reads. The output of a cause's custom redactor and each result of a function mask now pass through the same log-data copier, so the redaction walk meets plain data and carries no bound, guard or marker of its own. The custom output follows the rules of `details`: a `Date` becomes its ISO string, a cycle a `[Circular …]` marker, and output beyond the remaining log budget turns the `cause` slot into `[Max log size exceeded]`. `[Max redaction depth exceeded]` and `[Max redaction size exceeded]` no longer appear. This removes the class of `base-error-ts-4vw`, where a cause's custom output lost fields silently. See `MIGRATION.md` and `proposals/0017-threat-model.md`.
 
@@ -33,6 +21,20 @@
 - **Public logs created during own-fields processing skip own-fields hooks.** This applies across instances and includes callbacks while copying the hook result. Nested logs keep fixed diagnostic fields, bounded causes, and redaction. Subsequent calls run hooks normally. This prevents recursive hooks from exhausting the host stack without adding marker fields or changing traversal budgets.
 
 - **`buildLogObject()` is removed from `BaseError` and `StructuredError`.** Migrate additional fields to `buildOwnLogFields()`. Move output layout into the consumer's logging adapter after redaction. TypeScript rejects old overrides and `super` calls; JavaScript methods with that name are ignored. The library builds the fixed envelope internally. The legacy record copier, continuation, inspection-cut suffix, and multi-stage fallback are removed. Undefined or unreadable root fields are omitted, except for the own `cause` slot. See `MIGRATION.md`.
+
+### Added
+
+- **`OwnLogFields` describes data contributed by a subclass.** Import this type for a `buildOwnLogFields()` override or a `satisfies` check. It describes a readonly record whose values are JSON primitives, readonly arrays, or nested records. JSON primitives include `null`. Convert dates, collections, and bigints explicitly. The base hook retains its broader signature for source compatibility. Runtime guards remain necessary.
+
+- **A cause keeps the fields its own class declares.** `buildLogObject()` was the extension point for a subclass's own fields, and that promise held for an error logged directly and broke for the same error one level down, because a cause node was assembled from a fixed key roster. A wrapper at a boundary is the normal case, so the wrapping decided whether the data survived, not the error class: a responder held the error code but not the fields the code refers to. A subclass now declares its fields by overriding the new `buildOwnLogFields()`, and those fields appear at every depth of every chain that wraps the error. The fields a class declares for itself are composed separately from the hook, so `StructuredError` keeps `code`, `category`, `retryable` and `details` whatever a subclass returns, and its diagnostic fields remain available. The fixed roster stays as the only route for a foreign cause, which has no reachable hook.
+
+  The hook is consumer code, and it runs on a path that executes inside `catch`. The library catches exceptions and limits the fields it processes. It cannot interrupt consumer code; the hook must finish synchronously. A key that carries a name this library writes is dropped rather than obeyed, so a field named `category` or `details` cannot survive an allow-list. A node carries at most `MAX_OWN_LOG_FIELDS` (100) own fields, and the reader stops there. A throw, or a return that is not a record, costs the fields and never the node. A getter in the hook record that throws leaves `[Unserializable value]` at its own key. A field whose value is an error is dropped, because logging it would re-enter the log build. Every value is copied as data, at the root and on a cause alike, so the log shares no reference with the error, and a bigint or a cycle cannot make the consumer's `JSON.stringify` throw.
+
+  The hook runs once per serialized node, after its fixed fields. Its fields therefore land after the fields a class declares for itself, and a responder still finds `code` near the front of the line.
+
+  Rejected keys, hook failures, and field-width cuts remain silent. Exhausting the shared log budget replaces the current field with `[Max log size exceeded]`; later fields may be cut too. This is a value, not an extra diagnostic key, and normal data redaction applies.
+
+  `StructuredError.fromJSON` does not restore subclass fields; it reconstructs the envelope it whitelists, and a round-trip test pins that.
 
 ### Fixed
 
