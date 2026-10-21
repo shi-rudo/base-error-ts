@@ -28,21 +28,29 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
 export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 
 /** Most keys that the circular-object marker names. */
-export const CIRCULAR_OBJECT_MARKER_KEYS = 5;
+const MAX_CIRCULAR_OBJECT_MARKER_KEYS = 5;
 
 /**
  * A data object that is its own ancestor, named by its type and its first
- * keys. The marker sits in data, so a policy masks it like any other data
- * value. One key beyond {@link CIRCULAR_OBJECT_MARKER_KEYS} adds "...".
+ * keys. The marker pulls at most one key past the named ones, and that key
+ * adds "...". The marker sits in data, so a policy masks it like any other
+ * data value.
  */
 export function circularObjectMarker(
   type: string,
-  keys: readonly string[],
+  keys: Iterable<string>,
 ): string {
-  const named = keys.slice(0, CIRCULAR_OBJECT_MARKER_KEYS);
+  const named: string[] = [];
+  let more = false;
+  for (const key of keys) {
+    if (named.length === MAX_CIRCULAR_OBJECT_MARKER_KEYS) {
+      more = true;
+      break;
+    }
+    named.push(key);
+  }
   const keyInfo = named.length > 0 ? ` with keys: [${named.join(", ")}]` : "";
-  const more = keys.length > CIRCULAR_OBJECT_MARKER_KEYS ? "..." : "";
-  return `[Circular ${type}${keyInfo}${more}]`;
+  return `[Circular ${type}${keyInfo}${more ? "..." : ""}]`;
 }
 
 const CAUSE_SPINE_MARKERS: ReadonlySet<string> = new Set([

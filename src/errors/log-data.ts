@@ -22,7 +22,6 @@ import {
   type WalkPosition,
 } from "./log-position.js";
 import {
-  CIRCULAR_OBJECT_MARKER_KEYS,
   MAX_LOG_SIZE_MARKER,
   UNSERIALIZABLE_VALUE_MARKER,
   circularObjectMarker,
@@ -115,6 +114,9 @@ export function serializeLogData(
   if (budget.nodes >= budget.limit) return MAX_LOG_SIZE_MARKER;
   if (typeof value === "object" && value !== null) {
     const seen = new Set<object>();
+    // A marker lists the keys of its object, so one marker per object keeps
+    // the work linear when many references return to the same ancestor.
+    const circularMarkers = new Map<object, string>();
     const copy = (
       input: unknown,
       key: string,
@@ -164,7 +166,14 @@ export function serializeLogData(
       ) {
         return array ? [] : {};
       }
-      if (seen.has(item)) return serializeCircularObject(item, context);
+      if (seen.has(item)) {
+        let marker = circularMarkers.get(item);
+        if (marker === undefined) {
+          marker = serializeCircularObject(item, context);
+          circularMarkers.set(item, marker);
+        }
+        return marker;
+      }
       seen.add(item);
       try {
         if (array) {
@@ -230,24 +239,15 @@ export function serializeLogData(
 }
 
 /**
- * The circular-object marker of a repeated ancestor. Total: the constructor
- * and key reads are foreign, and a Proxy whose traps throw gets the bare
- * marker instead of an exception.
+ * The circular-object marker of a repeated ancestor. The type and key reads
+ * are guarded: an object whose keys cannot be read gets its type only.
  */
 function serializeCircularObject(
   obj: object,
   context: LogBuildContext,
 ): string {
-  try {
-    const type = readConstructorName(obj) || "Object";
-    // One key past the named ones tells the marker that more keys exist.
-    const keys = readOwnEnumerableKeys(
-      obj,
-      CIRCULAR_OBJECT_MARKER_KEYS + 1,
-      context.budget,
-    );
-    return circularObjectMarker(type, Array.from(keys));
-  } catch {
-    return circularObjectMarker("Object", []);
-  }
+  return circularObjectMarker(
+    readConstructorName(obj) || "Object",
+    readOwnEnumerableKeys(obj, MAX_LOG_NODES, context.budget),
+  );
 }
