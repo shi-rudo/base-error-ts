@@ -1,5 +1,10 @@
 import { defineConfig } from "vitepress";
 
+import packageJson from "../../package.json";
+
+// The version menu names the major release of the package.
+const majorVersion = packageJson.version.split(".")[0];
+
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   title: "@shirudo/base-error",
@@ -25,7 +30,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Migration", link: "/guide/migration" },
       {
-        text: "v7",
+        text: `v${majorVersion}`,
         items: [
           {
             text: "Changelog",
