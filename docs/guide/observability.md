@@ -76,7 +76,9 @@ Each aggregate node is capped at 100 members (the remainder collapses to a
 `"[100 more aggregated errors]"` marker), shares the chain's depth cap of 100,
 and is cycle-safe. An error that is its own ancestor ends in `[Circular cause
 chain]`. An error that the same walk already wrote, for example the same
-upstream failure in two branches, ends in `[Shared cause]`. The log walks the
+upstream failure in two branches, ends in `[Shared cause]`. The marker does
+not repeat the subtree. If the depth cap or a cause policy cut the first
+occurrence, the later occurrence does not restore it. The log walks the
 `cause` and the `errors` of the root separately, so an error in both appears
 there twice. `toString()` renders the whole tree in one walk with the same two
 markers. It also marks a repeated plain-object cause, which the log copies as
@@ -168,6 +170,19 @@ it, and the outer error's policy runs over the whole log object afterwards.
 This holds for errors of the same realm only. An error that crossed a worker
 boundary, or one that came from a second copy of the package, logs as a foreign
 error without a policy.
+
+A cause policy masks the positions beneath its own error. The log writes an
+error that two branches share at its first position only, and the later
+position reads `[Shared cause]`. The order of the members decides which
+position comes first:
+
+- If the branch with the policy comes first, the shared error appears masked,
+  and the other branch shows the marker.
+- If a branch without a policy comes first, the shared error appears there
+  unmasked. The policy of the other branch does not reach it.
+
+To mask a value at every position, give the policy to the error that carries
+the value, or to the root error.
 
 `StructuredError` initializes `name` from `code`, so both fields contain the same value.
 Redaction selects keys, not matching values. Denying `name` masks its stack header,

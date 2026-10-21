@@ -865,6 +865,12 @@ export class BaseError<T extends string> extends Error {
    * Proxy around a BaseError carry no reachable policy and are logged like a
    * foreign error.
    *
+   * The log writes an error that two branches share at its first position
+   * only, and a cause policy covers the positions beneath its own error. If
+   * the first position sits in a branch without a policy, the shared error
+   * appears there unmasked. To mask a value at every position, give the
+   * policy to the error that carries the value, or to the root.
+   *
    * During data serialization, nested errors keep a primitive diagnostic
    * envelope and their sticky policy, without restarting hooks or traversal.
    * During own-fields processing, explicit nested calls skip own-fields hooks
