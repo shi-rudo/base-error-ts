@@ -10,7 +10,7 @@ import {
  * and keeps the linear behavior.
  */
 export type CauseTraversalOptions = {
-  /** Maximum number of hops to follow (default: 100, the library's {@link MAX_CAUSE_DEPTH}). */
+  /** Maximum number of hops to follow (default: 100). */
   maxDepth?: number;
   /**
    * Also walk the members of an aggregate: `AggregateError.errors`, and any
@@ -19,8 +19,7 @@ export type CauseTraversalOptions = {
    */
   aggregates?: boolean;
   /**
-   * Maximum number of nodes visited when `aggregates` is on (default: 1000,
-   * the library's {@link DEFAULT_TRAVERSAL_NODES}).
+   * Maximum number of nodes visited when `aggregates` is on (default: 1000).
    * Depth bounds a chain, but it does not bound the width of a tree.
    */
   maxNodes?: number;
@@ -133,8 +132,7 @@ function* traverseCauseChain(
  * Traverses the cause chain to find the root cause (the last error in the chain).
  *
  * @param error - The error to traverse
- * @param maxDepth - Maximum number of cause hops to follow (default: 100, the
- *   library's {@link MAX_CAUSE_DEPTH})
+ * @param maxDepth - Maximum number of cause hops to follow (default: 100)
  * @returns The root cause, or the last valid error if maxDepth is exceeded.
  *   On a circular chain, the deepest error before the repeat (never throws).
  *
