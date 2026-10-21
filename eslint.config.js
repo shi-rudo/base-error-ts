@@ -131,6 +131,20 @@ export default [
       },
     },
   },
+  // A CommonJS consumer fixture loads the package through require().
+  {
+    files: ["scripts/**/*.cjs"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: {
+        console: "readonly",
+        require: "readonly",
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
   {
     ignores: ["dist/**", "coverage/**", "node_modules/**", "docs/**"],
   },

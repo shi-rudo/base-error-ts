@@ -169,7 +169,7 @@ describe.each<Mode>(["allow", "deny"])(
         message: "outer",
         name: "WithDecisions",
         timestamp: error.timestamp,
-        timestampIso: error.timestampIso,
+        timestampIso: new Date(error.timestamp).toISOString(),
         code: 0,
         category: "PERMANENT",
         retryable: false,
