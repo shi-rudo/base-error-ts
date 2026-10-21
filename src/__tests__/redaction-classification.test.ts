@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BaseError } from "../index.js";
+
+import { errorWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 
 type Mode = "allow" | "deny";
 type Counts = { prototypes: number; ownKeys: number };
@@ -26,13 +27,6 @@ function observedRecord(
   return { value, target, counts };
 }
 
-function withDetails(details: unknown) {
-  class WithDetails extends BaseError<"WithDetails"> {
-    readonly details = details;
-  }
-  return new WithDetails("original");
-}
-
 describe.each<Mode>(["allow", "deny"])(
   "%s redaction classifies each object occurrence once",
   (mode) => {
@@ -50,7 +44,7 @@ describe.each<Mode>(["allow", "deny"])(
               : position === "field"
                 ? { child: observed.value }
                 : { items: [observed.value] };
-          const error = withDetails(details);
+          const error = errorWithRawDetails(details);
           if (mode === "allow") error.redactAllow(["keep"]);
           else error.redact(["secret"]);
 
@@ -59,7 +53,7 @@ describe.each<Mode>(["allow", "deny"])(
           const counts = { ...observed.counts };
 
           const expected = { keep: "public", secret: "[REDACTED]" };
-          expect(log.details).toEqual(
+          expect(rawDetailsOf(log)).toEqual(
             position === "root"
               ? expected
               : position === "field"
@@ -80,7 +74,7 @@ describe.each<Mode>(["allow", "deny"])(
       "classifies an empty custom-prototype leaf once in a %s",
       (position) => {
         const observed = observedRecord(true, {});
-        const error = withDetails(
+        const error = errorWithRawDetails(
           position === "field"
             ? { leaf: observed.value }
             : { items: [observed.value] },
@@ -91,7 +85,7 @@ describe.each<Mode>(["allow", "deny"])(
         const log = error.toLogObject();
         const counts = { ...observed.counts };
 
-        const details = log.details as Record<string, unknown>;
+        const details = rawDetailsOf(log) as Record<string, unknown>;
         const leaf =
           position === "field" ? details.leaf : (details.items as unknown[])[0];
         expect(leaf === observed.value).toBe(true);
@@ -101,7 +95,7 @@ describe.each<Mode>(["allow", "deny"])(
 
     it("reclassifies a shared leaf when a mask adds enumerable fields before its next occurrence", () => {
       const observed = observedRecord(true, {});
-      const error = withDetails({
+      const error = errorWithRawDetails({
         first: observed.value,
         trigger: "mutate",
         second: observed.value,
@@ -120,7 +114,7 @@ describe.each<Mode>(["allow", "deny"])(
 
       const log = error.toLogObject();
 
-      const details = log.details as Record<string, unknown>;
+      const details = rawDetailsOf(log) as Record<string, unknown>;
       expect(details.first === observed.value).toBe(true);
       expect(details.trigger).toBe("[REDACTED]");
       expect(details.second).toEqual({ keep: "public", secret: "[REDACTED]" });
@@ -149,7 +143,7 @@ describe("denied values do not need classification", () => {
         },
       );
       let receivedRawValue = false;
-      const error = withDetails(
+      const error = errorWithRawDetails(
         key === "details" ? hostile : { secret: hostile },
       ).redact([key], {
         mask(value) {
@@ -162,7 +156,7 @@ describe("denied values do not need classification", () => {
       const observedCounts = { ...counts };
 
       expect(log.message).toBe("original");
-      expect(log.details).toEqual(
+      expect(rawDetailsOf(log)).toEqual(
         key === "details" ? "[REDACTED]" : { secret: "[REDACTED]" },
       );
       expect(receivedRawValue).toBe(true);

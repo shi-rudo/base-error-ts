@@ -142,6 +142,31 @@ cause links precede data expansion. The shared allowance stays at 100,000
 foreign reads. Regression tests count accesses separately from this timing
 measurement. These host measurements do not establish workerd throughput.
 
+## Root details as log data
+
+A paired run on Node 24.21.0, macOS arm64, compares `863ca2d` with the copy of
+root `details` for `base-error-ts-9ho`. Both bundles come from `pnpm exec tsup`
+with the same configuration. Values are median microseconds per `toLogObject()`
+call, from the second of two runs.
+
+| Input | Sticky root policy | `863ca2d` | Root details copied |
+| --- | --- | ---: | ---: |
+| Root with details | none | 0.84 | 2.27 |
+| Root with details | deny secret | 6.27 | 7.41 |
+| Shallow cause with details | none | 2.60 | 2.45 |
+| Shallow cause with details | deny secret | 8.70 | 8.93 |
+| 100-member aggregate | none | 169.72 | 171.97 |
+| 100-member aggregate | deny secret | 542.56 | 538.95 |
+| 100-node cause chain | none | 168.71 | 170.52 |
+| 100-node cause chain | deny secret | 541.49 | 543.12 |
+
+Without a policy, the root costs about 1.4 microseconds more per call. Before,
+the log object held the root `details` by reference and did no work for them.
+The copy of a record with four fields now costs about what a shallow cause pays
+for its `details`. With the deny policy, the root rises about 18%, because the
+copy runs before the redaction walker. The cause scenarios do not reach the
+changed path and differ by at most 6%.
+
 ## The time of an error in one field
 
 A paired run on Node 24.21.0, macOS arm64, compares `5470473` with the change
@@ -172,8 +197,9 @@ The scenario and timing code is
 It uses 100 warm-up calls, then nine samples of 200 calls. Revision order rotates
 between samples. The script reports each median, minimum, and maximum as JSON.
 
-Each scenario wraps structured errors in a base error, so their details take the
-copy path. Fixtures are reused: construction and first stack formatting are
+The `root` scenario logs a structured error with details directly. The other
+scenarios wrap structured errors in a base error. The details take the copy path
+in every scenario. Fixtures are reused: construction and first stack formatting are
 excluded. Each detail holds identifiers, a secret, a short array, and a nested
 record. The sticky variant calls `redact(["secret"])` on the root only.
 

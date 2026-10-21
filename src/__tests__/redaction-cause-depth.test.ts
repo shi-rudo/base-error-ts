@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../errors/StructuredError.js";
 
+import { errorWithRawDetails } from "./raw-log-data.fixture.js";
+
 /**
  * The cause chain is its own bounded spine (capped by #serializeCause). It must
  * not consume the redaction walker's data-depth budget, or a deep-but-acyclic
@@ -38,16 +40,10 @@ describe("redaction: cause-chain depth does not consume the data-depth budget", 
     expect(json).toContain("[REDACTED]");
   });
 
-  it("still caps a genuinely deep data tree (DoS bound intact)", () => {
+  it("still caps a genuinely deep uncopied data tree (DoS bound intact)", () => {
     let deep: Record<string, unknown> = { bottom: "x" };
     for (let i = 0; i < 5000; i++) deep = { child: deep };
-    const err = new StructuredError({
-      code: "DEEP",
-      category: "C",
-      retryable: false,
-      message: "deep details",
-      details: { nested: deep },
-    });
+    const err = errorWithRawDetails({ nested: deep });
 
     const json = JSON.stringify(err.redact([]).toLogObject());
     expect(json).toContain("[Max redaction depth exceeded]");

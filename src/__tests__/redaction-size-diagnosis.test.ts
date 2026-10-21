@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { BaseError, StructuredError } from "../index.js";
 
+import { causeWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
+
 type Log = Record<string, unknown>;
 const secret = "private-size-cut-password";
 
@@ -13,6 +15,11 @@ function wideError(details: Log, cause: unknown = new Error("original cause")) {
     cause,
     details,
   });
+}
+
+/** Oversized data on the raw path, under a cause that carries the diagnosis. */
+function wideRawError(details: Log) {
+  return wideError({}, causeWithRawDetails(details, "original cause"));
 }
 
 function expectDiagnosis(log: Log) {
@@ -30,23 +37,23 @@ function expectDiagnosis(log: Log) {
 describe("oversized redaction keeps the technical diagnosis", () => {
   it("cuts a wide numeric detail locally under a no-match deny-list", () => {
     const ids = Array.from({ length: 120_000 }, (_, index) => index);
-    const error = wideError({ ids }).redact(["password"]);
+    const error = wideRawError({ ids }).redact(["password"]);
 
     const log = error.toLogObject();
 
     expectDiagnosis(log);
-    expect(log.details).toMatchObject({ ids: expect.any(Array) });
-    const retained = (log.details as { ids: unknown[] }).ids;
+    expect(rawDetailsOf(log)).toMatchObject({ ids: expect.any(Array) });
+    const retained = (rawDetailsOf(log) as { ids: unknown[] }).ids;
     expect(retained[0]).toBe(0);
     expect(retained.length).toBeLessThan(ids.length);
-    expect(JSON.stringify(log.details)).toContain(
+    expect(JSON.stringify(rawDetailsOf(log))).toContain(
       "[Max redaction size exceeded]",
     );
     expect(ids).toHaveLength(120_000);
   });
 
   it("masks retained data under an empty allow-list on the JSON logger path", () => {
-    const error = wideError({
+    const error = wideRawError({
       password: secret,
       ids: Array(120_000).fill(secret),
     }).redactAllow([]);
@@ -54,11 +61,11 @@ describe("oversized redaction keeps the technical diagnosis", () => {
     const log = JSON.parse(JSON.stringify(error)) as Log;
 
     expectDiagnosis(log);
-    expect(log.details).toMatchObject({
+    expect(rawDetailsOf(log)).toMatchObject({
       password: "[REDACTED]",
       ids: expect.any(Array),
     });
-    const retained = (log.details as { ids: unknown[] }).ids;
+    const retained = (rawDetailsOf(log) as { ids: unknown[] }).ids;
     expect(retained[0]).toBe("[REDACTED]");
     expect(retained.length).toBeLessThan(120_000);
     expect(JSON.stringify(log)).not.toContain(secret);
@@ -66,21 +73,21 @@ describe("oversized redaction keeps the technical diagnosis", () => {
 
   it("bounds repeated DAG expansion without discarding the diagnosis", () => {
     const shared = { password: secret, ids: Array(60_000).fill(7) };
-    const error = wideError({ first: shared, second: shared }).redact([
+    const error = wideRawError({ first: shared, second: shared }).redact([
       "password",
     ]);
 
     const log = error.toLogObject();
 
     expectDiagnosis(log);
-    expect(log.details).toMatchObject({
+    expect(rawDetailsOf(log)).toMatchObject({
       first: { password: "[REDACTED]" },
     });
     const json = JSON.stringify(log);
     expect(json).toContain("[Max redaction size exceeded]");
     expect(json).not.toContain(secret);
-    expect((log.details as Log).first === shared).toBe(false);
-    expect((log.details as Log).second === shared).toBe(false);
+    expect((rawDetailsOf(log) as Log).first === shared).toBe(false);
+    expect((rawDetailsOf(log) as Log).second === shared).toBe(false);
   });
 
   it.each(["first", "last"])(
@@ -147,7 +154,7 @@ describe("oversized redaction keeps the technical diagnosis", () => {
       const details = Object.fromEntries(
         Array.from({ length: 30 }, (_, i) => [`sibling${i}`, foreign]),
       );
-      const error = wideError(details);
+      const error = wideRawError(details);
 
       const log = (
         mode === "allow" ? error.redactAllow([]) : error.redact(["password"])
@@ -159,8 +166,8 @@ describe("oversized redaction keeps the technical diagnosis", () => {
       // This asserts bounded work without fixing its internal read allowance.
       expect(observedReads).toBeGreaterThan(0);
       expect(observedReads).toBeLessThan(hiddenKeys.length * 30);
-      expect(log.details === details).toBe(false);
-      const retained = log.details;
+      expect(rawDetailsOf(log) === details).toBe(false);
+      const retained = rawDetailsOf(log);
       if (retained !== null && typeof retained === "object") {
         for (const value of Object.values(retained)) {
           expect(value === foreign).toBe(false);
