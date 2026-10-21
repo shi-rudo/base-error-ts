@@ -26,6 +26,34 @@ const at = (err.details as { at: Date }).at;
 A `redactWith` callback receives the copy. If a callback changed
 `raw.details` to change the error itself, change `error.details` directly.
 
+## Next major: `publicIssues()` without the message
+
+`publicIssues()` leaves the `message` of an issue out. A validator's default
+message can embed the rejected value, so the message now crosses only on
+opt-in. TypeScript reports every read of `issue.message` on the result, because
+the type is now `string | undefined`.
+
+If the messages are yours, opt in:
+
+```ts
+// before
+error.publicIssues();
+// after
+error.publicIssues({ messages: true });
+```
+
+If the messages come from a validator, project `pointer` and `code` and let the
+client render the text from the code. If you built your own shape with
+`mapIssue`, nothing changes. The result now has the type that the mapper
+returns, so a cast such as `as never` or `as PublicIssue` can go.
+
+A path segment now carries only a property key. A key that is no string,
+number or symbol, such as an object key of a `Map`, crosses as `null`. The type
+of `PublicIssue["path"]` admits `null` and `{ key: null }`.
+
+`PublicIssuesOptions` holds `messages` only. If you typed an options object
+with `mapIssue` as `PublicIssuesOptions`, pass the object literal directly.
+
 ## Next major: a null cause is no cause
 
 `isErrorWithCause` and the cause-chain helpers now treat `cause: null` like
