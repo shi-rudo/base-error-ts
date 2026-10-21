@@ -247,10 +247,12 @@ export class BaseError<T extends string> extends Error {
    * member, a header that repeats the node's own `name: message` is rewritten
    * with the masked fields and keeps its frames, and a stack that does not
    * start with that header is handed to the mask as a whole. {@link toString}
-   * masks a deny-listed technical message as well. The `err.stack` property
-   * and Node's `console.log(err)` inspection (which prints that property) stay
-   * unredacted. When redaction matters, log errors only through a structured
-   * serializer that hits `toJSON`, never via string interpolation.
+   * masks a deny-listed technical message as well. The log states the time in
+   * two keys, `timestamp` and `timestampIso`; to hide it, deny both. The
+   * `err.stack` property and Node's `console.log(err)` inspection (which
+   * prints that property) stay unredacted. When redaction matters, log errors
+   * only through a structured serializer that hits `toJSON`, never via string
+   * interpolation.
    *
    * @param keys - Property names to mask wherever they appear in the log object.
    * @param options - `mask` defaults to `"[REDACTED]"`.

@@ -169,6 +169,9 @@ Redaction selects keys, not matching values. Denying `name` masks its stack head
 but leaves `code` unchanged. Denying `code` alone leaves `name` and its stack header unchanged.
 This also applies when the error appears as a cause.
 
+The log states the time in two keys, `timestamp` and `timestampIso`. To hide
+the time, deny both. Denying one key masks that key only.
+
 ```ts
 const error = new StructuredError({
   code: "TENANT_9931_SECRET", // Deliberately sensitive code for this example.
@@ -353,8 +356,9 @@ Sentry.captureException(error, { extra: error.toLogObject() });
 ## Reconstructing: `StructuredError.fromJSON`
 
 `fromJSON` is the inverse of `toJSON`: it rebuilds a typed `StructuredError`
-(restoring `code`/`category`/`retryable`/`details`, the original
-`stack`/`timestamp`, and the cause chain) from the serialized shape.
+(restoring `code`/`category`/`retryable`/`details`, the cause chain with the
+`stack` of each node, and the original `timestamp` of the root) from the
+serialized shape.
 
 ```ts
 const err = StructuredError.fromJSON(payload); // payload: unknown
@@ -374,7 +378,9 @@ It is for reconstruction **within one trust/bounded-context boundary**:
 
 It is lenient (malformed input → a safe `UNKNOWN_ERROR` envelope, never throws)
 and prototype-pollution-safe (whitelisted fields only). It restores the cause
-chain and the original `stack`/`timestamp`. It reconstructs a
+chain with the `stack` of each node, and the original `timestamp` of the root.
+The log writes no time for a cause, so a nested cause carries the time of the
+reconstruction, not the time at which it was thrown. It reconstructs a
 `StructuredError` only (`code`, `category`, `retryable`, `details`); there are no
 user/localized messages to restore (those are not part of the error model).
 

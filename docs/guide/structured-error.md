@@ -82,6 +82,7 @@ Beyond [`BaseError`](./base-error#serialization), `StructuredError`'s
 public output, see the [public-error pipeline](./public-error).
 
 `StructuredError.fromJSON(payload)` is the inverse: it reconstructs a typed
-`StructuredError` (`code`, `category`, `retryable`, `details`, the original
-`stack` / `timestamp`, and the cause chain) from the serialized shape. See
-[Observability & logging](./observability).
+`StructuredError` (`code`, `category`, `retryable`, `details`, the cause chain
+with the `stack` of each node, and the original `timestamp` of the root) from
+the serialized shape. A nested cause carries the time of the reconstruction.
+See [Observability & logging](./observability).

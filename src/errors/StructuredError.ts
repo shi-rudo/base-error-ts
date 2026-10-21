@@ -21,6 +21,11 @@ type StructuredFieldReads = {
   readonly details: unknown;
 };
 
+/** True for a number that `Date` accepts, so `toISOString` does not throw. */
+function isDateInstant(value: number): boolean {
+  return Number.isFinite(new Date(value).getTime());
+}
+
 /**
  * A structured error class that extends BaseError with enhanced error metadata.
  *
@@ -145,10 +150,12 @@ export class StructuredError<
    * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable); malformed input yields that
    * envelope instead of throwing; only whitelisted fields are read (no
    * prototype pollution). `details` is copied shallowly (the top level is
-   * decoupled from the payload; nested values stay shared). The original
-   * `stack`/`timestamp` and the cause chain are restored. Reconstructed
-   * fields are **not** an authority on trust: whoever produced the payload
-   * can forge them.
+   * decoupled from the payload; nested values stay shared). The cause chain
+   * is restored with the `stack` of each node. The root keeps its original
+   * `timestamp`. The log writes no time for a cause, as other platforms do not
+   * either, so a nested cause carries the time of the reconstruction.
+   * Reconstructed fields are **not** an authority on trust: whoever produced
+   * the payload can forge them.
    *
    * Always returns a base `StructuredError`: subclass identity and behavior are
    * **not** restored (a `ValidationError` round-trips to a `StructuredError`,
@@ -216,18 +223,11 @@ export class StructuredError<
       readProperty(obj, "stack"),
       "string",
     );
-    StructuredError.#rehydrate(
-      error,
-      "timestamp",
+    const time = StructuredError.#originalTime(
       readProperty(obj, "timestamp"),
-      "number",
-    );
-    StructuredError.#rehydrate(
-      error,
-      "timestampIso",
       readProperty(obj, "timestampIso"),
-      "string",
     );
+    if (time !== undefined) StructuredError.#restoreTime(error, time);
 
     // A structured error can carry aggregate members too (a fan-out error that
     // sets its own `errors`). The log serializer reads them by shape, so the
@@ -259,6 +259,46 @@ export class StructuredError<
       return { ...(value as Record<string, unknown>) };
     } catch {
       return undefined;
+    }
+  }
+
+  /**
+   * The original instant of a payload, taken from one source, so that the
+   * restored `timestamp` and `timestampIso` cannot disagree. The numeric
+   * `timestamp` wins as it is. Only without one does the ISO string count, and
+   * only in the exact form that `toISOString` writes: a string without an
+   * offset reads as local time, and engines parse other formats differently.
+   * A value outside the date range does not count, because `toISOString`
+   * throws for it. Returns `undefined` to keep the time of the reconstruction.
+   */
+  static #originalTime(
+    timestamp: unknown,
+    timestampIso: unknown,
+  ): number | undefined {
+    if (typeof timestamp === "number" && isDateInstant(timestamp)) {
+      return timestamp;
+    }
+    if (typeof timestampIso !== "string") return undefined;
+    const parsed = Date.parse(timestampIso);
+    return isDateInstant(parsed) &&
+      new Date(parsed).toISOString() === timestampIso
+      ? parsed
+      : undefined;
+  }
+
+  /** Writes both time fields from one instant. */
+  static #restoreTime(target: object, time: number): void {
+    const fields = [
+      ["timestamp", time],
+      ["timestampIso", new Date(time).toISOString()],
+    ] as const;
+    for (const [key, value] of fields) {
+      Object.defineProperty(target, key, {
+        value,
+        configurable: true,
+        writable: true,
+        enumerable: true,
+      });
     }
   }
 

@@ -1,5 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { StructuredError, matchError } from "../index.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 describe("StructuredError.fromJSON", () => {
   describe("round-trip", () => {
@@ -49,6 +53,89 @@ describe("StructuredError.fromJSON", () => {
       expect(restored.stack).toBe(original.stack);
       expect(restored.timestamp).toBe(original.timestamp);
       expect(restored.timestampIso).toBe(original.timestampIso);
+    });
+
+    it("derives both times from the ISO string when the timestamp is masked", () => {
+      const original = new StructuredError({
+        code: "X",
+        category: "Y",
+        retryable: true,
+        message: "m",
+      });
+      const payload = { ...original.toJSON(), timestamp: "[REDACTED]" };
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(original.timestamp + 60_000);
+
+      const restored = StructuredError.fromJSON(payload);
+
+      expect(restored.timestamp).toBe(original.timestamp);
+      expect(restored.timestampIso).toBe(original.timestampIso);
+    });
+
+    it("derives the ISO string from the numeric timestamp", () => {
+      const payload = {
+        code: "X",
+        category: "Y",
+        retryable: true,
+        message: "m",
+        timestamp: 0,
+        timestampIso: "2026-09-27T00:00:00.000Z",
+      };
+
+      const restored = StructuredError.fromJSON(payload);
+
+      expect(restored.timestamp).toBe(0);
+      expect(restored.timestampIso).toBe("1970-01-01T00:00:00.000Z");
+    });
+
+    it("ignores an ISO string that is not the canonical form of its instant", () => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(Date.UTC(2026, 8, 27, 12));
+
+      for (const timestampIso of ["2026-09-27T00:00:00", "Sep 27 2026"]) {
+        const restored = StructuredError.fromJSON({
+          code: "X",
+          category: "Y",
+          retryable: true,
+          message: "m",
+          timestamp: "[REDACTED]",
+          timestampIso,
+        });
+
+        expect(restored.timestamp).toBe(Date.UTC(2026, 8, 27, 12));
+      }
+    });
+
+    it("restores a fractional numeric timestamp unchanged", () => {
+      const restored = StructuredError.fromJSON({
+        code: "X",
+        category: "Y",
+        retryable: true,
+        message: "m",
+        timestamp: 1748505600000.7,
+      });
+
+      expect(restored.timestamp).toBe(1748505600000.7);
+      expect(restored.timestampIso).toBe(
+        new Date(1748505600000.7).toISOString(),
+      );
+    });
+
+    it("keeps a matching reconstruction time for a timestamp outside the date range", () => {
+      for (const timestamp of [Infinity, 1e300, Number.NaN]) {
+        const restored = StructuredError.fromJSON({
+          code: "X",
+          category: "Y",
+          retryable: true,
+          message: "m",
+          timestamp,
+        });
+
+        expect(Number.isFinite(restored.timestamp)).toBe(true);
+        expect(restored.timestampIso).toBe(
+          new Date(restored.timestamp).toISOString(),
+        );
+      }
     });
 
     it("survives a JSON.parse(JSON.stringify(...)) trip", () => {
