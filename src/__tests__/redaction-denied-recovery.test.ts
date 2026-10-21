@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../index.js";
 
-import { causeWithRawDetails } from "./raw-log-data.fixture.js";
-
 type Log = Record<string, unknown>;
 class SecretDiagnosis extends BaseError<"SecretDiagnosis"> {
   readonly code = 0;
@@ -87,24 +85,6 @@ describe("denied diagnostic fields stay absent from redaction recovery", () => {
     expect(log).not.toHaveProperty(key);
     expect(log).not.toHaveProperty("details");
     expect(calls).toEqual([key, "secret"]);
-  });
-
-  it("honors denied names when reflection fails after successful masking", () => {
-    const unreadable = { secret: "private-payload" };
-    Object.defineProperty(unreadable, "unreadable", {
-      enumerable: true,
-      get: throwingMask,
-    });
-    const error = new SecretDiagnosis(
-      "diagnosis",
-      causeWithRawDetails(unreadable),
-    ).redact(["name"]);
-
-    const log = error.toLogObject();
-
-    expect(log.message).toBe("[log redaction failed]");
-    expect(log).not.toHaveProperty("name");
-    expect(log.retryable).toBe(false);
   });
 
   it("uses the active deny policy even if its mask installs a replacement", () => {

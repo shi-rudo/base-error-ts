@@ -24,6 +24,7 @@ Foreign reads remain guarded. Descriptor inspections and copied values consume a
 Redaction and serialization share one position rule in `log-position.ts`.
 Private container provenance preserves serializer depth cuts through redaction copies.
 At the depth cap, redaction emits a fresh empty container and copies no consumer fields.
+Proposal 0017 supersedes both rules: redaction walks the log copy only and has no depth cap of its own.
 After node exhaustion, already-read scalar envelope fields retain their values and types.
 Non-scalar envelope fields are omitted without expansion. This preserves decisions such as `retryable: false`.
 
@@ -46,6 +47,8 @@ The build context is private to library traversal. Consumers receive no continua
 Explicit public calls from consumer code still start independent bounded builds.
 
 ## Redaction read allowance
+
+Proposal 0017 removes this allowance. Redaction walks the log copy, which the log budget already bounds.
 
 Each built-in policy walk has one explicit allowance for classification, key inspections, and value reads.
 The guard and the copy loop share it, including non-enumerable keys and cause-array indices.

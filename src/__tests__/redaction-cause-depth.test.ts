@@ -6,9 +6,9 @@ import { errorWithRawDetails } from "./raw-log-data.fixture.js";
 
 /**
  * The cause chain is its own bounded spine (capped by #serializeCause). It must
- * not consume the redaction walker's data-depth budget, or a deep-but-acyclic
- * chain would marker-truncate a shallow `details` subtree on a deep cause,
- * silently dropping diagnostic data even though the data itself is shallow.
+ * not consume the data-depth budget, or a deep-but-acyclic chain would truncate
+ * a shallow `details` subtree on a deep cause, silently dropping diagnostic
+ * data even though the data itself is shallow.
  */
 describe("redaction: cause-chain depth does not consume the data-depth budget", () => {
   it("preserves a shallow details subtree hanging off a deep (but in-range) cause", () => {
@@ -40,12 +40,13 @@ describe("redaction: cause-chain depth does not consume the data-depth budget", 
     expect(json).toContain("[REDACTED]");
   });
 
-  it("still caps a genuinely deep uncopied data tree (DoS bound intact)", () => {
+  it("still caps a genuinely deep data tree of a cause policy (DoS bound intact)", () => {
     let deep: Record<string, unknown> = { bottom: "x" };
     for (let i = 0; i < 5000; i++) deep = { child: deep };
     const err = errorWithRawDetails({ nested: deep });
 
     const json = JSON.stringify(err.redact([]).toLogObject());
-    expect(json).toContain("[Max redaction depth exceeded]");
+    expect(json).toContain('"child":{}');
+    expect(json).not.toContain('"bottom"');
   });
 });

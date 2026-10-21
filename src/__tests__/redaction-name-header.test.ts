@@ -294,7 +294,7 @@ describe("deny-listed names in log stack headers", () => {
     });
   });
 
-  it("masks the stack safely when the name mask cannot convert to text", () => {
+  it("masks the stack header with a copy of an object that the name mask returns", () => {
     const maskedName: unknown = Object.create(null);
     const err = new StructuredError({
       code: "SECRET_CODE",
@@ -305,13 +305,14 @@ describe("deny-listed names in log stack headers", () => {
 
     const log = err.toLogObject();
 
-    expect(log.name).toBe(maskedName);
+    expect(log.name).toEqual({});
+    expect(log.name).not.toBe(maskedName);
     expect(log).toMatchObject({
       code: "SECRET_CODE",
       category: "UPSTREAM",
       retryable: false,
       message: "visible",
-      stack: "[REDACTED]",
     });
+    expect(String(log.stack).split("\n")[0]).toBe("[object Object]: visible");
   });
 });

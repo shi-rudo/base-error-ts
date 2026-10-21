@@ -13,7 +13,7 @@
 
 /**
  * Largest number of cause hops a walker follows. The log serializer, the
- * string render, the cause spine of the redaction walker, the reconstruction
+ * string render, the log-data copy of a cause's spine, the reconstruction
  * in `StructuredError.fromJSON`, and the default depth of the traversal
  * helpers all cut at this hop. One value for every surface, so a chain is cut
  * at the same node in the log, in `toString()`, after a round-trip, and in
@@ -58,9 +58,9 @@ export const MAX_OWN_LOG_FIELDS = 100;
 export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 
 /**
- * Deepest nesting in a data tree. The redaction walker writes a marker at
- * the cap, and `cloneJsonSafe` rejects the value. The log data serializer
- * keeps an empty container at the cap, without reading its children.
+ * Deepest nesting in a data tree. `cloneJsonSafe` rejects the value. The log
+ * data serializer keeps an empty container at the cap, without reading its
+ * children.
  * Cause depth counts separately, so a deep cause retains its shallow data.
  */
 export const MAX_DATA_DEPTH = 100;
@@ -68,8 +68,8 @@ export const MAX_DATA_DEPTH = 100;
 /**
  * Total-node budget for one data copy or `cloneJsonSafe` call. Log data
  * shares its allowance with the whole build (MAX_LOG_NODES). The unit is
- * one visited value, a container or a leaf. Redaction uses the stricter
- * foreign-read allowance below, which also bounds its visited values.
+ * one visited value, a container or a leaf. Redaction walks the copy and
+ * needs no budget of its own.
  * The depth cap bounds depth, not width, and shared (DAG) references
  * are cloned once per reference, so a small input can legally expand
  * exponentially (`{a, b}` doubling per level). Past the budget the walk
@@ -79,18 +79,9 @@ export const MAX_DATA_DEPTH = 100;
 export const MAX_DATA_NODES = 100_000;
 
 /**
- * Shared foreign-read allowance for redaction, with the same numeric cap as
- * the data walk but a different unit: a value can require several reads.
- * Classification, own-key enumeration, descriptors, and values each cost one.
- * Hidden descriptors consume reads without visiting data nodes, so no fixed
- * reads-per-node factor can align these independent bounds. Read exhaustion
- * cuts the current subtree; already-masked envelope scalars remain intact.
- */
-export const MAX_REDACTION_READS: number = MAX_DATA_NODES;
-
-/**
  * Shared allowance for one synchronous log build, including cause nodes and
- * data visits and own-key inspections across all fields. Public calls from
+ * data visits and own-key inspections across all fields, and the copy of a
+ * cause's custom redactor output. Public calls from
  * consumer callbacks get independent allowances.
  * One final key per active hook can carry a size cut. Fixed scalar envelope
  * fields survive exhaustion without further expansion. Matches the data cap.

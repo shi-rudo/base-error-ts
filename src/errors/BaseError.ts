@@ -7,24 +7,11 @@ import {
   createLogBuildContext,
   type LogBuildContext,
 } from "./log-build-context.js";
+import { serializeLogData, normalizeLogNumber } from "./log-data.js";
+import { childRegion, type LogRegion as RedactRegion } from "./log-position.js";
 import {
-  serializeLogData,
-  normalizeLogNumber,
-  isLogDataDepthCut,
-  copyLogDataDepthCut,
-} from "./log-data.js";
-import {
-  childPosition,
-  type LogRegion as RedactRegion,
-} from "./log-position.js";
-import {
-  isArrayValue,
   readCause,
   readMembers,
-  readOwnKeys,
-  readPrototype,
-  readOwnPropertyDescriptor,
-  UNREADABLE_REFLECTION,
   readOwnEnumerableKeys,
   readOwnProperty,
   readProperty,
@@ -46,9 +33,7 @@ import {
 import {
   MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
-  MAX_DATA_DEPTH,
   MAX_LOG_NODES,
-  MAX_REDACTION_READS,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
@@ -82,12 +67,6 @@ export type OwnLogFields = Readonly<Record<string, JsonSafeValue>>;
  * for partial masking (`****6789`) or preserving the value's type.
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
-
-/** Markers the redaction walker writes where a bound cut its walk. */
-const REDACTION_DEPTH_MARKER = "[Max redaction depth exceeded]";
-const REDACTION_CYCLE_MARKER = "[Circular reference]";
-const REDACTION_SIZE_MARKER = "[Max redaction size exceeded]";
-const REDACTION_READ_CUT = Symbol("redaction.read.cut");
 
 /**
  * The nodes of one walk over a cause graph, in the log and in `toString`.
@@ -175,6 +154,9 @@ export class BaseError<T extends string> extends Error {
 
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
 
+  /** Whether {@link redactWith} set the policy: its output is consumer data. */
+  #customPolicy = false;
+
   /**
    * Mask for the technical `message` in {@link toString}, set only by a
    * deny-list {@link redact} whose keys include `"message"`. `toString` (unlike
@@ -254,7 +236,8 @@ export class BaseError<T extends string> extends Error {
    * interpolation.
    *
    * @param keys - Property names to mask wherever they appear in the log object.
-   * @param options - `mask` defaults to `"[REDACTED]"`.
+   * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
+   *   result of a function mask as log data.
    */
   public redact(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
@@ -265,23 +248,16 @@ export class BaseError<T extends string> extends Error {
     const maskStackHeaders =
       (denied.has("name") || denied.has("message")) && !denied.has("stack");
     const redactor = (log: Record<string, unknown>) => {
+      const applyMask = BaseError.#maskApplier(mask);
       const headers: RedactionStackHeader[] | undefined = maskStackHeaders
         ? []
         : undefined;
-      const state = {
-        seen: new Set<object>(),
-        reads: { nodes: 0 },
-        headers,
-      };
       const masked = BaseError.#redactWalk(
         log,
         (key, value) =>
-          denied.has(key)
-            ? BaseError.#applyMask(mask, value, key)
-            : BaseError.#RECURSE,
+          denied.has(key) ? applyMask(value, key) : BaseError.#RECURSE,
         "root",
-        0,
-        state,
+        headers,
       ) as Record<string, unknown>;
       for (const header of headers ?? []) {
         if (typeof header.stack === "string") {
@@ -290,13 +266,14 @@ export class BaseError<T extends string> extends Error {
             header.name,
             header.message,
             header.target,
-            mask,
+            applyMask,
           );
         }
       }
       return masked;
     };
     this.#redactor = BaseError.#guardRedactor(redactor, denied);
+    this.#customPolicy = false;
     return this;
   }
 
@@ -334,17 +311,15 @@ export class BaseError<T extends string> extends Error {
    * masking the message itself.
    *
    * @param keys - Data leaf keys allowed to survive in the log.
-   * @param options - `mask` defaults to `"[REDACTED]"`.
+   * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
+   *   result of a function mask as log data.
    */
   public redactAllow(keys: string[], options?: { mask?: RedactMask }): this {
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
     this.#messageMask = undefined;
     const redactor = (log: Record<string, unknown>) => {
-      const state = {
-        seen: new Set<object>(),
-        reads: { nodes: 0 },
-      };
+      const applyMask = BaseError.#maskApplier(mask);
       return BaseError.#redactWalk(
         log,
         (key, value, region: RedactRegion, leaf) => {
@@ -357,14 +332,13 @@ export class BaseError<T extends string> extends Error {
                 (key === "cause" && value == null))) ||
             allow.has(key) ||
             (region === "cause" && ENVELOPE_KEYS.has(key));
-          return kept ? value : BaseError.#applyMask(mask, value, key);
+          return kept ? value : applyMask(value, key);
         },
         "root",
-        0,
-        state,
       ) as Record<string, unknown>;
     };
     this.#redactor = BaseError.#guardRedactor(redactor);
+    this.#customPolicy = false;
     return this;
   }
 
@@ -380,102 +354,27 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Whether the walker should descend into `value`. A **plain object**
-   * (`{}` / `Object.create(null)`) is always a container, even when empty, so
-   * it is preserved as `{}` rather than masked or collapsed. Any **other**
-   * object is a container only if it carries its own enumerable keys: a class
-   * instance with own fields *is* descended (so a deny/allow list reaches keys
-   * nested inside it), while `Date`/`Map`/`Set`/`RegExp` (no own enumerable
-   * keys) stay preserved leaves rather than collapsing to `{}`.
+   * The mask as one walk applies it. A function mask is consumer code and can
+   * return any value, so each result passes through the log-data copier, and
+   * an outer policy meets plain data only. One copy context per walk bounds
+   * the results of all its mask calls together.
    */
-  /*#__PURE__*/ static #isWalkable(
-    value: unknown,
-    reads: { nodes: number },
-  ): value is Record<string, unknown> {
-    if (value === null || typeof value !== "object" || Array.isArray(value)) {
-      return false;
-    }
-    if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
-    reads.nodes++;
-    const proto = readPrototype(value);
-    if (proto === UNREADABLE_REFLECTION) throw UNREADABLE_REFLECTION;
-    if (proto === Object.prototype || proto === null) return true;
-    return !BaseError.#redactionKeys(value, reads).next().done;
-  }
-
-  /** Guard classification and copying with the same inspection allowance. */
-  static *#redactionKeys(
-    value: object,
-    reads: { nodes: number },
-  ): Generator<string> {
-    if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
-    reads.nodes++;
-    const keys = readOwnKeys(value);
-    if (keys === UNREADABLE_REFLECTION) throw UNREADABLE_REFLECTION;
-    for (const key of keys) {
-      if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
-      reads.nodes++;
-      if (typeof key !== "string") continue;
-      const descriptor = readOwnPropertyDescriptor(value, key);
-      if (descriptor === UNREADABLE_REFLECTION) throw UNREADABLE_REFLECTION;
-      if (descriptor?.enumerable) yield key;
-    }
+  /*#__PURE__*/ static #maskApplier(
+    mask: RedactMask,
+  ): (value: unknown, key: string) => unknown {
+    if (typeof mask === "string") return () => mask;
+    const context = BaseError.#newLogContext();
+    return (value, key) => serializeLogData(mask(value, key), context);
   }
 
   /**
-   * Inspect envelope scalars before expanding objects, and causes before data.
-   * A large early field cannot consume the reads needed by later diagnostics.
-   * Each queued value costs a descriptor and value read from the shared cap.
-   * Placeholders preserve key order without putting raw references in output.
-   */
-  static *#redactionFields(
-    value: object,
-    region: RedactRegion,
-    reads: { nodes: number },
-    out: Record<string, unknown>,
-  ): Generator<readonly [string, unknown]> {
-    const causes: (readonly [string, unknown])[] = [];
-    const data: (readonly [string, unknown])[] = [];
-    try {
-      for (const key of BaseError.#redactionKeys(value, reads)) {
-        if (reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
-        reads.nodes++;
-        const field = readPropertyResult(value, key);
-        if (!field.readable) throw UNREADABLE_REFLECTION;
-        const entry = [key, field.value] as const;
-        if (
-          region !== "data" &&
-          field.value !== null &&
-          typeof field.value === "object"
-        ) {
-          out[key] = REDACTION_SIZE_MARKER;
-          // Failed classification defers the value to the policy; a denied
-          // field does not need traversal and must still be maskable.
-          if (
-            key === "cause" ||
-            (key === "errors" && isArrayValue(field.value))
-          ) {
-            causes.push(entry);
-          } else {
-            data.push(entry);
-          }
-        } else {
-          yield entry;
-        }
-      }
-    } catch (error) {
-      if (error !== REDACTION_READ_CUT || Object.keys(out).length === 0) {
-        throw error;
-      }
-    }
-    yield* causes;
-    yield* data;
-  }
-
-  /**
-   * Single deep-clone walker for redaction. Recurses into arrays and objects
-   * that carry own enumerable keys (see {@link BaseError.#isWalkable}); every
-   * other value (string, `Date`, `Map`, …) is a leaf.
+   * Single deep-clone walker for redaction. The log build copies every value
+   * that it reads, and the output of a cause's custom redactor and each mask
+   * result pass through the same copier. The walker therefore meets plain
+   * data only: plain objects, arrays and JSON primitives, as a finite tree
+   * within the log budget. It needs no bounds, guards or markers of its own
+   * (proposal 0017).
+   *
    * `decide(key, value, region, leaf)` can replace a field before inspection.
    * `#RECURSE` requests classification. For a leaf, the decision runs again
    * with `leaf: true`; `#RECURSE` then keeps the value unchanged. Array elements
@@ -491,34 +390,8 @@ export class BaseError<T extends string> extends Error {
    *
    * The transition is by key name only, not duck-typing, so a cause that
    * merely resembles a structured error cannot reclassify its data as envelope.
-   * The deny-list ignores `region`.
-   *
-   * A function-valued leaf is never log data and is not passed to `decide`:
-   * in an object it is dropped, in an array it becomes `null`, exactly as
-   * `JSON.stringify` writes it. This keeps an own `toJSON` out of the clone in
-   * both modes; copied as a leaf, the consumer's `JSON.stringify` would call
-   * it and re-materialize a masked key.
-   *
-   * Four bounds keep the walk total on any host stack. The data depth
-   * ({@link MAX_DATA_DEPTH}) and the cause-spine depth (`spine`, capped at
-   * {@link MAX_CAUSE_DEPTH}) count separately. On the spine an object is one
-   * hop, a list is free and each of its container elements is one hop, so a
-   * `cause` object, a member of `errors`, and each level of a nested list
-   * cost the same. Data depth restarts at each cause node, so a deep chain
-   * cannot marker-truncate a shallow `details` on a deep cause, and a spine
-   * that a subclass supplies past the serializer's cap ends in a marker.
-   * The read allowance ({@link MAX_REDACTION_READS}) covers classification,
-   * key inspections, and value reads across every region. Each child visit
-   * requires a charged value read, so this also bounds nodes and width.
-   * Read exhaustion retains copied fields and cuts uninspected subtrees.
-   * Envelope scalars precede object expansion; cause links precede data.
-   * An uninspected object is never treated as an opaque leaf. Arrays append
-   * a size marker at the cut. Objects retain local field markers and omit
-   * keys beyond the inspection allowance. An object cut with no retained
-   * fields becomes the size marker. `state.seen` holds the containers on the
-   * current path, so a cycle is one marker at its first repeat; a shared
-   * reference without a cycle is still cloned once per reference and is
-   * bounded by the read allowance.
+   * The deny-list ignores `region`. A serializer marker in a `cause` slot or in
+   * a list of aggregate members stays readable (see `isCauseSpineMarker`).
    */
   /*#__PURE__*/ static #redactWalk(
     value: object,
@@ -529,198 +402,84 @@ export class BaseError<T extends string> extends Error {
       leaf: boolean,
     ) => unknown,
     region: RedactRegion,
-    depth: number,
-    state: {
-      readonly seen: Set<object>;
-      readonly reads: { nodes: number };
-      readonly headers?: RedactionStackHeader[];
-    },
+    headers?: RedactionStackHeader[],
     key = "",
-    spine = 0,
-    classified = false,
   ): unknown {
-    try {
-      if (
-        !classified &&
-        !Array.isArray(value) &&
-        !BaseError.#isWalkable(value, state.reads)
-      ) {
-        return value;
-      }
-    } catch (error) {
-      if (error === REDACTION_READ_CUT) return REDACTION_SIZE_MARKER;
-      throw error;
-    }
-    // Preserve serializer cuts; otherwise the redactor diagnoses its own cap.
-    // Leaves never recurse, so shallow data is intact.
-    if (depth >= MAX_DATA_DEPTH || spine > MAX_CAUSE_DEPTH) {
-      return isLogDataDepthCut(value)
-        ? copyLogDataDepthCut(value, Array.isArray(value) ? [] : {})
-        : REDACTION_DEPTH_MARKER;
-    }
-    if (state.seen.has(value)) {
-      return REDACTION_CYCLE_MARKER;
-    }
-    state.seen.add(value);
-    try {
-      if (Array.isArray(value)) {
-        // Aggregate members sit on the cause spine (see childPosition). Like
-        // the rest of that spine they stay out of the data-depth budget, so a
-        // deep aggregate cannot marker-truncate a shallow `details` nested
-        // beneath it; each member is one hop on the spine instead.
-        const position = childPosition(
-          { region, depth, spine },
-          true,
-          key,
-          value,
-        );
-        // Built index by index into a fresh plain array, so the walk can stop
-        // at the budget with one marker in place of the rest.
-        const items: unknown[] = [];
-        if (state.reads.nodes >= MAX_REDACTION_READS) throw REDACTION_READ_CUT;
-        state.reads.nodes++;
-        const lengthRead = readPropertyResult(value, "length");
-        if (!lengthRead.readable) throw UNREADABLE_REFLECTION;
-        const length = lengthRead.value;
-        const count =
-          typeof length === "number" &&
-          Number.isSafeInteger(length) &&
-          length >= 0
-            ? length
-            : 0;
-        for (let index = 0; index < count; index++) {
-          if (state.reads.nodes >= MAX_REDACTION_READS) {
-            items.push(REDACTION_SIZE_MARKER);
-            break;
-          }
-          state.reads.nodes++;
-          const itemRead = readPropertyResult(value, String(index));
-          if (!itemRead.readable) throw UNREADABLE_REFLECTION;
-          const item = itemRead.value;
-          try {
-            if (
-              Array.isArray(item) ||
-              BaseError.#isWalkable(item, state.reads)
-            ) {
-              items.push(
-                BaseError.#redactWalk(
-                  item,
-                  decide,
-                  region,
-                  position.depth,
-                  state,
-                  key,
-                  position.spine,
-                  true,
-                ),
-              );
-              continue;
-            }
-            if (typeof item === "function") {
-              items.push(null);
-              continue;
-            }
-            // A leaf inside an array has no key of its own, so it is judged under
-            // the key of the array that holds it, in every region. Without this an
-            // allow-list keeps every scalar element, which is the opposite of what
-            // it promises: an aggregate's members are arbitrary values (a
-            // `Promise.allSettled` reason need not be an `Error`), and `errors` is
-            // not an envelope key, so a string member is data like any other.
-            const decision =
-              region === "cause" && isCauseSpineMarker(item)
-                ? BaseError.#RECURSE
-                : decide(key, item, region, true);
-            items.push(decision === BaseError.#RECURSE ? item : decision);
-          } catch (error) {
-            if (error !== REDACTION_READ_CUT) throw error;
-            items.push(REDACTION_SIZE_MARKER);
-            break;
-          }
-        }
-        return copyLogDataDepthCut(value, items);
-      }
-      // Null-prototype target so an own `__proto__`/`constructor` key from
-      // untrusted details is copied as ordinary data (and masked/recursed like
-      // any other key) instead of routing through a prototype setter. Matches
-      // the null-prototype clones used by the public-error catalog and transport
-      // stage. (OWASP Prototype Pollution Prevention.)
-      const out = Object.create(null) as Record<string, unknown>;
-      const header: RedactionStackHeader | undefined =
-        region !== "data" && state.headers !== undefined
-          ? { target: out }
-          : undefined;
-      if (header !== undefined) state.headers?.push(header);
-      for (const [key, val] of BaseError.#redactionFields(
-        value,
-        region,
-        state.reads,
-        out,
-      )) {
-        if (
-          header !== undefined &&
-          (key === "name" || key === "message" || key === "stack")
-        ) {
-          header[key] = val;
-        }
-        if (typeof val === "function") continue;
-        if (region !== "data" && key === "cause" && isCauseSpineMarker(val)) {
-          out[key] = val;
+    if (Array.isArray(value)) {
+      const items: unknown[] = [];
+      for (const item of value) {
+        if (item !== null && typeof item === "object") {
+          items.push(BaseError.#redactWalk(item, decide, region, headers, key));
           continue;
         }
-        // A leaf's keep/mask decision is made in the region it *lives in* (the
-        // parent); the child region only governs recursion. Conflating the two
-        // wrongly masks a region-transition key that holds a leaf (e.g. a
-        // top-level `cause: undefined`).
-        try {
-          const decision = decide(key, val, region, false);
-          if (decision === BaseError.#RECURSE) {
-            if (Array.isArray(val) || BaseError.#isWalkable(val, state.reads)) {
-              const position = childPosition(
-                { region, depth, spine },
-                false,
-                key,
-                val,
-              );
-              out[key] = BaseError.#redactWalk(
-                val,
-                decide,
-                position.region,
-                position.depth,
-                state,
-                key,
-                position.spine,
-                true,
-              );
-            } else {
-              const leafDecision = decide(key, val, region, true);
-              out[key] =
-                leafDecision === BaseError.#RECURSE ? val : leafDecision;
-            }
-          } else {
-            out[key] = decision;
-          }
-        } catch (error) {
-          if (error !== REDACTION_READ_CUT) throw error;
-          out[key] = REDACTION_SIZE_MARKER;
-        }
+        // A leaf inside an array has no key of its own, so it is judged under the
+        // key of the array that holds it, in every region. Without this an
+        // allow-list keeps every scalar element, which is the opposite of what
+        // it promises: an aggregate's members are arbitrary values (a
+        // `Promise.allSettled` reason need not be an `Error`), and `errors` is
+        // not an envelope key, so a string member is data like any other.
+        const decision =
+          region === "cause" && isCauseSpineMarker(item)
+            ? BaseError.#RECURSE
+            : decide(key, item, region, true);
+        items.push(decision === BaseError.#RECURSE ? item : decision);
       }
-      return copyLogDataDepthCut(value, out);
-    } catch (error) {
-      if (error === REDACTION_READ_CUT) return REDACTION_SIZE_MARKER;
-      throw error;
-    } finally {
-      state.seen.delete(value);
+      return items;
     }
+    // Null-prototype target so an own `__proto__`/`constructor` key from
+    // untrusted details is copied as ordinary data (and masked/recursed like
+    // any other key) instead of routing through a prototype setter. Matches
+    // the null-prototype clones used by the public-error catalog and transport
+    // stage. (OWASP Prototype Pollution Prevention.)
+    const out = Object.create(null) as Record<string, unknown>;
+    const header: RedactionStackHeader | undefined =
+      region !== "data" && headers !== undefined ? { target: out } : undefined;
+    if (header !== undefined) headers?.push(header);
+    for (const [field, val] of Object.entries(value)) {
+      if (
+        header !== undefined &&
+        (field === "name" || field === "message" || field === "stack")
+      ) {
+        header[field] = val;
+      }
+      if (region !== "data" && field === "cause" && isCauseSpineMarker(val)) {
+        out[field] = val;
+        continue;
+      }
+      // A leaf's keep/mask decision is made in the region it *lives in* (the
+      // parent); the child region only governs recursion. Conflating the two
+      // wrongly masks a region-transition key that holds a leaf (e.g. a
+      // top-level `cause: undefined`).
+      const decision = decide(field, val, region, false);
+      if (decision !== BaseError.#RECURSE) {
+        out[field] = decision;
+      } else if (val !== null && typeof val === "object") {
+        out[field] = BaseError.#redactWalk(
+          val,
+          decide,
+          childRegion(region, field, val),
+          headers,
+          field,
+        );
+      } else {
+        const leafDecision = decide(field, val, region, true);
+        out[field] = leafDecision === BaseError.#RECURSE ? val : leafDecision;
+      }
+    }
+    return out;
   }
 
   /**
    * Sets a trusted, synchronous transform of the complete log record.
    * Sticky; the last policy wins, replacing any earlier built-in policy.
    * The callback can mutate its input or return another record.
-   * Successful output is not validated, copied, or implicitly redacted again.
-   * The consumer owns its shape, JSON safety, and sensitive content.
+   * When this error is logged, successful output is not validated, copied, or
+   * implicitly redacted again. The consumer owns its shape, JSON safety, and
+   * sensitive content. When this error is the cause of another error, the log
+   * copies the output with the log-data copier, and the policy of the
+   * enclosing error walks that copy.
    * A synchronous throw returns the pre-call diagnostic fields without payload.
-   * Shared input mutations, including a cause's custom output, are not rolled back.
+   * The input holds copies only, so a mutation cannot reach an error.
    * Public logging calls inside the callback start independent builds.
    * The consumer must bound those calls and terminate the callback.
    *
@@ -735,6 +494,7 @@ export class BaseError<T extends string> extends Error {
   ): this {
     this.#messageMask = undefined;
     this.#redactor = BaseError.#guardRedactor(redactor);
+    this.#customPolicy = true;
     return this;
   }
 
@@ -978,7 +738,6 @@ export class BaseError<T extends string> extends Error {
    * Captures permitted diagnostic fields before consumer code can corrupt them.
    * Recovery stays bound to this policy if its callback installs another one.
    * A synchronous throw drops payload, stack, and links from this node.
-   * Built-in size cuts are handled locally before this recovery boundary.
    * Successful custom output remains consumer-controlled.
    */
   /*#__PURE__*/ static #guardRedactor(
@@ -1338,7 +1097,7 @@ export class BaseError<T extends string> extends Error {
     name: unknown,
     message: unknown,
     masked: Record<string, unknown>,
-    mask: RedactMask,
+    applyMask: (value: unknown, key: string) => unknown,
   ): unknown {
     if (typeof name === "string" && typeof message === "string") {
       const headers =
@@ -1354,7 +1113,7 @@ export class BaseError<T extends string> extends Error {
         }
       }
     }
-    return BaseError.#applyMask(mask, stack, "stack");
+    return applyMask(stack, "stack");
   }
 
   /**
@@ -1531,7 +1290,13 @@ export class BaseError<T extends string> extends Error {
     // deeper node applied its own policy first. The enclosing error's
     // redactor walks the result afterwards.
     const redactor = BaseError.#redactorOf(cause);
-    return redactor === undefined ? serialized : redactor(serialized);
+    if (redactor === undefined) return serialized;
+    const masked = redactor(serialized);
+    // A custom policy returns consumer data. The copier turns it into plain
+    // log data, so the policy of an outer error walks plain data only.
+    return BaseError.#sameRealm(cause) && cause.#customPolicy
+      ? serializeLogData(masked, context, "cause", depth)
+      : masked;
   }
 
   /** The fixed envelope must never turn a scalar decision into a size marker. */

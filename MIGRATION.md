@@ -1,5 +1,24 @@
 # Migration Guide
 
+## Next major: redaction walks plain data
+
+Proposal 0017 sets a threat model. The log build copies every value that it
+reads, and redaction walks only that copy.
+
+- The custom redactor of a cause returns consumer data. The log now copies that
+  output with the log-data copier before the policy of an enclosing error walks
+  it. A `Date` becomes its ISO string, a `Map` or a `Set` becomes `{}`, and a
+  cycle becomes a `[Circular …]` marker. Output beyond the remaining log budget
+  turns the `cause` slot into `[Max log size exceeded]`. If an enclosing policy
+  needs a rich value there, return its JSON form from the custom redactor.
+- A function mask can return any value. The log copies each result the same
+  way. A mask that returns a string, a number, a boolean or `null` sees no
+  change.
+- The redaction walk writes no markers of its own. `[Max redaction depth
+  exceeded]` and `[Max redaction size exceeded]` no longer appear. If a log
+  query or an alert matches one of them, match the marker of the copy instead:
+  an empty container at the depth cap, and `[Max log size exceeded]`.
+
 ## Next major: `timestampIso` is a log key only
 
 The error stores its time once, in `timestamp`. The log object still writes
@@ -202,12 +221,6 @@ The checker inspects up to 1,000 root keys and reports more than 100 valid data 
 Skipped keys do not count toward that retention limit.
 The checker never runs implicitly in the log path and adds no log fields.
 
-Built-in redaction now limits classification, key inspections, and value reads together to 100,000 operations per walk.
-This can stop a walk before its existing data-node limit.
-On exhaustion, the result contains the safe envelope with `message: "[Max redaction size exceeded]"`.
-Correctly typed non-sensitive fields, including `code` and `retryable`, retain their values.
-Payload, stack, and links are omitted. Uninspected objects never pass through as opaque leaves.
-This stricter handling of oversized redaction input belongs to the next major release.
 Deny-list masking of message text in stack headers uses values captured during the copy.
 It does not read source getters or cause-array indices a second time.
 

@@ -57,6 +57,7 @@ A silent loss of data in a log costs more than the crafted inputs that these def
 ## Cost
 
 - The custom redactor output of a cause costs one more copy and spends the shared budget a second time. A large subtree under such a redactor reaches the size cut earlier.
+- If that copy does not fit the remaining budget, the whole `cause` slot becomes `[Max log size exceeded]`. The removed walker cut locally and kept the name, message and code of the cause. The root keeps its diagnosis in both cases.
 - A consumer string that equals a serializer marker stays readable on the cause spine under `redactAllow`.
 - The tests that fed crafted values to the walker through a custom cause redactor now pin the rules of the copier instead.
 

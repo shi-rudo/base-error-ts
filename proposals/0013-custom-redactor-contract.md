@@ -100,6 +100,8 @@ The recovery rules belong to the invoked policy, even if its callback registers 
 The replacement governs subsequent calls.
 It adds `message: "[log redaction failed]"` and drops payload, stack, and links.
 Built-in read exhaustion retains its distinct `[Max redaction size exceeded]` message.
+Since proposal 0017, built-in redaction has no read allowance, and this message no longer occurs.
+The log copies the output of a cause's custom redactor before the policy of an enclosing error walks it.
 The library never substitutes a size-marker string for a captured boolean decision.
 
 The snapshot does not certify that original structural strings contain no secrets.

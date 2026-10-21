@@ -248,15 +248,13 @@ It masks every leaf inside any **data** region (a `details` subtree at any
 depth, and a cause's data fields), so data can't slip through wherever it sits.
 A leaf inside an **array** has no key of its own, so it is judged under the key
 of the array that holds it: `details.tokens: ["a", "b"]` is masked element by
-element unless `"tokens"` is allowed. The walk is depth-capped at 100: nesting beyond that collapses to a
-`[Max redaction depth exceeded]` marker (so it stays fail-safe and never
-overflows the stack, including on small edge-runtime stacks) rather than leaking.
-The cause spine has its own cap of 100 hops (a `cause` object or an aggregate
-member each count one; a list on the spine is free, its members pay), separate
-from the data depth, so a deep chain does not truncate a shallow `details` on a
-deep cause. An `errors` value that is not a list is data, bounded by the data
-depth. A cycle in the data (an object
-that reaches itself) is written as `[Circular reference]` at its first repeat.
+element unless `"tokens"` is allowed. The policy walks the log object, which the
+log build copied within its bounds: data nesting stops at 100 levels with an
+empty container, the cause spine stops at 100 hops (a `cause` object or an
+aggregate member each count one; a list on the spine is free, its members pay),
+and a cycle is a `[Circular …]` marker at its first repeat. Under an allow-list
+that marker is data and reads `[REDACTED]`. An `errors` value that is not a list
+is data, bounded by the data depth.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
 structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`).
 The top-level `cause` and `details` are links, not envelope fields. A primitive
@@ -312,7 +310,7 @@ err.redactWith(() => ({ message: "Request failed" }));
 ```
 
 The callback can mutate its input or return another record, including `{}`.
-Its return value passes through without validation, copying, freezing, or another implicit redaction policy.
+For the error that you log, its return value passes through without validation, copying, freezing, or another implicit redaction policy.
 The TypeScript signature requires a record and rejects promises.
 It does not prove that the record is safe for JSON or contains no secrets.
 Cycles, bigint values, getters, and `toJSON` callbacks can still make later JSON serialization throw.
@@ -320,13 +318,14 @@ Cycles, bigint values, getters, and `toJSON` callbacks can still make later JSON
 Policy registration is last-wins.
 `err.redactAllow([]).redactWith(fn)` replaces the allow-list instead of composing with it.
 A successful callback can replace `code`, change `retryable`, or reintroduce sensitive data.
-An enclosing error's built-in policy still processes a cause's custom output.
-Custom output from errors inside copied data still passes through the data copier.
+When the error is the cause of another error, the log copies the custom output with the
+log-data copier, and the policy of the enclosing error walks that copy. The copy follows
+the rules of `details`: a `Date` becomes its ISO string, a cycle becomes a `[Circular …]`
+marker, and output beyond the remaining log budget turns the `cause` slot into
+`[Max log size exceeded]`.
 
-The input can contain shared references.
-In particular, the record that a cause's own redactor returned reaches the callback as it is.
-Callback mutations can affect that record even if the callback subsequently throws.
-The library does not roll back consumer state.
+The input of the callback is the log object, which holds copies only.
+Callback mutations cannot reach the error, even if the callback subsequently throws.
 
 If the callback throws, recovery uses diagnostic fields captured **before** invocation.
 It retains readable own `name`, `code`, `category`, `retryable`, `timestamp`, and `timestampIso` values with their expected primitive types.
