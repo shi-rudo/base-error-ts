@@ -107,6 +107,95 @@ describe("a cause shared by two branches", () => {
   });
 });
 
+function upstreamWithSecret(): StructuredError<"DB_DOWN", "INFRA"> {
+  return new StructuredError({
+    code: "DB_DOWN",
+    category: "INFRA",
+    retryable: true,
+    message: "db down",
+    details: { secret: "s3cr3t" },
+  });
+}
+
+/** Two branches that failed on one upstream error; one carries a policy. */
+function branchesSharing(
+  upstream: Error,
+  order: "policy first" | "policy second",
+): { root: BaseError<"root">; withPolicy: number; withoutPolicy: number } {
+  const withPolicy = new BaseError("with policy", upstream).redact(["secret"]);
+  const withoutPolicy = new BaseError("without policy", upstream);
+  const members =
+    order === "policy first"
+      ? [withPolicy, withoutPolicy]
+      : [withoutPolicy, withPolicy];
+  return {
+    root: new BaseError<"root">(
+      "root",
+      new AggregateError(members, "both branches failed"),
+    ),
+    withPolicy: members.indexOf(withPolicy),
+    withoutPolicy: members.indexOf(withoutPolicy),
+  };
+}
+
+function branchCause(log: Log, index: number): unknown {
+  const members = (log.cause as Log).errors as Log[];
+  return (members[index] as Log).cause;
+}
+
+describe("a policy on one branch of a shared cause", () => {
+  it("masks the shared cause when its branch comes first", () => {
+    const { root, withPolicy, withoutPolicy } = branchesSharing(
+      upstreamWithSecret(),
+      "policy first",
+    );
+
+    const log = root.toLogObject();
+
+    expect(branchCause(log, withPolicy)).toMatchObject({
+      details: { secret: "[REDACTED]" },
+    });
+    expect(branchCause(log, withoutPolicy)).toBe(SHARED);
+    expect(JSON.stringify(log)).not.toContain("s3cr3t");
+  });
+
+  it("does not reach the shared cause when a branch without a policy comes first", () => {
+    const { root, withPolicy, withoutPolicy } = branchesSharing(
+      upstreamWithSecret(),
+      "policy second",
+    );
+
+    const log = root.toLogObject();
+
+    expect(branchCause(log, withoutPolicy)).toMatchObject({
+      details: { secret: "s3cr3t" },
+    });
+    expect(branchCause(log, withPolicy)).toBe(SHARED);
+  });
+
+  it.each(["policy first", "policy second"] as const)(
+    "masks the shared cause with %s when the cause carries the policy",
+    (order) => {
+      const upstream = upstreamWithSecret().redact(["secret"]);
+
+      const log = branchesSharing(upstream, order).root.toLogObject();
+
+      expect(JSON.stringify(log)).not.toContain("s3cr3t");
+    },
+  );
+
+  it.each(["policy first", "policy second"] as const)(
+    "masks the shared cause with %s when the root carries the policy",
+    (order) => {
+      const { root } = branchesSharing(upstreamWithSecret(), order);
+
+      const log = root.redact(["secret"]).toLogObject();
+
+      expect(JSON.stringify(log)).not.toContain("s3cr3t");
+    },
+  );
+});
+
 describe("a cause that closes a cycle", () => {
   it("is marked where the chain returns to the root", () => {
     const first = new BaseError("first");

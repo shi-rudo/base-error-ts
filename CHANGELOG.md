@@ -130,6 +130,8 @@
 
 ### Documentation
 
+- **The docs state how far a cause policy reaches for a shared cause.** The log writes an error that two branches share at its first position only. A policy on one branch masks the positions beneath that branch. If a branch without a policy comes first, the shared error appears there unmasked, so the order of the members decides the output. The observability guide and the JSDoc of `toLogObject` now say so, and say where a policy covers every position: on the error that carries the value, or on the root. New tests pin both orders and both remedies.
+
 - **`publicIssues()` passes the validator's `message` through, and the docs say so.** The whitelist drops validator extras such as a `received` field, but `message` is whitelisted and crosses unchanged. The default messages of Valibot and ArkType embed the rejected value, and so does Zod 3 for `enum`; Zod 4 does not. The validation guide, the pitfalls page, and the JSDoc name the pass-through and show the safe projection (`pointer` and `code` only, or `mapIssue`). A test pins the pass-through.
 
 ## 8.3.0 - 2026-08-22
