@@ -1,16 +1,14 @@
-import {
-  ENVELOPE_KEYS,
-  ROOT_ENVELOPE_LEAF_KEYS,
-  RESERVED_NODE_KEYS,
-} from "./log-field-keys.js";
+import { RESERVED_NODE_KEYS } from "./log-field-keys.js";
 import {
   createLogBuildContext,
   type LogBuildContext,
 } from "./log-build-context.js";
 import { serializeLogData, normalizeLogNumber } from "./log-data.js";
-import { childRegion, type LogRegion as RedactRegion } from "./log-position.js";
+import { allowListRedaction, denyListRedaction } from "./log-redaction.js";
+import { renderCauseChain } from "./cause-chain-render.js";
+import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
+import { isNativeError } from "./native-error.js";
 import {
-  readCause,
   readMembers,
   readOwnEnumerableKeys,
   readOwnProperty,
@@ -27,13 +25,11 @@ import {
   SHARED_CAUSE_MARKER,
   UNSERIALIZABLE_CAUSE_MARKER,
   UNSERIALIZABLE_VALUE_MARKER,
-  isCauseSpineMarker,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
 import {
   MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
-  MAX_LOG_NODES,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
@@ -67,34 +63,6 @@ export type OwnLogFields = Readonly<Record<string, JsonSafeValue>>;
  * for partial masking (`****6789`) or preserving the value's type.
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
-
-/**
- * The nodes of one walk over a cause graph, in the log and in `toString`.
- * `seen` holds every node that the walk already wrote, so each node is written
- * once and a later occurrence is the shared marker. The first occurrence can
- * have its subtree cut by the depth cap or masked by a sticky policy, and the
- * marker does not repeat it. `path` holds the ancestors of the current node,
- * so a node on it closes a cycle and is the circular marker. The root starts
- * on both.
- */
-type CauseWalk = {
-  readonly seen: Set<unknown>;
-  readonly path: Set<unknown>;
-};
-
-/** One `toString` render: its cause walk, its line budget, and its output. */
-type ChainRender = CauseWalk & {
-  readonly budget: LogBuildContext["budget"];
-  readonly lines: string[];
-  cut: boolean;
-};
-
-type RedactionStackHeader = {
-  target: Record<string, unknown>;
-  name?: unknown;
-  message?: unknown;
-  stack?: unknown;
-};
 
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
@@ -243,36 +211,10 @@ export class BaseError<T extends string> extends Error {
     const mask = options?.mask ?? "[REDACTED]";
     const denied = new Set(keys);
     this.#messageMask = denied.has("message") ? mask : undefined;
-    // A denied `stack` is masked whole by the walk, so the header pass is
-    // needed only when a header component is denied without `stack`.
-    const maskStackHeaders =
-      (denied.has("name") || denied.has("message")) && !denied.has("stack");
-    const redactor = (log: Record<string, unknown>) => {
-      const applyMask = BaseError.#maskApplier(mask);
-      const headers: RedactionStackHeader[] | undefined = maskStackHeaders
-        ? []
-        : undefined;
-      const masked = BaseError.#redactWalk(
-        log,
-        (key, value) =>
-          denied.has(key) ? applyMask(value, key) : BaseError.#RECURSE,
-        "root",
-        headers,
-      ) as Record<string, unknown>;
-      for (const header of headers ?? []) {
-        if (typeof header.stack === "string") {
-          header.target.stack = BaseError.#maskStackHeader(
-            header.stack,
-            header.name,
-            header.message,
-            header.target,
-            applyMask,
-          );
-        }
-      }
-      return masked;
-    };
-    this.#redactor = BaseError.#guardRedactor(redactor, denied);
+    this.#redactor = BaseError.#guardRedactor(
+      (log) => denyListRedaction(log, denied, BaseError.#maskApplier(mask)),
+      denied,
+    );
     this.#customPolicy = false;
     return this;
   }
@@ -318,32 +260,12 @@ export class BaseError<T extends string> extends Error {
     const mask = options?.mask ?? "[REDACTED]";
     const allow = new Set(keys);
     this.#messageMask = undefined;
-    const redactor = (log: Record<string, unknown>) => {
-      const applyMask = BaseError.#maskApplier(mask);
-      return BaseError.#redactWalk(
-        log,
-        (key, value, region: RedactRegion, leaf) => {
-          if (!leaf) return BaseError.#RECURSE;
-          // Leaf. Keep iff the region permits this key. The root writes its
-          // cause slot without a cause too, and an absent cause is no data.
-          const kept =
-            (region === "root" &&
-              (ROOT_ENVELOPE_LEAF_KEYS.has(key) ||
-                (key === "cause" && value == null))) ||
-            allow.has(key) ||
-            (region === "cause" && ENVELOPE_KEYS.has(key));
-          return kept ? value : applyMask(value, key);
-        },
-        "root",
-      ) as Record<string, unknown>;
-    };
-    this.#redactor = BaseError.#guardRedactor(redactor);
+    this.#redactor = BaseError.#guardRedactor((log) =>
+      allowListRedaction(log, allow, BaseError.#maskApplier(mask)),
+    );
     this.#customPolicy = false;
     return this;
   }
-
-  /** Sentinel returned by a redaction decision to mean "descend / keep as-is". */
-  static readonly #RECURSE: unique symbol = Symbol("redact.recurse");
 
   /*#__PURE__*/ static #applyMask(
     mask: RedactMask,
@@ -365,108 +287,6 @@ export class BaseError<T extends string> extends Error {
     if (typeof mask === "string") return () => mask;
     const context = BaseError.#newLogContext();
     return (value, key) => serializeLogData(mask(value, key), context);
-  }
-
-  /**
-   * Single deep-clone walker for redaction. The log build copies every value
-   * that it reads, and the output of a cause's custom redactor and each mask
-   * result pass through the same copier. The walker therefore meets plain
-   * data only: plain objects, arrays and JSON primitives, as a finite tree
-   * within the log budget. It needs no bounds, guards or markers of its own
-   * (proposal 0017).
-   *
-   * `decide(key, value, region, leaf)` can replace a field before inspection.
-   * `#RECURSE` requests classification. For a leaf, the decision runs again
-   * with `leaf: true`; `#RECURSE` then keeps the value unchanged. Array elements
-   * are classified first and only leaves reach the decision.
-   *
-   * `region` classifies where we are, so the allow-list can distinguish the
-   * structural envelope from data:
-   * - `"root"`: the top-level error envelope (kept verbatim by the allow-list);
-   * - `"cause"`: at a `cause`'s top level; the structural envelope keys
-   *   (`ENVELOPE_KEYS`) are kept, all other leaves are data;
-   * - `"data"`: inside a `details` subtree or a cause's foreign subtree; every
-   *   leaf is data.
-   *
-   * The transition is by key name only, not duck-typing, so a cause that
-   * merely resembles a structured error cannot reclassify its data as envelope.
-   * The deny-list ignores `region`. A serializer marker in a `cause` slot or in
-   * a list of aggregate members stays readable (see `isCauseSpineMarker`).
-   */
-  /*#__PURE__*/ static #redactWalk(
-    value: object,
-    decide: (
-      key: string,
-      value: unknown,
-      region: RedactRegion,
-      leaf: boolean,
-    ) => unknown,
-    region: RedactRegion,
-    headers?: RedactionStackHeader[],
-    key = "",
-  ): unknown {
-    if (Array.isArray(value)) {
-      const items: unknown[] = [];
-      for (const item of value) {
-        if (item !== null && typeof item === "object") {
-          items.push(BaseError.#redactWalk(item, decide, region, headers, key));
-          continue;
-        }
-        // A leaf inside an array has no key of its own, so it is judged under the
-        // key of the array that holds it, in every region. Without this an
-        // allow-list keeps every scalar element, which is the opposite of what
-        // it promises: an aggregate's members are arbitrary values (a
-        // `Promise.allSettled` reason need not be an `Error`), and `errors` is
-        // not an envelope key, so a string member is data like any other.
-        const decision =
-          region === "cause" && isCauseSpineMarker(item)
-            ? BaseError.#RECURSE
-            : decide(key, item, region, true);
-        items.push(decision === BaseError.#RECURSE ? item : decision);
-      }
-      return items;
-    }
-    // Null-prototype target so an own `__proto__`/`constructor` key from
-    // untrusted details is copied as ordinary data (and masked/recursed like
-    // any other key) instead of routing through a prototype setter. Matches
-    // the null-prototype clones used by the public-error catalog and transport
-    // stage. (OWASP Prototype Pollution Prevention.)
-    const out = Object.create(null) as Record<string, unknown>;
-    const header: RedactionStackHeader | undefined =
-      region !== "data" && headers !== undefined ? { target: out } : undefined;
-    if (header !== undefined) headers?.push(header);
-    for (const [field, val] of Object.entries(value)) {
-      if (
-        header !== undefined &&
-        (field === "name" || field === "message" || field === "stack")
-      ) {
-        header[field] = val;
-      }
-      if (region !== "data" && field === "cause" && isCauseSpineMarker(val)) {
-        out[field] = val;
-        continue;
-      }
-      // A leaf's keep/mask decision is made in the region it *lives in* (the
-      // parent); the child region only governs recursion. Conflating the two
-      // wrongly masks a region-transition key that holds a leaf (e.g. a
-      // top-level `cause: undefined`).
-      const decision = decide(field, val, region, false);
-      if (decision !== BaseError.#RECURSE) {
-        out[field] = decision;
-      } else if (val !== null && typeof val === "object") {
-        out[field] = BaseError.#redactWalk(
-          val,
-          decide,
-          childRegion(region, field, val),
-          headers,
-          field,
-        );
-      } else {
-        const leafDecision = decide(field, val, region, true);
-        out[field] = leafDecision === BaseError.#RECURSE ? val : leafDecision;
-      }
-    }
-    return out;
   }
 
   /**
@@ -520,7 +340,7 @@ export class BaseError<T extends string> extends Error {
     // full in the members, where fromJSON rebuilds it.
     json.cause = this.#serializeCause(
       readProperty(this, "cause"),
-      BaseError.#rootWalk(this),
+      rootCauseWalk(this),
       0,
       context,
     );
@@ -532,7 +352,7 @@ export class BaseError<T extends string> extends Error {
     if (aggregate !== undefined && aggregate.total > 0) {
       json.errors = this.#serializeAggregate(
         aggregate,
-        BaseError.#rootWalk(this),
+        rootCauseWalk(this),
         1,
         context,
       );
@@ -553,11 +373,6 @@ export class BaseError<T extends string> extends Error {
     if (details !== undefined) json.details = details;
 
     return json;
-  }
-
-  /** A fresh cause walk that holds the root as the ancestor of its whole tree. */
-  static #rootWalk(root: object): CauseWalk {
-    return { seen: new Set([root]), path: new Set([root]) };
   }
 
   /**
@@ -718,7 +533,7 @@ export class BaseError<T extends string> extends Error {
         const item = read.readable ? read.value : UNSERIALIZABLE_VALUE_MARKER;
         // Own fields describe the node. Error relationships belong in cause.
         // Nested data errors use a shallow diagnostic view in serializeLogData.
-        if (BaseError.#sameRealm(item) || BaseError.#isNativeError(item)) {
+        if (BaseError.#sameRealm(item) || isNativeError(item)) {
           continue;
         }
         const data = serializeLogData(item, context);
@@ -825,240 +640,11 @@ export class BaseError<T extends string> extends Error {
    * 100,000 lines, and the next line is the size marker of the log object.
    */
   public override toString(): string {
-    const render: ChainRender = {
-      seen: new Set<unknown>(),
-      path: new Set<unknown>(),
-      budget: { nodes: 0, limit: MAX_LOG_NODES },
-      lines: [],
-      cut: false,
-    };
-    BaseError.#renderChain(this, render, "", "", 0, 0);
-    return render.lines.join("\n");
-  }
-
-  /**
-   * Writes one line for one unit of the render budget. The first line past
-   * the budget becomes the size marker, and the render stops at every level.
-   * Returns whether the line was written.
-   */
-  /*#__PURE__*/ static #renderLine(
-    render: ChainRender,
-    prefix: string,
-    text: string,
-  ): boolean {
-    if (render.budget.nodes >= render.budget.limit) {
-      render.lines.push(`${prefix}${MAX_LOG_SIZE_MARKER}`);
-      render.cut = true;
-      return false;
-    }
-    render.budget.nodes++;
-    render.lines.push(`${prefix}${text}`);
-    return true;
-  }
-
-  /**
-   * Renders one cause chain into `render.lines`. A node that carries aggregate
-   * members gets a count on its own line, and each member is rendered as its
-   * own chain, indented one level deeper. `head` prefixes the first line: a
-   * member starts with a bullet at the indent of its parent, and its own chain
-   * keeps the deeper `indent`. The cause walk (see {@link CauseWalk}) spans the
-   * whole tree, so a cycle and a shared node end with their marker instead of
-   * recursing.
-   *
-   * `seen` bounds only repeated objects. The line budget bounds a tree that
-   * grows while the render reads it, for example through a getter that returns
-   * fresh members. Every line costs one unit of {@link MAX_LOG_NODES}, markers
-   * and holes included, so the budget bounds the output.
-   *
-   * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
-   * at which its `cause` lands. The two differ only at the root: the log
-   * serializer starts the root's `cause` at depth 0 and the root's members at
-   * depth 1, and every cause node puts both one level below itself. Both
-   * counters mirror {@link BaseError.#serializeCauseNode}, so for a chain of
-   * error objects `toString()` shows the same nodes as `toLogObject()` and
-   * cuts at the same marker. Near the budget the two differ: the log also
-   * spends its allowance on data, and the render spends one unit per line.
-   * For a plain-object cause, the serializer also copies its data fields and
-   * cuts deep containers without a marker.
-   */
-  /*#__PURE__*/ static #renderChain(
-    start: unknown,
-    render: ChainRender,
-    head: string,
-    indent: string,
-    depth: number,
-    causeDepth: number,
-  ): void {
-    // Aggregates recurse, and a string render must never throw: bound the
-    // nesting with the same cap the log serializer uses, so a pathologically
-    // deep tree degrades to a marker instead of overflowing the host stack
-    // (which is far smaller on an edge isolate than on Node).
-    if (depth >= MAX_CAUSE_DEPTH) {
-      BaseError.#renderLine(render, head, MAX_CAUSE_DEPTH_MARKER);
-      return;
-    }
-    let current: unknown = start;
-    let prefix = head;
-    let nodeDepth = depth;
-    let nextCauseDepth = causeDepth;
-    // Each spine node of this chain is an ancestor of the nodes after it.
-    const entered: object[] = [];
-    try {
-      while (current != null) {
-        // A primitive has no links and cannot close a cycle, so it renders
-        // each time it repeats.
-        if (typeof current === "object") {
-          if (render.path.has(current)) {
-            BaseError.#renderLine(render, prefix, CIRCULAR_CAUSE_CHAIN_MARKER);
-            return;
-          }
-          if (render.seen.has(current)) {
-            BaseError.#renderLine(render, prefix, SHARED_CAUSE_MARKER);
-            return;
-          }
-          render.seen.add(current);
-          render.path.add(current);
-          entered.push(current);
-        }
-
-        const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
-        const total = aggregate === undefined ? 0 : aggregate.total;
-        const suffix = total > 0 ? ` (+${total} aggregated)` : "";
-        const node = `${BaseError.#renderNode(current)}${suffix}`;
-        if (!BaseError.#renderLine(render, prefix, node)) return;
-
-        const shown = aggregate === undefined ? [] : aggregate.members;
-        for (const member of shown) {
-          // A hole reads as undefined. It keeps its slot, as in the log, so the
-          // count on the node line matches the list.
-          if (member === undefined || member === null) {
-            if (
-              !BaseError.#renderLine(render, `${indent}  - `, String(member))
-            ) {
-              return;
-            }
-            continue;
-          }
-          BaseError.#renderChain(
-            member,
-            render,
-            `${indent}  - `,
-            `${indent}    `,
-            nodeDepth + 1,
-            nodeDepth + 2,
-          );
-          if (render.cut) return;
-        }
-        if (
-          total > shown.length &&
-          !BaseError.#renderLine(
-            render,
-            `${indent}  `,
-            moreAggregatedErrorsMarker(total - shown.length),
-          )
-        ) {
-          return;
-        }
-
-        // The linear spine is bounded the way the serializer bounds it: a cause
-        // that would land past the cap is the depth marker, and a missing or
-        // null cause ends the chain without one. Only the hops up to the cap
-        // are read, so the length of the chain never sets the cost.
-        const cause = readCause(current);
-        if (cause !== undefined && nextCauseDepth >= MAX_CAUSE_DEPTH) {
-          BaseError.#renderLine(
-            render,
-            `${indent}Caused by: `,
-            MAX_CAUSE_DEPTH_MARKER,
-          );
-          return;
-        }
-        current = cause;
-        prefix = `${indent}Caused by: `;
-        nodeDepth = nextCauseDepth;
-        nextCauseDepth++;
-      }
-    } finally {
-      for (const node of entered) render.path.delete(node);
-    }
-  }
-
-  /**
-   * One node as a single line, honoring a deny-listed `message`. A native
-   * error and an error-shaped plain object (string `name` and `message`)
-   * render as `name: message`. A string render runs in catch paths and must
-   * not throw: a foreign `name`/`message` that throws falls back to the
-   * `Error.prototype` defaults, and a value with no string form at all (a
-   * null-prototype object, a throwing `Symbol.toPrimitive`) renders as a
-   * marker.
-   */
-  /*#__PURE__*/ static #renderNode(node: unknown): string {
-    try {
-      if (node instanceof BaseError) {
-        return `[${node.name}] ${node.#renderMessage()}`;
-      }
-      if (BaseError.#isNativeError(node)) {
-        const name = readProperty(node, "name") ?? "Error";
-        const message = readProperty(node, "message") ?? "";
-        return `${String(name)}: ${String(message)}`;
-      }
-      // A plain object shaped like an error (a revived or cloned error at a
-      // worker boundary) reads as its name and message, not as
-      // "[object Object]".
-      const name = readProperty(node, "name");
-      const message = readProperty(node, "message");
-      if (typeof name === "string" && typeof message === "string") {
-        return `${name}: ${message}`;
-      }
-      return String(node);
-    } catch {
-      return "[Unrenderable cause]";
-    }
-  }
-
-  /**
-   * Whether `value` is a native `Error` from any realm. `instanceof` is
-   * realm-bound: an error from a worker, a `vm` context, an iframe, or a second
-   * copy of this package fails it and would fall to the plain-object path,
-   * which drops the non-enumerable `name`/`message`/`stack` and logs `{}`.
-   * `Error.isError` (where the runtime has it) reads the `[[ErrorData]]`
-   * slot; the `Object.prototype.toString` fallback approximates it. A plain
-   * object that merely *looks* like an error is deliberately not matched: its
-   * fields are enumerable, and the plain-object path keeps all of them.
-   *
-   * A string `Symbol.toStringTag` drives `Object.prototype.toString`, so for
-   * a tag carrier the brand probes are consulted only when the value is at
-   * least error-shaped (string `name` and `message`, the same shape `isError`
-   * requires): a tagged non-error is data whatever a patched `Error.isError`
-   * says, while a genuine cross-realm Error that carries a tag (a subclass
-   * can add one) stays recognized on every runtime. The accepted residual: a
-   * tagged, error-shaped forgery takes the native path and keeps only the
-   * envelope. `Error.isError` runs inside its own try, and a broken patched
-   * implementation falls through to the `toString` probe.
-   */
-  /*#__PURE__*/ static #isNativeError(value: unknown): value is Error {
-    if (value instanceof Error) return true;
-    if (typeof value !== "object" || value === null) return false;
-    try {
-      if (
-        readProperty(value, Symbol.toStringTag) !== undefined &&
-        (typeof readProperty(value, "name") !== "string" ||
-          typeof readProperty(value, "message") !== "string")
-      ) {
-        return false;
-      }
-      const ErrorCtor = Error as { isError?: (value: unknown) => boolean };
-      if (typeof ErrorCtor.isError === "function") {
-        try {
-          return ErrorCtor.isError(value) === true;
-        } catch {
-          // A broken patched Error.isError falls through to the probe below.
-        }
-      }
-      return Object.prototype.toString.call(value) === "[object Error]";
-    } catch {
-      return false;
-    }
+    return renderCauseChain(this, (node) =>
+      node instanceof BaseError
+        ? `[${node.name}] ${node.#renderMessage()}`
+        : undefined,
+    );
   }
 
   // ----------------------------------------------------------------
@@ -1081,39 +667,6 @@ export class BaseError<T extends string> extends Error {
     } catch {
       return "[REDACTED]";
     }
-  }
-
-  /**
-   * The `stack` of one node whose name or message is deny-listed. A header
-   * that is the node's own `name: message` (or the bare `name` that V8 writes
-   * for an empty message) is rebuilt from the masked fields, and the frames after
-   * it stay. Any other stack goes to the mask as a whole, under the key
-   * `stack`, because the library cannot prove that the denied text is absent
-   * from it: a foreign error can carry a header from an earlier name or
-   * message, and some engines write no header at all.
-   */
-  /*#__PURE__*/ static #maskStackHeader(
-    stack: string,
-    name: unknown,
-    message: unknown,
-    masked: Record<string, unknown>,
-    applyMask: (value: unknown, key: string) => unknown,
-  ): unknown {
-    if (typeof name === "string" && typeof message === "string") {
-      const headers =
-        message === "" ? [`${name}: `, name] : [`${name}: ${message}`];
-      for (const header of headers) {
-        if (stack === header || stack.startsWith(`${header}\n`)) {
-          try {
-            return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
-          } catch {
-            // A custom mask can return a value that cannot render as text.
-            return "[REDACTED]";
-          }
-        }
-      }
-    }
-    return applyMask(stack, "stack");
   }
 
   /**
@@ -1190,7 +743,7 @@ export class BaseError<T extends string> extends Error {
       return MAX_CAUSE_DEPTH_MARKER;
     }
 
-    if (BaseError.#isNativeError(cause)) {
+    if (isNativeError(cause)) {
       if (walk.path.has(cause)) {
         return CIRCULAR_CAUSE_CHAIN_MARKER;
       }
