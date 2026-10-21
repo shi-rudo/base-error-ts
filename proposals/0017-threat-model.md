@@ -13,7 +13,7 @@ The library separates two kinds of input and holds each to its own rule.
 | Consumer code | `buildOwnLogFields`, a `redactWith` callback, a mask, a projector, a matcher, a catalog descriptor, a view or a context passed to `toProblem`. | The library calls it inside one `try`/`catch` where a throw would replace the original error. It adds no other defense. |
 
 An honest value is a value that nobody built against the internals of this library.
-Examples of a crafted value: a forged `Symbol.toStringTag`, a string that equals a serializer marker, a getter that returns another value on the second read.
+Examples of a crafted value: a string that equals a serializer marker, a getter that returns another value on the second read.
 A crafted value gets a safe result. It does not always get the correct result.
 
 The library reads an untrusted value once, at the entry, through the guarded reader (`guarded-read.ts`) or the bounded copier (`serializeLogData`).
@@ -44,7 +44,7 @@ A silent loss of data in a log costs more than the crafted inputs that these def
 | Hostile-input defenses of the redaction walker: reflection guards, the read allowance `MAX_REDACTION_READS`, the read-cut queue, its own depth and cycle markers, the provenance of depth cuts | Consumer code only, since proposal 0015 | Remove. Copy the custom redactor output of a cause and each mask result with the bounded copier, and walk plain data |
 | Provenance of serializer markers (a private `WeakMap`) | Crafted strings | Remove. Recognize a marker by its value |
 | `inspectOwnLogFields` | Consumer code: a test helper that reports crafted hook results | Remove. The API is unreleased |
-| Handling of a forged `Symbol.toStringTag` in `isNativeError` and in the unboxing of the copier | Crafted values | Remove the forgery branches, keep the `try`/`catch` |
+| Handling of `Symbol.toStringTag` in `isNativeError` and in the unboxing of the copier | Honest values too: a DTO that tags itself `Error`, or a `Number` subclass with its own tag | Keep: local code without interplay, and removing it loses data of an honest value |
 
 ## Contract after the change
 
