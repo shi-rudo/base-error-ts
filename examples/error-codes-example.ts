@@ -88,7 +88,7 @@ function handleUserError(error: unknown): void {
     console.log(`Error Name: ${error.name}`);
     console.log(`Message: ${error.message}`);
     console.log(`User ID: ${error.userId || "N/A"}`);
-    console.log(`Timestamp: ${error.timestampIso}`);
+    console.log(`Timestamp: ${new Date(error.timestamp).toISOString()}`);
 
     // Type-safe error handling based on code
     switch (error.code) {
