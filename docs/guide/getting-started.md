@@ -26,6 +26,13 @@ yarn add @shirudo/base-error
 The package ships ESM, CommonJS and type declarations, and has **zero runtime
 dependencies**.
 
+The declarations need TypeScript 5.0 or a later version, and `lib` ES2020 or a
+later version. They resolve under `node16`, `nodenext` and `bundler`, for an
+ES module and for a CommonJS module. `node10` works with TypeScript 5 and 6,
+and TypeScript 7 removed it. CI installs the packed package into a fresh
+project and checks each of these combinations with TypeScript 5.0.4, the
+latest 6.x and the latest release.
+
 ## Your first error
 
 ```ts
