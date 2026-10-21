@@ -66,7 +66,7 @@ export class PublicErrorCatalog<TPublicCode extends string = string> {
 
   public constructor(options: {
     fallback: PublicErrorDescriptor<never, never, TPublicCode>;
-    /** Fire-and-forget observer invoked once per {@link project} through this catalog. */
+    /** Fire-and-forget observer invoked once per `project` call through this catalog. */
     onProject?: OnProject;
     /**
      * Optional closed vocabulary for the advisory public `category`. When given,
@@ -93,7 +93,7 @@ export class PublicErrorCatalog<TPublicCode extends string = string> {
   }
 
   /**
-   * Invokes the configured {@link OnProject} observer, swallowing any error so
+   * Invokes the configured `OnProject` observer, swallowing any error so
    * telemetry can never break projection totality. Called by `project`.
    */
   public observeProjection(
