@@ -926,10 +926,11 @@ export class BaseError<T extends string> extends Error {
    * capture fast path process-wide. A measurement on Node 24 showed
    * construction 4x slower, and plain `new Error` slower for the rest of the
    * process. And the frames that `super()` captured cannot replace the
-   * frames of the holder. On V8 11 (Node 20), a read of their descriptor
-   * materializes them eagerly. On V8 12+, they lack the constructor trimming
-   * that `captureStackTrace` gives the holder. The unread first capture costs
-   * ~1 microsecond and is discarded unformatted (see the `delete` below).
+   * frames of the holder. On V8 11 (for example Chromium 110 to 119), a read
+   * of their descriptor materializes them eagerly. On V8 12+, they lack the
+   * constructor trimming that `captureStackTrace` gives the holder. The unread
+   * first capture costs ~1 microsecond. The `delete` of the own `stack` in
+   * this method discards it unformatted.
    */
   /*#__PURE__*/ #installLazyStack(): void {
     // Cast Error to our local interface for type-safe access.
@@ -968,11 +969,11 @@ export class BaseError<T extends string> extends Error {
       });
     };
     // The code removes the engine-managed `stack` that `super()` captured,
-    // and does not redefine over it. On V8 11 (Node 20), a redefinition
-    // materializes the held stack first. That calls `Error.prepareStackTrace`
-    // eagerly for frames that nobody reads. `delete` discards them without
-    // formatting on every engine; V8 12+ (`stack` as a plain accessor pair)
-    // needs neither.
+    // and does not redefine over it. On V8 11 (for example Chromium 110 to
+    // 119), a redefinition materializes the held stack first. That calls
+    // `Error.prepareStackTrace` eagerly for frames that nobody reads.
+    // `delete` discards them without formatting on every engine; V8 12+
+    // (`stack` as a plain accessor pair) needs neither.
     const ownStack = this as { stack?: string };
     delete ownStack.stack;
     Object.defineProperty(this, "stack", {
