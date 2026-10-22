@@ -60,10 +60,10 @@ export type PublicErrorDescriptor<
   /**
    * Explicit projection of a vetted, typed subset onto `details`. Never
    * spreads the error. Return **fresh** data (a new object built from vetted
-   * values), not a reference into the error: `details` is deliberately not
-   * cloned at this stage (the in-process view may hold rich values; `toProblem`
-   * is the wire boundary), so a returned internal reference couples the view to
-   * internal error state and later mutation reaches it.
+   * values), not a reference into the error. `project` deliberately does not
+   * clone `details`: the in-process view may hold rich values, and `toProblem`
+   * is the wire boundary. A returned internal reference therefore couples the
+   * view to internal error state, and a later mutation reaches the view.
    */
   readonly projectDetails?: (error: TError) => TDetails;
   /** Optional per-occurrence retryability, falling back to {@link retryable} if it throws. */
@@ -77,9 +77,9 @@ export type PublicErrorDescriptor<
   readonly projectRetryAfter?: (error: TError) => number | undefined;
   /**
    * Optional projection of vetted field faults. Validation's common path.
-   * The result is normalized into a frozen copy of exactly `{ field, code }`
-   * per fault: foreign extra properties are stripped and the view is decoupled
-   * from the returned objects.
+   * `project` normalizes the result into a frozen copy of exactly
+   * `{ field, code }` per fault. The copy strips foreign extra properties and
+   * decouples the view from the returned objects.
    */
   readonly projectFields?: (error: TError) => readonly FieldFault[];
 };
@@ -112,10 +112,10 @@ export type LocalizedPublicError<
 };
 
 /**
- * How the `details`/`fields` projection went: `none` when the descriptor has no
- * projector, `succeeded` when one ran cleanly, `failed` when one threw (the view
- * still stands without that member). Surfaced for debugging a silently missing
- * `details`.
+ * How the `details`/`fields` projection went. `none`: the descriptor has no
+ * projector. `succeeded`: a projector ran cleanly. `failed`: a projector threw,
+ * and the view still stands without that member. Surfaced for debugging a
+ * silently missing `details`.
  */
 export type ProjectionStatus = "none" | "succeeded" | "failed";
 

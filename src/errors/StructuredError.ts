@@ -143,8 +143,8 @@ export class StructuredError<
    * not treat an upstream's `code` as your own.
    *
    * Lenient and safe: missing fields fall back to safe defaults
-   * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable); malformed input yields that
-   * envelope instead of throwing; only whitelisted fields are read (no
+   * (`UNKNOWN_ERROR`/`INTERNAL`/non-retryable). Malformed input yields that
+   * envelope instead of a throw. The method reads only whitelisted fields (no
    * prototype pollution). `details` is copied shallowly (the top level is
    * decoupled from the payload; nested values stay shared). The cause chain
    * is restored with the `stack` of each node. The root keeps its original
@@ -153,10 +153,11 @@ export class StructuredError<
    * Reconstructed fields are **not** an authority on trust: whoever produced
    * the payload can forge them.
    *
-   * Always returns a base `StructuredError`: subclass identity and behavior are
-   * **not** restored (a `ValidationError` round-trips to a `StructuredError`,
-   * losing `publicIssues()`/`addIssue()`; its raw `details.issues` survive as
-   * data). Narrow on `code`, not on `_tag`/instanceof.
+   * Always returns a base `StructuredError`, and does **not** restore subclass
+   * identity and behavior. A `ValidationError` round-trips to a
+   * `StructuredError` and loses `publicIssues()`/`addIssue()`. Its raw
+   * `details.issues` survive as data. Narrow on `code`, not on
+   * `_tag`/instanceof.
    */
   public static fromJSON(json: unknown): StructuredError<string, string> {
     return StructuredError.#fromJSON(json, 0, {
@@ -169,8 +170,8 @@ export class StructuredError<
     depth: number,
     budget: { nodes: number },
   ): StructuredError<string, string> {
-    // Every payload field is a foreign read: the documented contract is that
-    // malformed input yields the fallback envelope and never a throw, and an
+    // Every payload field is a foreign read. The documented contract is that
+    // malformed input yields the fallback envelope and never a throw. An
     // in-process payload can carry throwing getters.
     const obj: unknown = typeof json === "object" && json !== null ? json : {};
 
@@ -227,8 +228,9 @@ export class StructuredError<
 
     // A structured error can carry aggregate members too (a fan-out error that
     // sets its own `errors`). The log serializer reads them by shape, so the
-    // wire keeps them; restore them the way a native aggregate holds them,
-    // non-enumerable, which also makes the round-trip stable across repeats.
+    // wire keeps them. This restores them the way a native aggregate holds
+    // them (non-enumerable), which also makes the round-trip stable across
+    // repeats.
     const aggregate = readMembers(obj, StructuredError.#MEMBERS_READ);
     if (aggregate !== undefined) {
       Object.defineProperty(error, "errors", {
@@ -261,7 +263,7 @@ export class StructuredError<
   /**
    * The original instant of a payload. The numeric `timestamp` wins as it is.
    * Only without one does `timestampIso` count, and only in the exact form
-   * that the log writes: a string without an offset reads as local time, and
+   * that the log writes. A string without an offset reads as local time, and
    * engines parse other formats differently. A value outside the date range
    * does not count. Returns `undefined` to keep the time of the
    * reconstruction.
@@ -298,17 +300,17 @@ export class StructuredError<
   }
 
   /**
-   * Members read from a payload: one past the width cap, so the element that
-   * follows the last reconstructed member is in hand when the tail is the
-   * serializer's own count marker.
+   * Members read from a payload: one past the width cap. So the element
+   * that follows the last reconstructed member is in hand when that element
+   * is the serializer's own count marker.
    */
   static readonly #MEMBERS_READ = MAX_AGGREGATE_MEMBERS + 1;
 
   /**
    * Rebuilds an aggregate's members. Each member goes back through
-   * {@link StructuredError.#reconstructCause}, so a nested aggregate, a
+   * {@link StructuredError.#reconstructCause}. So a nested aggregate, a
    * structured branch and the serializer's width marker (a plain string) all
-   * come back in the shape they were logged in. The walk stops at the width
+   * come back in their logged shape. The walk stops at the width
    * cap or when the node budget runs out, whichever comes first.
    */
   static #reconstructMembers(
@@ -344,11 +346,11 @@ export class StructuredError<
 
   /**
    * Restores the structured fields that the serializer copies from a foreign
-   * cause: each of `code`, `category` and `retryable` with a valid type, and a
-   * shallow copy of `details`. The caller reads each field once and passes the
-   * values, so the checked value is the restored value. A cause that holds all
-   * three decision fields takes the structured path, so the target never reads
-   * as a `StructuredError`.
+   * cause. These are each of `code`, `category` and `retryable` with a valid
+   * type, and a shallow copy of `details`. The caller reads each field once
+   * and passes the values, so the checked value is the restored value. A
+   * cause that holds all three decision fields takes the structured path, so
+   * the target never reads as a `StructuredError`.
    */
   static #restoreStructuredFields(
     target: Error,
@@ -404,8 +406,8 @@ export class StructuredError<
 
     // Aggregate shape -> a real AggregateError, so the branch failures survive
     // the wire. `structuredClone` drops them (verified on Node, Bun, Deno and
-    // workerd, where it also degrades the class to a plain `Error`), which makes
-    // this round-trip the only lossless way across a worker or queue boundary.
+    // workerd, where it also degrades the class to a plain `Error`). So this
+    // round-trip is the only lossless way across a worker or queue boundary.
     const members = readMembers(obj, StructuredError.#MEMBERS_READ);
     const messageField = readProperty(obj, "message");
     const nameField = readProperty(obj, "name");

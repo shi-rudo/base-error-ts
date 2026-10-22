@@ -44,10 +44,11 @@ export function isChainRetryable(
  * `retryable === true` predicate.
  *
  * Unlike {@link isChainRetryable}, this does NOT require the full
- * StructuredError shape (`code`/`category`/`retryable`). Use this when your
- * error hierarchy extends `BaseError` directly and signals retryability via
- * a plain `retryable: true` field, common in DDD-style error hierarchies
- * that discriminate by class rather than `code`/`category` strings.
+ * StructuredError shape (`code`/`category`/`retryable`). If your error
+ * hierarchy extends `BaseError` directly and signals retryability with a plain
+ * `retryable: true` field, use this function. That pattern is common in
+ * DDD-style error hierarchies that discriminate by class, not by
+ * `code`/`category` strings.
  *
  * @param error - The error to check
  * @param options - A `maxDepth` number, or {@link CauseTraversalOptions}

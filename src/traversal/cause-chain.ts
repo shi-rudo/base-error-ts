@@ -98,11 +98,11 @@ function traverse(
 /**
  * Internal generator that traverses the cause chain.
  *
- * Total by design: these helpers run inside catch paths, where a circular
+ * Total by design: these helpers run inside catch paths. There, a circular
  * chain (a bug in someone's error wiring) must not turn a retry decision into
- * a new crash. On a cycle the traversal simply ends once the repeated node is
- * reached: at that point every node has been yielded exactly once, so nothing
- * is lost. `maxDepth` is the number of cause **hops** followed, so up to
+ * a new crash. On a cycle, the traversal ends when it reaches the repeated
+ * node. At that point it yielded every node exactly once, so it loses nothing.
+ * `maxDepth` is the number of cause **hops** followed, so up to
  * `maxDepth + 1` nodes are yielded.
  *
  * @param error - The error to start traversing from
@@ -136,7 +136,7 @@ function* traverseCauseChain(
  * @returns The root cause, or the last valid error if maxDepth is exceeded.
  *   On a circular chain, the deepest error before the repeat (never throws).
  *
- * This helper is linear by design and takes no `aggregates` option: a tree has
+ * This helper is linear by design and takes no `aggregates` option. A tree has
  * no single deepest node, so "the root cause" of an aggregate is not defined.
  * Use {@link filterCauseChain} with `{ aggregates: true }` to collect the
  * branches instead.

@@ -44,11 +44,12 @@ export type CatalogResolution =
   | { readonly found: false; readonly matcherThrew: boolean };
 
 /**
- * The single source of truth: one descriptor per public error code, addressable
- * both by the internal error `code`/predicate (for {@link project}) and by
- * public code (for {@link toProblem}'s transport facet and {@link localize}'s
- * messages). Unifies what used to be a registry (messages/details) plus a
- * separate adapter map (status/type), so the two cannot drift.
+ * The single source of truth: one descriptor per public error code. The
+ * internal error `code` or a predicate addresses a descriptor for
+ * {@link project}. The public code addresses it for the transport facet of
+ * {@link toProblem} and for the messages of {@link localize}. Unifies what
+ * used to be a registry (messages/details) plus a separate adapter map
+ * (status/type), so the two cannot drift.
  *
  * Resolution order matches the presentation registry: exact internal `code`,
  * then predicate matchers in registration order, then a miss (the `fallback`).
@@ -169,10 +170,11 @@ export class PublicErrorCatalog<TPublicCode extends string = string> {
   }
 
   /**
-   * The static wire metadata (status/type/title) for a registered public code,
-   * or `undefined` if the code is not registered (including the fallback, which
-   * is indexed at construction). An unknown code is a foreign/stale view that
-   * must not be paired with this catalog's fallback status; the caller decides.
+   * The static wire metadata (status/type/title) for a registered public code.
+   * The fallback is a registered code, because the constructor indexes it. If
+   * the code is not registered, the result is `undefined`. An unknown code is
+   * a foreign/stale view that must not be paired with this catalog's fallback
+   * status; the caller decides.
    */
   public transportFor(publicCode: string): Transport | undefined {
     return this.#transportByPublicCode.get(publicCode);
