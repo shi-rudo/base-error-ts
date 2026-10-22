@@ -1,5 +1,17 @@
 # Migration Guide
 
+## Next major: Node.js 24 or later
+
+The package requires Node.js 24 or a later version (`engines.node` is
+`>=24`). Node.js 20 reached its end of life in April 2026, and CI tests on
+Node.js 24 and 26.
+
+- On Node.js 20 or 22, a package manager that enforces `engines` refuses the
+  install, for example pnpm with `engine-strict`. Upgrade the runtime to
+  Node.js 24.
+- Browsers and edge runtimes are not affected. The package still targets
+  ES2020.
+
 ## Next major: redaction walks plain data
 
 Proposal 0017 sets a threat model. The log build copies every value that it
