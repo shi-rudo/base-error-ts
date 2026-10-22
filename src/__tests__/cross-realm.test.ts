@@ -54,7 +54,7 @@ describe("a cause from another realm", () => {
         .cause as Record<string, unknown>;
       expect(cause.message).toBe("foreign msg");
 
-      // The toString fallback branch (Node 20 and 22 have no Error.isError).
+      // The toString fallback branch (runtimes without Error.isError).
       delete ErrorCtor.isError;
       cause = new BaseError("outer", tagged()).toLogObject().cause as Record<
         string,
