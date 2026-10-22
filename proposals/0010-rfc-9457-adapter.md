@@ -1,6 +1,6 @@
 # Proposal 0010: framework-neutral RFC 9457 adapter
 
-**Status:** Superseded by 0011. The `problem-details` adapter
+**Status:** superseded by 0011; release: 7.1.0. The `problem-details` adapter
 (`defineProblemDetailsAdapter`) was removed in 8.0.0; its RFC 9457 mapping and
 typed extensions live in the `public-error` pipeline's `toProblem`. Kept for
 design history.

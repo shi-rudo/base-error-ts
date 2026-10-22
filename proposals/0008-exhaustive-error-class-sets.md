@@ -1,6 +1,6 @@
 # Proposal 0008: exhaustive local Error-class sets
 
-**Status:** Implemented in Wave 3.
+**Status:** implemented; release: 6.3.0.
 
 **Target release:** `6.3.0`. The change is additive.
 

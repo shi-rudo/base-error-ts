@@ -1,6 +1,6 @@
 # Proposal 0007: non-exhaustive matching for arbitrary thrown values
 
-**Status:** Implemented in Wave 2.
+**Status:** implemented; release: 6.2.0.
 
 **Target release:** `6.2.0`. The change is additive.
 

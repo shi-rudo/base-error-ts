@@ -1,6 +1,6 @@
 # Proposal 0002: `toStructuredError` bridge & validation aggregate
 
-**Status:** Accepted. Decisions locked (see _Decisions_ below). Implementation
+**Status:** implemented; release: 5.0.0. Decisions locked (see _Decisions_ below). Implementation
 sequenced: `toStructuredError` first, validation aggregate second.
 **Context:** `Result<T, E>` is intentionally _out of scope_ for this library and
 lives in [`@shirudo/result`](https://github.com/shi-rudo/result-ts), whose `E`

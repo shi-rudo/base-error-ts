@@ -1,6 +1,6 @@
 # Proposal 0006: general-purpose error guards
 
-**Status:** Implemented in Wave 1.
+**Status:** implemented; release: 6.1.0.
 
 **Target release:** `6.1.0`. The change is additive.
 

@@ -1,6 +1,6 @@
 # Proposal 0011: public error pipeline (projection, localization, and transport over one descriptor)
 
-**Status:** Accepted. Implemented under `src/public-error/` and exported at the
+**Status:** implemented; release: 8.0.0. Implemented under `src/public-error/` and exported at the
 `@shirudo/base-error/public-error` subpath in 8.0.0. **Supersedes** 0005
 (presentation) and 0010 (RFC 9457 adapter), both removed in 8.0.0; it unifies and
 refines two coupling defects those left open.

@@ -1,6 +1,6 @@
 # Proposal 0005: user messages out of the core, technology-agnostic error presentation
 
-**Status:** Superseded by 0011. The `presentation` module
+**Status:** superseded by 0011; release: 6.0.0. The `presentation` module
 (`PublicErrorPresenter`/`PublicErrorRegistry`/`PublicErrorView`) was removed in
 8.0.0; its localization primitives (`LocalizedMessageSet`/`resolveUserMessage`)
 moved to the `public-error` subpath. Kept for design history. This proposal

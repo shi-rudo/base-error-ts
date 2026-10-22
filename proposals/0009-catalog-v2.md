@@ -1,6 +1,6 @@
 # Proposal 0009: Catalog v2
 
-**Status:** Implemented in Wave 4.
+**Status:** implemented; release: 7.0.0.
 
 **Target release:** `7.0.0`.
 
