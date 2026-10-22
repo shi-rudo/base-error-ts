@@ -150,6 +150,20 @@ repeated upstream failure across the branches of a fan-out, match
 A chain that returns to the root now ends in `[Circular cause chain]` one hop
 earlier in the log. The log no longer writes the root a second time.
 
+## Next major: `toString()` renders an object cause by its tag
+
+`toString()` no longer calls the conversion of a cause that is neither an
+error nor error-shaped. An object renders as its tag: `throw ["a", "b"]`
+renders as `[object Array]`, where it rendered `a,b`. A `Date`, a `URL` or an
+object with its own `toString` renders as `[object Date]`, `[object URL]` or
+`[object Object]`. A non-string `name` or `message` of a native error renders
+the same way. A primitive cause renders as before.
+
+If a log query or a test matched the text of such a cause in `toString()`,
+read the cause from the log object instead. The log object keeps its data. For
+a readable line, throw an error with a message, or wrap the value in one:
+`new BaseError(String(value), value)`.
+
 ## Next major: log field hooks
 
 `buildLogObject()` is removed from `BaseError` and `StructuredError`.

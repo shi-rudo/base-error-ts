@@ -100,23 +100,98 @@ describe("totality in catch paths: a hostile Proxy", () => {
   });
 });
 
-describe("totality in catch paths: toString of an unrenderable cause", () => {
-  it("renders a null-prototype object cause instead of throwing", () => {
+describe("totality in catch paths: toString of a cause that is not an error", () => {
+  it("renders a null-prototype object cause by its tag instead of throwing", () => {
     const error = wrap(Object.create(null) as object);
 
     expect(() => error.toString()).not.toThrow();
-    expect(error.toString()).toContain("Caused by: [Unrenderable cause]");
+    expect(error.toString()).toContain("Caused by: [object Object]");
   });
 
-  it("renders a cause whose Symbol.toPrimitive throws instead of throwing", () => {
+  it("renders an object cause by its tag without calling its own conversion", () => {
+    let conversions = 0;
     const error = wrap({
       [Symbol.toPrimitive]() {
+        conversions++;
         throw new Error("toPrimitive");
+      },
+      toString() {
+        conversions++;
+        return "own text";
       },
     });
 
-    expect(() => error.toString()).not.toThrow();
-    expect(error.toString()).toContain("Caused by: [Unrenderable cause]");
+    const rendered = error.toString();
+
+    expect(rendered).toContain("Caused by: [object Object]");
+    expect(conversions).toBe(0);
+  });
+
+  it("renders an array cause by its tag, whatever its length", () => {
+    const sparse: unknown[] = [];
+    sparse.length = 100_000_000;
+
+    const rendered = wrap(sparse).toString();
+
+    expect(rendered).toBe("[Outer] outer failed\nCaused by: [object Array]");
+  });
+
+  it("reads no element of an array-like Proxy cause", () => {
+    let reads = 0;
+    const wide = new Proxy<unknown[]>([], {
+      get(target, key, receiver) {
+        if (
+          key === "length" ||
+          (typeof key === "string" && /^\d+$/.test(key))
+        ) {
+          reads++;
+        }
+        return key === "length"
+          ? 1e9
+          : (Reflect.get(target, key, receiver) as unknown);
+      },
+    });
+
+    const rendered = wrap(wide).toString();
+
+    expect(rendered).toContain("Caused by: [object Array]");
+    expect(reads).toBe(0);
+  });
+
+  it("renders an object whose conversion is a generic array method by its tag", () => {
+    const arrayLike = Object.create(Array.prototype, {
+      length: { value: 1e9 },
+    }) as object;
+
+    const rendered = wrap(arrayLike).toString();
+
+    expect(rendered).toContain("Caused by: [object Object]");
+  });
+
+  it("renders a native error whose name or message is an array by their tags", () => {
+    const sparse: unknown[] = [];
+    sparse.length = 100_000_000;
+    const cause = new Error("readable");
+    Object.defineProperty(cause, "name", { value: sparse });
+
+    const rendered = wrap(cause).toString();
+
+    expect(rendered).toContain("Caused by: [object Array]: readable");
+  });
+
+  it("renders the unrenderable marker for a cause whose tag cannot be read", () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const throwingTag = {
+      get [Symbol.toStringTag](): string {
+        throw new Error("tag");
+      },
+    };
+
+    expect(wrap(proxy).toString()).toContain("Caused by: [Unrenderable cause]");
+    expect(wrap(throwingTag).toString()).toContain(
+      "Caused by: [Unrenderable cause]",
+    );
   });
 });
 

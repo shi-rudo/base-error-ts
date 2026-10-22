@@ -204,8 +204,8 @@ function renderChain(
  * plain object (string `name` and `message`) render as `name: message`. A
  * string render runs in catch paths and must not throw. A foreign
  * `name`/`message` that throws falls back to the `Error.prototype` defaults.
- * A value with no string form at all (a null-prototype object, a throwing
- * `Symbol.toPrimitive`) renders as a marker.
+ * Any other value renders through {@link renderValue}. A value whose tag
+ * cannot be read (a revoked Proxy) renders as a marker.
  */
 function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
   try {
@@ -214,7 +214,7 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (isNativeError(node)) {
       const name = readProperty(node, "name") ?? "Error";
       const message = readProperty(node, "message") ?? "";
-      return `${String(name)}: ${String(message)}`;
+      return `${renderValue(name)}: ${renderValue(message)}`;
     }
     // A plain object shaped like an error reads as its name and message, not
     // as "[object Object]". An example is a revived or cloned error at a
@@ -224,8 +224,21 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (typeof name === "string" && typeof message === "string") {
       return `${name}: ${message}`;
     }
-    return String(node);
+    return renderValue(node);
   } catch {
     return UNRENDERABLE_CAUSE_MARKER;
   }
+}
+
+/**
+ * The text of a value that the render did not create. A primitive renders
+ * with `String`. An object renders by its tag, such as `[object Array]`,
+ * and its own conversion never runs: that conversion can be any work, and
+ * the one of an array joins every element up to its `length`.
+ */
+function renderValue(value: unknown): string {
+  return (typeof value === "object" && value !== null) ||
+    typeof value === "function"
+    ? Object.prototype.toString.call(value)
+    : String(value);
 }
