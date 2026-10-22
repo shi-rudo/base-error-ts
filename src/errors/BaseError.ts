@@ -20,6 +20,7 @@ import type { JsonSafeValue } from "./json-safe.js";
 import { toTimestampIso } from "./timestamp-iso.js";
 import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
+  LOG_REDACTION_FAILED_MARKER,
   MAX_CAUSE_DEPTH_MARKER,
   MAX_LOG_SIZE_MARKER,
   SHARED_CAUSE_MARKER,
@@ -561,7 +562,7 @@ export class BaseError<T extends string> extends Error {
   ): (raw: Record<string, unknown>) => Record<string, unknown> {
     return (raw) => {
       const safe: Record<string, unknown> = {
-        message: "[log redaction failed]",
+        message: LOG_REDACTION_FAILED_MARKER,
       };
       for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
         if (denied?.has(key)) continue;

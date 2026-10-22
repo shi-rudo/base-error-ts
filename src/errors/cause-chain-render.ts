@@ -12,6 +12,7 @@ import {
   MAX_CAUSE_DEPTH_MARKER,
   MAX_LOG_SIZE_MARKER,
   SHARED_CAUSE_MARKER,
+  UNRENDERABLE_CAUSE_MARKER,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
 import {
@@ -224,6 +225,6 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     }
     return String(node);
   } catch {
-    return "[Unrenderable cause]";
+    return UNRENDERABLE_CAUSE_MARKER;
   }
 }
