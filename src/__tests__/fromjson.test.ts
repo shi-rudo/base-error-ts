@@ -269,6 +269,25 @@ describe("StructuredError.fromJSON", () => {
       expect(restored.code).toBe("C");
       expect(restored.details).toBeUndefined();
     });
+
+    it("drops details that is a revoked Proxy, at the root and on a cause", () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      const envelope = { code: "C", category: "X", retryable: false };
+
+      const restored = StructuredError.fromJSON({
+        ...envelope,
+        message: "root",
+        details: proxy,
+        cause: { name: "Error", message: "cause", code: "D", details: proxy },
+      });
+
+      const { cause } = restored as unknown as { cause: unknown };
+      expect(restored.code).toBe("C");
+      expect(restored.details).toBeUndefined();
+      expect(cause).toMatchObject({ message: "cause", code: "D" });
+      expect(cause).not.toHaveProperty("details");
+    });
   });
 
   describe("security", () => {

@@ -3,6 +3,7 @@ import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
 import {
+  isArrayValue,
   readMembers,
   readProperty,
   type AggregateMembers,
@@ -250,7 +251,7 @@ export class StructuredError<
    * envelope survives without it.
    */
   static #copyDetails(value: unknown): Record<string, unknown> | undefined {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    if (typeof value !== "object" || value === null || isArrayValue(value)) {
       return undefined;
     }
     try {
