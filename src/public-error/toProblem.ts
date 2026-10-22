@@ -244,9 +244,9 @@ export function toProblem<
       // Extensions first: the reserved members below always win a collision.
       ...extensions,
       ...(transport.type !== undefined && { type: transport.type }),
-      // typeof guard, not `!== undefined`: a cast/JSON-revived non-string
-      // descriptor or transport `title` must not reach the wire body, the same
-      // wire-safety the detail/instance guards below enforce.
+      // A typeof guard, not `!== undefined`. A cast or JSON-revived non-string
+      // `title` of the descriptor or the transport must not reach the wire
+      // body. The `detail` and `instance` guards give the same wire safety.
       ...(typeof title === "string" && { title }),
       status: transport.status,
       // The TS type already constrains these to strings. An untyped caller (an
