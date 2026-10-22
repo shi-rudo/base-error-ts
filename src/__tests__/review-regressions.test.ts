@@ -295,3 +295,33 @@ it("unboxes a Number subclass that names its own tag", () => {
 
   expect(log.data).toEqual({ price: 12 });
 });
+
+it("reads no prototype of a tagged Proxy whose chain returns to itself", () => {
+  let prototypeReads = 0;
+  const loop: object = new Proxy(
+    {},
+    {
+      get: (_target, key) => (key === Symbol.toStringTag ? "Loop" : undefined),
+      getPrototypeOf: () => {
+        prototypeReads++;
+        return loop;
+      },
+    },
+  );
+
+  new Fields({ data: { loop } }).toLogObject();
+
+  expect(prototypeReads).toBe(0);
+});
+
+it("still unboxes a reparented String wrapper with its own tag, as JSON does", () => {
+  const text = Object.setPrototypeOf(
+    Object.assign(new String("s"), { [Symbol.toStringTag]: "Text" }),
+    Object.prototype,
+  ) as object;
+
+  const log = new Fields({ data: { text } }).toLogObject();
+
+  expect(JSON.stringify(text)).toBe('"[object Text]"');
+  expect(log.data).toEqual({ text: "[object Text]" });
+});

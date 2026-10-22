@@ -44,50 +44,90 @@ function pastDepthCap(position: WalkPosition): boolean {
   return position.depth >= MAX_DATA_DEPTH || position.spine > MAX_CAUSE_DEPTH;
 }
 
-/** Whether `prototype` is on the prototype chain of `value`. */
-function inherits(value: object, prototype: object): boolean {
-  try {
-    return Object.prototype.isPrototypeOf.call(prototype, value);
-  } catch {
-    return false;
-  }
-}
+/**
+ * Tags of built-in objects that hold no wrapper slot. Each wrapper probe
+ * throws for such an object, and each thrown TypeError captures a stack, so
+ * a value with one of these tags skips the probes. A crafted wrapper that
+ * borrows such a tag is copied as an object, which is safe.
+ */
+const SLOTLESS_BUILT_IN_TAGS: ReadonlySet<string> = new Set(
+  [
+    "Map",
+    "Set",
+    "WeakMap",
+    "WeakSet",
+    "WeakRef",
+    "Promise",
+    "Symbol",
+    "ArrayBuffer",
+    "SharedArrayBuffer",
+    "DataView",
+    "Int8Array",
+    "Uint8Array",
+    "Uint8ClampedArray",
+    "Int16Array",
+    "Uint16Array",
+    "Int32Array",
+    "Uint32Array",
+    "Float32Array",
+    "Float64Array",
+    "BigInt64Array",
+    "BigUint64Array",
+    "Generator",
+    "AsyncGenerator",
+    "Map Iterator",
+    "Set Iterator",
+    "Array Iterator",
+    "String Iterator",
+    "RegExp String Iterator",
+    "URL",
+    "URLSearchParams",
+    "Headers",
+    "Request",
+    "Response",
+    "Blob",
+    "File",
+    "FormData",
+    "AbortController",
+    "AbortSignal",
+  ].map((name) => `[object ${name}]`),
+);
 
 /**
  * JSON unboxes by internal brand; a consumer tag cannot grant or hide it. A
- * tag hides the brand of a wrapper subclass that names its own tag, so a
- * tagged value is probed for each wrapper whose prototype it inherits. A Map
- * or a Set inherits none, and costs no probe.
+ * wrapper subclass can name its own tag, so a tagged value is probed for
+ * every wrapper slot, unless its tag names a slotless built-in.
  */
 function unboxData(value: object): unknown {
   const tag = readObjectTag(value);
   const tagged =
-    tag === undefined || readProperty(value, Symbol.toStringTag) !== undefined;
-  const probes = (wrapperTag: string, prototype: object): boolean =>
-    tag === wrapperTag || (tagged && inherits(value, prototype));
+    tag === undefined ||
+    (readProperty(value, Symbol.toStringTag) !== undefined &&
+      !SLOTLESS_BUILT_IN_TAGS.has(tag));
+  const probes = (wrapperTag: string): boolean => tag === wrapperTag || tagged;
   let primitive: unknown = value;
-  if (probes("[object Number]", Number.prototype)) {
+  if (probes("[object Number]")) {
     try {
       primitive = Number.prototype.valueOf.call(value);
     } catch {
       /* No number brand. */
     }
   }
-  if (primitive === value && probes("[object String]", String.prototype)) {
+  if (primitive === value && probes("[object String]")) {
     try {
       primitive = String.prototype.valueOf.call(value);
     } catch {
       /* No string brand. */
     }
   }
-  if (primitive === value && probes("[object Boolean]", Boolean.prototype)) {
+  if (primitive === value && probes("[object Boolean]")) {
     try {
       primitive = Boolean.prototype.valueOf.call(value);
     } catch {
       /* No boolean brand. */
     }
   }
-  if (primitive === value && probes("[object BigInt]", BigInt.prototype)) {
+  if (primitive === value && probes("[object BigInt]")) {
     try {
       primitive = BigInt.prototype.valueOf.call(value);
     } catch {
@@ -162,15 +202,18 @@ export function serializeLogData(
       budget.nodes++;
       let item = input;
       let array = false;
+      let position: WalkPosition | undefined;
       try {
         const errorView =
           item !== null && typeof item === "object"
             ? context.dataError(item)
             : undefined;
         if (errorView !== undefined) {
-          // The view of an error is an object, which a depth cap cuts anyway.
-          if (pastDepthCap(positionOf(item, array, key, parent, arrayParent)))
-            return {};
+          // A depth cap cuts the view of an error like any container, so the
+          // view is not built past the cap. A custom policy that returns a
+          // primitive view is cut there as well.
+          position = positionOf(item, false, key, parent, arrayParent);
+          if (pastDepthCap(position)) return {};
           item = errorView();
         } else {
           const toJSON = readToJSON(item);
@@ -190,7 +233,10 @@ export function serializeLogData(
       if (typeof item === "function" || typeof item === "symbol")
         return undefined;
       if (item === null || typeof item !== "object") return item;
-      const position = positionOf(item, array, key, parent, arrayParent);
+      // The view of an error is a record, at the position of the error.
+      if (position === undefined || array) {
+        position = positionOf(item, array, key, parent, arrayParent);
+      }
       if (pastDepthCap(position)) return array ? [] : {};
       if (seen.has(item)) {
         let marker = circularMarkers.get(item);
