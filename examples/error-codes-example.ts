@@ -4,7 +4,7 @@
  * This example demonstrates how to use BaseError with predefined error codes
  * as TypeScript union types for better type safety and consistency.
  */
-import { BaseError } from "../src/index.js";
+import { BaseError, type OwnLogFields } from "../src/index.js";
 
 // Define your error codes as a union type
 type ErrorCode =
@@ -16,7 +16,7 @@ type ErrorCode =
 // Base class for all user-related errors with automatic name inference
 class UserError<T extends ErrorCode> extends BaseError<T> {
   /** Discriminant for type safety - ensures this error is distinct from other error types */
-  public readonly _tag = "UserError" as const;
+  public override readonly _tag = "UserError" as const;
 
   constructor(
     public readonly code: T,
@@ -28,13 +28,10 @@ class UserError<T extends ErrorCode> extends BaseError<T> {
     this.code = code;
   }
 
-  // Override toJSON to include the error code
-  toJSON() {
-    return {
-      ...super.toJSON(),
-      code: this.code,
-      userId: this.userId,
-    };
+  // The log reads `code` by shape. Other fields go through the own-fields
+  // hook, which keeps them when the error becomes the cause of another error.
+  protected override buildOwnLogFields(): OwnLogFields {
+    return { userId: this.userId ?? null };
   }
 }
 

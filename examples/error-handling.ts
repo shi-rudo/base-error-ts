@@ -46,7 +46,7 @@ async function main() {
     await fetchData("https://api.example.com/data");
   } catch (error) {
     console.log("Pattern 1 - Basic try/catch:");
-    console.log(error.toString());
+    console.log(String(error));
     console.log();
   }
 
@@ -71,7 +71,7 @@ async function main() {
     await processPayment("order-456", 99.99);
   } catch (error) {
     console.log("Pattern 3 - Error transformation and rethrowing:");
-    console.log(error.toString());
+    console.log(String(error));
     console.log();
   }
 

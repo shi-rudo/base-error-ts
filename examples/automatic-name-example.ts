@@ -1,4 +1,4 @@
-import { BaseError } from "../src/index.js";
+import { BaseError, isBaseError } from "../src/index.js";
 
 /**
  * Automatic Name Inference Example
@@ -35,6 +35,7 @@ function main() {
   try {
     throw new UserNotFoundError("user-123");
   } catch (error) {
+    if (!isBaseError(error)) throw error;
     console.log("UserNotFoundError (automatic name):");
     console.log(`Name: ${error.name}`);
     console.log(`Message: ${error.message}`);
@@ -45,6 +46,7 @@ function main() {
   try {
     throw new ValidationError("email", "must be a valid email address");
   } catch (error) {
+    if (!isBaseError(error)) throw error;
     console.log("ValidationError (automatic name):");
     console.log(`Name: ${error.name}`);
     console.log(`Message: ${error.message}`);
@@ -55,6 +57,7 @@ function main() {
     const dbError = new Error("Connection timeout");
     throw new DatabaseError("user creation", dbError);
   } catch (error) {
+    if (!isBaseError(error)) throw error;
     console.log("DatabaseError with cause (automatic name):");
     console.log(`Name: ${error.name}`);
     console.log(`Message: ${error.message}`);

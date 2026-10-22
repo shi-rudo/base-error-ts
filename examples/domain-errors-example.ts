@@ -5,7 +5,7 @@
  * domain errors using BaseError. It shows how to create an error hierarchy
  * and handle specific error types gracefully using `instanceof`.
  */
-import { BaseError } from "../src/index.js";
+import { BaseError, type OwnLogFields } from "../src/index.js";
 
 // 1. Define a base error for a specific application domain (e.g., User Service).
 // This allows for catching all user-related errors with `instanceof UserServiceError`.
@@ -19,13 +19,10 @@ class UserServiceError extends BaseError<"UserServiceError"> {
     super(`User service failure: ${message}`, cause);
   }
 
-  // Override toJSON to add domain-specific context to structured logs.
-  toJSON() {
-    return {
-      ...super.toJSON(),
-      userId: this.userId,
-      service: "UserService",
-    };
+  // Add domain-specific context to every log of this error. The hook keeps
+  // these fields when the error becomes the cause of another error.
+  protected override buildOwnLogFields(): OwnLogFields {
+    return { userId: this.userId ?? null, service: "UserService" };
   }
 }
 
@@ -54,10 +51,10 @@ class UserValidationError extends UserServiceError {
     super(`Validation failed for field '${field}': ${reason}`, userId);
   }
 
-  // Add the specific fields to the JSON output for better structured logging.
-  toJSON() {
+  // Add the specific fields to the fields of the parent class.
+  protected override buildOwnLogFields(): OwnLogFields {
     return {
-      ...super.toJSON(),
+      ...super.buildOwnLogFields(),
       field: this.field,
       reason: this.reason,
     };

@@ -66,7 +66,9 @@ const catalog = definePublicErrors({
     status: 429,
     category: "temporary",
     retryable: true,
-    projectRetryAfter: (error: StructuredError): number | undefined =>
+    projectRetryAfter: (
+      error: StructuredError<string, string>,
+    ): number | undefined =>
       (error.details as { retryAfterSeconds?: number }).retryAfterSeconds,
     userMessages: new LocalizedMessageSet({
       baseLocale: "en",
@@ -92,7 +94,7 @@ const catalog = definePublicErrors({
     // provider response, request id, or technical message. A missing reason is
     // omitted rather than stringified to the literal "undefined".
     projectDetails: (
-      error: StructuredError,
+      error: StructuredError<string, string>,
     ): { reason: string } | undefined => {
       const reason = (error.details as { reason?: unknown }).reason;
       return typeof reason === "string" ? { reason } : undefined;
@@ -110,7 +112,7 @@ const catalog = definePublicErrors({
         de: "Einige Felder brauchen Aufmerksamkeit.",
       },
     }),
-    projectFields: (error: StructuredError) =>
+    projectFields: (error: StructuredError<string, string>) =>
       (error.details as { fields?: readonly { field: string; code: string }[] })
         .fields ?? [],
   });
