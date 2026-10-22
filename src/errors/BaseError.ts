@@ -410,7 +410,7 @@ export class BaseError<T extends string> extends Error {
   public toLogObject(): Record<string, unknown> {
     const context = BaseError.#newLogContext();
     const raw = this.#baseLogObject(context);
-    Object.assign(raw, this.#nodeOwnFields(this, context));
+    Object.assign(raw, BaseError.#nodeOwnFields(this, context));
     return this.#redactor ? this.#redactor(raw) : raw;
   }
 
@@ -498,7 +498,7 @@ export class BaseError<T extends string> extends Error {
    * reader for the root and for a cause, so both positions carry the same
    * fields under the same rules.
    */
-  /*#__PURE__*/ #nodeOwnFields(
+  /*#__PURE__*/ static #nodeOwnFields(
     value: unknown,
     context: LogBuildContext,
   ): Record<string, unknown> {
@@ -815,7 +815,7 @@ export class BaseError<T extends string> extends Error {
     // roster cannot replace. The library's own key names win, so a hook
     // cannot forge an envelope field or a bounded link, and every value is
     // copied as data like the rest of the node.
-    Object.assign(serialized, this.#nodeOwnFields(cause, context));
+    Object.assign(serialized, BaseError.#nodeOwnFields(cause, context));
 
     // An aggregate's members (`AggregateError.errors`, and any error-like
     // value carrying the same shape) are own but **non-enumerable** on every
