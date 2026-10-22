@@ -308,3 +308,70 @@ describe("StructuredError.fromJSON", () => {
     });
   });
 });
+
+/** A chain of `nodes` structured payloads, each with its own stack. */
+function payloadChainWithStacks(nodes: number): Record<string, unknown> {
+  let node: Record<string, unknown> = {
+    code: "LEAF",
+    category: "TEST",
+    retryable: false,
+    message: "leaf",
+    stack: "LEAF: leaf\n    at origin (leaf.ts:1:1)",
+  };
+  for (let index = 1; index < nodes; index++) {
+    node = {
+      code: "WRAP",
+      category: "TEST",
+      retryable: false,
+      message: `wrap ${index}`,
+      stack: `WRAP: wrap ${index}\n    at origin (wrap.ts:${index}:1)`,
+      cause: node,
+    };
+  }
+  return node;
+}
+
+/** Counts the calls of Error.captureStackTrace while `run` runs. */
+function stackCaptures(run: () => void): number {
+  const errorConstructor = Error as {
+    captureStackTrace?: (...args: unknown[]) => void;
+  };
+  const original = errorConstructor.captureStackTrace;
+  if (original === undefined) return 0;
+  let captures = 0;
+  errorConstructor.captureStackTrace = (...args: unknown[]) => {
+    captures++;
+    original.apply(Error, args);
+  };
+  try {
+    run();
+  } finally {
+    errorConstructor.captureStackTrace = original;
+  }
+  return captures;
+}
+
+describe("StructuredError.fromJSON and the stack of a node", () => {
+  it("captures no stack for a node whose payload carries one", () => {
+    const payload = payloadChainWithStacks(10);
+    let restored: StructuredError<string, string> | undefined;
+
+    const captures = stackCaptures(() => {
+      restored = StructuredError.fromJSON(payload);
+    });
+
+    expect(captures).toBe(0);
+    expect(restored?.stack).toBe("WRAP: wrap 9\n    at origin (wrap.ts:9:1)");
+  });
+
+  it("captures a stack of its own for a node without one", () => {
+    const restored = StructuredError.fromJSON({
+      code: "NO_STACK",
+      category: "TEST",
+      retryable: false,
+      message: "no stack",
+    });
+
+    expect(restored.stack?.split("\n")[0]).toBe("NO_STACK: no stack");
+  });
+});

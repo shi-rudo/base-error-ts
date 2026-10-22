@@ -35,6 +35,26 @@ import {
   MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
 
+/**
+ * A stack that the next BaseError construction adopts instead of capturing
+ * its own. It is set only while {@link constructWithStack} runs.
+ */
+let adoptedStack: string | undefined;
+
+/**
+ * Runs `construct`, and the BaseError that it creates adopts `stack` instead
+ * of capturing one. `StructuredError.fromJSON` uses it, because the stack of
+ * the payload would replace a captured stack at once.
+ */
+export function constructWithStack<T>(stack: string, construct: () => T): T {
+  adoptedStack = stack;
+  try {
+    return construct();
+  } finally {
+    adoptedStack = undefined;
+  }
+}
+
 // This avoids polluting the global scope
 interface V8ErrorConstructor {
   captureStackTrace?(
@@ -924,6 +944,20 @@ export class BaseError<T extends string> extends Error {
    * unformatted (see the `delete` below).
    */
   /*#__PURE__*/ #installLazyStack(): void {
+    const ownStack = this as { stack?: string };
+    if (adoptedStack !== undefined) {
+      const stack = adoptedStack;
+      adoptedStack = undefined;
+      delete ownStack.stack;
+      Object.defineProperty(this, "stack", {
+        value: stack,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+      return;
+    }
+
     // Cast Error to our local interface for type-safe access.
     const V8Error = Error as V8ErrorConstructor;
 
@@ -964,7 +998,6 @@ export class BaseError<T extends string> extends Error {
     // stack first, which calls `Error.prepareStackTrace` eagerly for frames
     // nobody reads. `delete` discards them without formatting on every
     // engine; V8 12+ (`stack` as a plain accessor pair) needs neither.
-    const ownStack = this as { stack?: string };
     delete ownStack.stack;
     Object.defineProperty(this, "stack", {
       configurable: true,

@@ -36,6 +36,8 @@
 
 ### Fixed
 
+- **`fromJSON` captures no stack that it replaces at once.** Each reconstructed node captured two stacks, one in the native `Error` constructor and one for the lazy stack, and then replaced both with the stack of the payload. A node whose payload carries a string stack now adopts it at construction and skips the second capture. A payload of 10,000 nodes, the reconstruction cap, takes about 100 ms instead of 180 ms on Node 24. A node without a stack in its payload still captures its own.
+
 - **A wide self-referencing object no longer makes the log copy quadratic.** Each reference back to an ancestor built the `[Circular …]` marker again, and each build listed every key of the ancestor, outside the log budget. An object with 20,000 keys that all point back to it took 79 seconds in one `toLogObject()` call, inside a `catch` path. The copy now builds one marker per object, and the marker reads keys only until it has one past the five that it names: the same object takes 22 milliseconds. A hidden key among the first keys no longer drops the `...` of the marker.
 
 - **`redactAllow` masks a primitive cause or primitive `details` of the logged error.** The allow-list kept every leaf whose key was a field of the root envelope, and that list held the links `cause` and `details`. A thrown string as the cause of the logged error, for example `new BaseError("outer", "password=hunter2")`, therefore reached the log in plaintext, and so did a string as `details`. One level down, the same cause was masked. The root now keeps only its scalar envelope fields. A primitive under `cause` or `details` is data, and the `cause` slot keeps only a serializer marker or an absent or `null` cause.

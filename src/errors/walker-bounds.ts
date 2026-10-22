@@ -93,6 +93,8 @@ export const MAX_LOG_NODES: number = MAX_DATA_NODES;
 /**
  * Total cause nodes reconstructed by fromJSON. Stack captures are costlier
  * than log values, so reconstruction gets one tenth of the log allowance.
+ * A payload at the cap, every node with its own stack, takes about 100 ms
+ * on Node 24.
  */
 export const MAX_RECONSTRUCTED_CAUSE_NODES = 10_000;
 

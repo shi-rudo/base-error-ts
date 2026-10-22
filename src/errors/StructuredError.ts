@@ -1,4 +1,4 @@
-import { BaseError } from "./BaseError.js";
+import { BaseError, constructWithStack } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
@@ -203,22 +203,23 @@ export class StructuredError<
       budget,
     );
 
-    const error = new StructuredError({
-      code,
-      category,
-      retryable,
-      message,
-      ...(details !== undefined && { details }),
-      ...(cause !== undefined && { cause }),
-    });
-
-    // Rehydrate the original identity rather than the freshly generated values.
-    StructuredError.#rehydrate(
-      error,
-      "stack",
-      readProperty(obj, "stack"),
-      "string",
-    );
+    const construct = () =>
+      new StructuredError({
+        code,
+        category,
+        retryable,
+        message,
+        ...(details !== undefined && { details }),
+        ...(cause !== undefined && { cause }),
+      });
+    // The node takes the original stack and time, not freshly generated ones.
+    // A payload stack is adopted at construction, so no stack is captured
+    // only to be replaced.
+    const stack = readProperty(obj, "stack");
+    const error =
+      typeof stack === "string"
+        ? constructWithStack(stack, construct)
+        : construct();
     const time = StructuredError.#originalTime(
       readProperty(obj, "timestamp"),
       readProperty(obj, "timestampIso"),
