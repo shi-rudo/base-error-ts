@@ -1,4 +1,4 @@
-import { isRetryAfterSeconds } from "../utils/problem-validation.js";
+import { isRetryAfterSeconds } from "./problem-validation.js";
 import { copyFieldFaults } from "./field-faults.js";
 import type { PublicErrorCatalog } from "./PublicErrorCatalog.js";
 import type {
