@@ -208,7 +208,13 @@ function maskStackHeader(
       message === "" ? [`${name}: `, name] : [`${name}: ${message}`];
     for (const header of headers) {
       if (stack === header || stack.startsWith(`${header}\n`)) {
-        return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
+        try {
+          return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
+        } catch {
+          // A copied mask result can carry an own toString that is no
+          // function, and then it cannot render as text.
+          return "[REDACTED]";
+        }
       }
     }
   }

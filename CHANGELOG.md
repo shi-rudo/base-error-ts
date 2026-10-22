@@ -78,7 +78,7 @@ Threat-model release (proposal 0017). An untrusted value is safe for any input, 
 
 - Large data no longer replaces the entire redacted log with a size-failure record. Redaction walks the bounded copy of the log, and the copy cuts a field at the log budget. The root envelope and its decision fields, including `retryable: false`, stay intact.
 
-- Deny-listed `name` values no longer survive in log stack headers. Root, cause, and aggregate headers use the already-masked name and message without calling the mask again. Recognized headers retain their frames; unrecognized headers are masked as a whole. The log copies a mask result as log data, so the header renders it as text.
+- Deny-listed `name` values no longer survive in log stack headers. Root, cause, and aggregate headers use the already-masked name and message without calling the mask again. Recognized headers retain their frames; unrecognized headers are masked as a whole. A mask result that cannot render as text replaces the stack with `[REDACTED]` and preserves the other fields.
 
 - **Failed redactors preserve the original diagnostic fields.** Recovery captures own, correctly typed metadata before invoking a policy. A callback that changes `code` or `retryable` and then throws cannot change those fields in the failure record. Moving message text into `code` before throwing no longer exposes that text through recovery. Successful custom output remains trusted and consumer-controlled. See the custom redactor contract and migration guide.
 

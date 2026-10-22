@@ -294,6 +294,20 @@ describe("deny-listed names in log stack headers", () => {
     });
   });
 
+  it("masks the stack as a whole when the mask result cannot render as text", () => {
+    const err = new BaseError("secret message").redact(["message"], {
+      mask: () => ({ toString: "masked", code: 1 }),
+    });
+
+    const log = err.toLogObject();
+
+    expect(log.message).toEqual({ toString: "masked", code: 1 });
+    expect(log.stack).toBe("[REDACTED]");
+    expect(log.name).toBe("BaseError");
+    expect(log).toHaveProperty("timestamp");
+    expect(JSON.stringify(log)).not.toContain("secret message");
+  });
+
   it("masks the stack header with a copy of an object that the name mask returns", () => {
     const maskedName: unknown = Object.create(null);
     const err = new StructuredError({
