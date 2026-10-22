@@ -14,6 +14,7 @@ import {
   readOwnProperty,
   readProperty,
   readPropertyResult,
+  readStack,
   type AggregateMembers,
 } from "./guarded-read.js";
 import type { JsonSafeValue } from "./json-safe.js";
@@ -788,17 +789,13 @@ export class BaseError<T extends string> extends Error {
     // Every value is copied as data (see serializeLogData). The log object
     // must not share a reference with the cause. The consumer's
     // JSON.stringify must not meet a bigint or a cycle that the cause carried.
+    const name = readProperty(cause, "name");
+    const message = readProperty(cause, "message");
     const serialized: Record<string, unknown> = {
-      name: BaseError.#serializeEnvelopeField(
-        readProperty(cause, "name"),
-        context,
-      ),
-      message: BaseError.#serializeEnvelopeField(
-        readProperty(cause, "message"),
-        context,
-      ),
+      name: BaseError.#serializeEnvelopeField(name, context),
+      message: BaseError.#serializeEnvelopeField(message, context),
       stack: BaseError.#serializeEnvelopeField(
-        readProperty(cause, "stack"),
+        readStack(cause, name, message),
         context,
       ),
     };

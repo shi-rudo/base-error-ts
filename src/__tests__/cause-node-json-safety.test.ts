@@ -148,17 +148,19 @@ describe("a native cause's extension fields are decoupled from the cause", () =>
   });
 
   it("copies an object under name, message or stack instead of holding the reference", () => {
-    const cause = new Error("db") as Extended;
+    const withStack = new Error("db") as Extended;
     const stack = { message: "Bearer token" };
-    cause.stack = stack as unknown as string;
-    cause.name = { first: "n" } as unknown as string;
+    withStack.stack = stack as unknown as string;
+    const withName = new Error("db") as Extended;
+    withName.name = { first: "n" } as unknown as string;
 
-    const node = causeNode(wrap(cause));
+    const stackNode = causeNode(wrap(withStack));
+    const nameNode = causeNode(wrap(withName));
 
-    expect(node.stack).not.toBe(stack);
-    expect(node.stack).toEqual({ message: "Bearer token" });
-    expect(node.name).toEqual({ first: "n" });
-    expect(() => JSON.stringify(node)).not.toThrow();
+    expect(stackNode.stack).not.toBe(stack);
+    expect(stackNode.stack).toEqual({ message: "Bearer token" });
+    expect(nameNode.name).toEqual({ first: "n" });
+    expect(() => JSON.stringify([stackNode, nameNode])).not.toThrow();
   });
 });
 

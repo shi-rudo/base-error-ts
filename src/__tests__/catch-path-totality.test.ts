@@ -18,7 +18,9 @@ import {
 import {
   errorWithThrowingGetter,
   hostileProxy,
+  wideArrayLike,
 } from "./hostile-values.fixture.js";
+import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
 function wrap(cause: unknown): BaseError<"Outer"> {
   return new BaseError<"Outer">("outer failed", cause, { name: "Outer" });
@@ -69,6 +71,29 @@ describe("totality in catch paths: a throwing getter on a cause", () => {
 
   it("treats a throwing `cause` getter as no cause", () => {
     expect(isErrorWithCause(errorWithThrowingGetter("cause"))).toBe(false);
+  });
+});
+
+describe("totality in catch paths: a native cause whose name or message is an object", () => {
+  for (const field of ["name", "message"]) {
+    it(`omits the stack of a native cause whose \`${field}\` is an array-like, within the log budget`, () => {
+      const wide = wideArrayLike();
+      const cause = new Error("failed");
+      Object.defineProperty(cause, field, { value: wide.value });
+
+      const log = wrap(cause).toLogObject();
+
+      expect((log.cause as Record<string, unknown>).stack).toBeUndefined();
+      expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
+    });
+  }
+
+  it("keeps the stack of a native cause whose name and message are strings", () => {
+    const cause = new Error("failed");
+
+    const log = wrap(cause).toLogObject();
+
+    expect((log.cause as Record<string, unknown>).stack).toBe(cause.stack);
   });
 });
 
@@ -137,25 +162,12 @@ describe("totality in catch paths: toString of a cause that is not an error", ()
   });
 
   it("reads no element of an array-like Proxy cause", () => {
-    let reads = 0;
-    const wide = new Proxy<unknown[]>([], {
-      get(target, key, receiver) {
-        if (
-          key === "length" ||
-          (typeof key === "string" && /^\d+$/.test(key))
-        ) {
-          reads++;
-        }
-        return key === "length"
-          ? 1e9
-          : (Reflect.get(target, key, receiver) as unknown);
-      },
-    });
+    const wide = wideArrayLike(1e9);
 
-    const rendered = wrap(wide).toString();
+    const rendered = wrap(wide.value).toString();
 
     expect(rendered).toContain("Caused by: [object Array]");
-    expect(reads).toBe(0);
+    expect(wide.reads()).toBe(0);
   });
 
   it("renders an object whose conversion is a generic array method by its tag", () => {

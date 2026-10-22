@@ -21,6 +21,29 @@ export function readProperty(value: unknown, key: string | symbol): unknown {
   }
 }
 
+/**
+ * Reads `stack` of a foreign value only when its `name` and `message` are
+ * primitives. An engine formats a lazy stack on the first read, and the
+ * header converts `name` and `message` to text. For an array, that
+ * conversion joins every element up to its `length`, and no budget of the
+ * library reaches inside it.
+ */
+export function readStack(
+  value: unknown,
+  name: unknown,
+  message: unknown,
+): unknown {
+  return isObjectLike(name) || isObjectLike(message)
+    ? undefined
+    : readProperty(value, "stack");
+}
+
+function isObjectLike(value: unknown): boolean {
+  return (
+    (typeof value === "object" && value !== null) || typeof value === "function"
+  );
+}
+
 /** Distinguish a failed read from an undefined value at fail-closed boundaries. */
 export function readPropertyResult(
   value: object,

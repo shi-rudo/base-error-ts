@@ -5,6 +5,7 @@ import {
   matchError,
 } from "../index.js";
 import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
+import { wideArrayLike } from "./hostile-values.fixture.js";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -356,6 +357,20 @@ describe("StructuredError.fromJSON", () => {
 
       expect(restored.code).toBe("C");
       expect(restored.details).toBeUndefined();
+    });
+
+    it("reads no stack of a payload error whose name or message is an object", () => {
+      const wide = wideArrayLike();
+      const cause = new Error("cause");
+      Object.defineProperty(cause, "message", { value: wide.value });
+      const root = new Error("root");
+      Object.defineProperty(root, "name", { value: wide.value });
+      Object.defineProperty(root, "cause", { value: cause });
+
+      const restored = StructuredError.fromJSON(root);
+
+      expect(restored).toBeInstanceOf(StructuredError);
+      expect(wide.reads()).toBe(0);
     });
 
     it("drops details that is a revoked Proxy, at the root and on a cause", () => {

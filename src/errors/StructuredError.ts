@@ -6,6 +6,7 @@ import {
   isArrayValue,
   readMembers,
   readProperty,
+  readStack,
   type AggregateMembers,
 } from "./guarded-read.js";
 import {
@@ -219,7 +220,7 @@ export class StructuredError<
     StructuredError.#rehydrate(
       error,
       "stack",
-      readProperty(obj, "stack"),
+      readStack(obj, readProperty(obj, "name"), rawMessage),
       "string",
     );
     const time = StructuredError.#originalTime(
@@ -418,7 +419,7 @@ export class StructuredError<
     const members = readMembers(obj, StructuredError.#MEMBERS_READ);
     const messageField = readProperty(obj, "message");
     const nameField = readProperty(obj, "name");
-    const stackField = readProperty(obj, "stack");
+    const stackField = readStack(obj, nameField, messageField);
     if (members !== undefined) {
       const aggregate = new AggregateError(
         StructuredError.#reconstructMembers(members, depth + 1, budget),

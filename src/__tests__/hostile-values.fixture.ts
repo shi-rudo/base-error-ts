@@ -45,3 +45,29 @@ export function revokedProxy(): object {
   revoke();
   return proxy;
 }
+
+/**
+ * An array-like Proxy with a huge `length` and no elements behind it.
+ * `reads` counts each read of `length` and of an index, so it shows a
+ * conversion such as `join` that walks the whole length.
+ */
+export function wideArrayLike(length = 1e6): {
+  readonly value: unknown[];
+  readonly reads: () => number;
+} {
+  let reads = 0;
+  const value = new Proxy<unknown[]>([], {
+    get(target, key, receiver) {
+      if (key === "length") {
+        reads++;
+        return length;
+      }
+      if (typeof key === "string" && /^\d+$/.test(key)) {
+        reads++;
+        return "element";
+      }
+      return Reflect.get(target, key, receiver) as unknown;
+    },
+  });
+  return { value, reads: () => reads };
+}
