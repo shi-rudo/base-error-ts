@@ -9,9 +9,9 @@ import { toProblem, PROBLEM_DETAILS_JSON } from "../public-error/toProblem.js";
 import type { FieldFault } from "../public-error/types.js";
 
 /**
- * One registration site per public code feeds all three stages. This is the
- * single source of truth the redesign unifies (no separate registry + adapter
- * map). `category` here is the *public* category, deliberately distinct from the
+ * One registration site per public code feeds all three stages. It is the
+ * single source of truth for the status, the type and the messages of a code.
+ * `category` here is the *public* category, deliberately distinct from the
  * internal `StructuredError.category` ("DEADLOCK"); curation, not passthrough.
  */
 function buildCatalog(): PublicErrorCatalog {
@@ -119,7 +119,7 @@ describe("stage 2: localize (optional, orthogonal, keyed on publicCode)", () => 
     const view = project(buildCatalog(), deadlock());
 
     // A client (SPA/Edge) ships its OWN catalog keyed on the public code. It
-    // never touches the backend registry; the view is all it needs.
+    // never touches the backend catalog; the view is all it needs.
     const clientCatalog = new LocalizedMessageSet({
       baseLocale: "en",
       messages: { en: "We are a little busy. Try again shortly." },
