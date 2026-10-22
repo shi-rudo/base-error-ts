@@ -1,8 +1,6 @@
 # Proposal 0007: non-exhaustive matching for arbitrary thrown values
 
-**Status:** implemented; release: 6.2.0.
-
-**Target release:** `6.2.0`. The change is additive.
+Status: implemented; release: 6.2.0. The change is additive.
 
 **Dependencies:** Wave 1 (`ErrorClass`, `TypeGuard`, and general-purpose error
 guards). No runtime dependency is added.

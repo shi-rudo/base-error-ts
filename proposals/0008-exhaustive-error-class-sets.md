@@ -1,8 +1,6 @@
 # Proposal 0008: exhaustive local Error-class sets
 
-**Status:** implemented; release: 6.3.0.
-
-**Target release:** `6.3.0`. The change is additive.
+Status: implemented; release: 6.3.0. The change is additive.
 
 ## Decision
 

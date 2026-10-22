@@ -1,8 +1,6 @@
 # Proposal 0009: Catalog v2
 
-**Status:** implemented; release: 7.0.0.
-
-**Target release:** `7.0.0`.
+Status: implemented; release: 7.0.0.
 
 ## Decision
 

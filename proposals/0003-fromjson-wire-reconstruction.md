@@ -1,6 +1,6 @@
 # Proposal 0003: `fromJSON` wire reconstruction
 
-**Status:** implemented; release: 5.0.0. Decisions locked. Single static `StructuredError.fromJSON`
+Status: implemented; release: 5.0.0. Decisions locked. Single static `StructuredError.fromJSON`
 named `fromJSON`; lenient (safe envelope on malformed input, never throws);
 original `stack`/`timestamp` rehydrated from the payload; whitelist-only,
 prototype-pollution-safe. Positioned for within-context reconstruction / log

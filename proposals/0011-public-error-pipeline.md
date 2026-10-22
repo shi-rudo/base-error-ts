@@ -1,11 +1,9 @@
 # Proposal 0011: public error pipeline (projection, localization, and transport over one descriptor)
 
-**Status:** implemented; release: 8.0.0. Implemented under `src/public-error/` and exported at the
+Status: implemented; release: 8.0.0. Implemented under `src/public-error/` and exported at the
 `@shirudo/base-error/public-error` subpath in 8.0.0. **Supersedes** 0005
 (presentation) and 0010 (RFC 9457 adapter), both removed in 8.0.0; it unifies and
 refines two coupling defects those left open.
-
-**Target release:** 8.0.0.
 
 **Audience:** consumers who serve errors to more than one kind of client at once
 (a first-party SPA/Edge app that localizes in the browser, a server-rendered or
@@ -404,10 +402,9 @@ catalog or an explicit `Transport` for a view you already hold.
 ## Implementation status
 
 Implemented under `src/public-error/` (`types.ts`, `PublicErrorCatalog.ts`,
-`project.ts`, `localize.ts`, `toProblem.ts`, `index.ts`), with the shared
-`src/utils/json-safe.ts`, `src/utils/problem-validation.ts`, and
-`src/utils/error-resolution.ts` reused by the 0010 adapter and the presentation
-registry. Test-first across the `public-error-*` spec files plus a type-level
+`project.ts`, `localize.ts`, `toProblem.ts`, `index.ts`), with shared helpers
+for the JSON-safe clone (`cloneJsonSafe`), the RFC 9457 field validation, and
+the code-then-predicate error resolution. Test-first across the `public-error-*` spec files plus a type-level
 file and a runnable end-to-end example (`examples/public-error-e2e.ts`: Hono
 `onError` → TanStack server function → React `useQuery`). Exported at the
-`@shirudo/base-error/public-error` subpath in 7.2.0.
+`@shirudo/base-error/public-error` subpath in 8.0.0.

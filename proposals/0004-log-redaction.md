@@ -1,6 +1,6 @@
 # Proposal 0004: redaction hook on the log path
 
-**Status:** implemented; release: 5.0.0. Decisions locked (see _Decisions_). Built test-first.
+Status: implemented; release: 5.0.0. Decisions locked (see _Decisions_). Built test-first.
 **Context:** `toLogObject()`/`toJSON()` are the full-fidelity observability
 payload (technical message, stack, cause chain, raw `details`). In regulated
 contexts the **logs themselves** must scrub PII (a `details.ssn` shouldn't hit
