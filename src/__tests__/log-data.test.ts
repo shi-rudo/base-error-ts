@@ -269,7 +269,7 @@ describe("log data serialization", () => {
       },
     });
     const context = createLogBuildContext((value) =>
-      value === error ? { message: "diagnosis" } : undefined,
+      value === error ? () => ({ message: "diagnosis" }) : undefined,
     );
 
     expect(serializeLogData({ nested: error }, context)).toEqual({

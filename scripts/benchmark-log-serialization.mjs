@@ -6,6 +6,11 @@ import { pathToFileURL } from "node:url";
 const revisions = await Promise.all(
   process.argv.slice(2).map(async (argument) => {
     const separator = argument.indexOf("=");
+    if (separator <= 0) {
+      throw new Error(
+        `Expected label=/absolute/bundle.mjs, got ${JSON.stringify(argument)}`,
+      );
+    }
     return {
       label: argument.slice(0, separator),
       api: await import(pathToFileURL(argument.slice(separator + 1)).href),

@@ -109,3 +109,18 @@ describe("a list from another realm on the wire", () => {
     expect(result.outcome.omitted).toEqual([]);
   });
 });
+
+describe("a wrapper from another realm in log data", () => {
+  it("unboxes a tagged Number subclass by its slot, as JSON does", () => {
+    const money = vm.runInNewContext(
+      'class Money extends Number { get [Symbol.toStringTag]() { return "Money"; } } new Money(12)',
+    ) as object;
+    const error = new BaseError("outer");
+    Object.defineProperty(error, "details", { value: { price: money } });
+
+    const log = error.toLogObject();
+
+    expect(JSON.stringify(money)).toBe("12");
+    expect(log.details).toEqual({ price: 12 });
+  });
+});
