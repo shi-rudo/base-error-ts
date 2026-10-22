@@ -78,8 +78,8 @@ function renderLine(
 
 /**
  * Renders one cause chain into `render.lines`. A node that carries aggregate
- * members gets a count on its own line, and each member is rendered as its
- * own chain, indented one level deeper. `head` prefixes the first line: a
+ * members gets a count on its own line. Each member renders as its own
+ * chain, indented one level deeper. `head` prefixes the first line: a
  * member starts with a bullet at the indent of its parent, and its own chain
  * keeps the deeper `indent`. The cause walk (see {@link CauseWalk}) spans the
  * whole tree, so a cycle and a shared node end with their marker instead of
@@ -91,12 +91,12 @@ function renderLine(
  * and holes included, so the budget bounds the output.
  *
  * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
- * at which its `cause` lands. The two differ only at the root: the log
+ * at which its `cause` lands. The two differ only at the root. The log
  * serializer starts the root's `cause` at depth 0 and the root's members at
- * depth 1, and every cause node puts both one level below itself. Both
- * counters mirror the cause serializer of `BaseError`, so for a chain of
- * error objects `toString()` shows the same nodes as `toLogObject()` and
- * cuts at the same marker. Near the budget the two differ: the log also
+ * depth 1. Every cause node puts both one level below itself. Both counters
+ * mirror the cause serializer of `BaseError`. So for a chain of error
+ * objects, `toString()` shows the same nodes as `toLogObject()` and cuts at
+ * the same marker. Near the budget the two differ: the log also
  * spends its allowance on data, and the render spends one unit per line.
  * For a plain-object cause, the serializer also copies its data fields and
  * cuts deep containers without a marker.
@@ -109,10 +109,11 @@ function renderChain(
   depth: number,
   causeDepth: number,
 ): void {
-  // Aggregates recurse, and a string render must never throw: bound the
-  // nesting with the same cap the log serializer uses, so a pathologically
-  // deep tree degrades to a marker instead of overflowing the host stack
-  // (which is far smaller on an edge isolate than on Node).
+  // Aggregates recurse, and a string render must never throw. This check
+  // bounds the nesting with the same cap the log serializer uses. A
+  // pathologically deep tree then degrades to a marker instead of overflowing
+  // the host stack. The host stack is far smaller on an edge isolate than on
+  // Node.
   if (depth >= MAX_CAUSE_DEPTH) {
     renderLine(render, head, MAX_CAUSE_DEPTH_MARKER);
     return;
@@ -178,10 +179,10 @@ function renderChain(
         return;
       }
 
-      // The linear spine is bounded the way the serializer bounds it: a cause
-      // that would land past the cap is the depth marker, and a missing or
-      // null cause ends the chain without one. Only the hops up to the cap
-      // are read, so the length of the chain never sets the cost.
+      // This render bounds the linear spine the way the serializer bounds it.
+      // A cause that would land past the cap is the depth marker, and a
+      // missing or null cause ends the chain without one. Only the hops up to
+      // the cap are read, so the length of the chain never sets the cost.
       const cause = readCause(current);
       if (cause !== undefined && nextCauseDepth >= MAX_CAUSE_DEPTH) {
         renderLine(render, `${indent}Caused by: `, MAX_CAUSE_DEPTH_MARKER);
@@ -201,10 +202,10 @@ function renderChain(
  * One node as a single line. The caller's own line wins, which honors a
  * deny-listed `message` of a `BaseError`. A native error and an error-shaped
  * plain object (string `name` and `message`) render as `name: message`. A
- * string render runs in catch paths and must not throw: a foreign
- * `name`/`message` that throws falls back to the `Error.prototype` defaults,
- * and a value with no string form at all (a null-prototype object, a
- * throwing `Symbol.toPrimitive`) renders as a marker.
+ * string render runs in catch paths and must not throw. A foreign
+ * `name`/`message` that throws falls back to the `Error.prototype` defaults.
+ * A value with no string form at all (a null-prototype object, a throwing
+ * `Symbol.toPrimitive`) renders as a marker.
  */
 function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
   try {
@@ -215,9 +216,9 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
       const message = readProperty(node, "message") ?? "";
       return `${String(name)}: ${String(message)}`;
     }
-    // A plain object shaped like an error (a revived or cloned error at a
-    // worker boundary) reads as its name and message, not as
-    // "[object Object]".
+    // A plain object shaped like an error reads as its name and message, not
+    // as "[object Object]". An example is a revived or cloned error at a
+    // worker boundary.
     const name = readProperty(node, "name");
     const message = readProperty(node, "message");
     if (typeof name === "string" && typeof message === "string") {

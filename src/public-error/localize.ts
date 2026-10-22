@@ -5,9 +5,9 @@ import type { LocalizedPublicError, PublicError } from "./types.js";
 /**
  * Stage 2: localization, deliberately optional and orthogonal. Attaches human
  * text to a {@link PublicError}, resolving `messages` against ordered locale
- * preferences. The `messages` set is keyed on the public code by the caller: a
- * backend passes `catalog.messagesFor(view.code)`, a client passes its own
- * catalog for the same public code. A client-localizing app simply never calls
+ * preferences. The caller keys the `messages` set on the public code. A backend
+ * passes `catalog.messagesFor(view.code)`, and a client passes its own catalog
+ * for the same public code. A client-localizing app simply never calls
  * this stage and renders text from `view.code` itself.
  */
 export function localize<TDetails, TCode extends string = string>(

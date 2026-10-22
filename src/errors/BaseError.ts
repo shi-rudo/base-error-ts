@@ -68,9 +68,9 @@ export type RedactMask = string | ((value: unknown, key: string) => unknown);
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
- * browsers. It preserves the native `cause` field where available, falls back
- * gracefully where it is not, and produces the richest stack trace the host
- * can provide.
+ * browsers. It preserves the native `cause` field where available, and it
+ * falls back gracefully where it is not. It also produces the richest stack
+ * trace that the host can provide.
  *
  * @example
  * ```ts
@@ -129,9 +129,9 @@ export class BaseError<T extends string> extends Error {
   /**
    * Mask for the technical `message` in {@link toString}, set only by a
    * deny-list {@link redact} whose keys include `"message"`. `toString` (unlike
-   * `toLogObject`) cannot run an arbitrary redactor, but a denied `message` is
-   * an explicit statement that the text is sensitive, so the one string
-   * rendering the library controls honors it. Follows the redactor's
+   * `toLogObject`) cannot run an arbitrary redactor. But a denied `message` is
+   * an explicit statement that the text is sensitive, so the one string render
+   * that the library controls honors it. Follows the redactor's
    * last-wins semantics: `redactAllow`/`redactWith` clear it.
    */
   #messageMask?: RedactMask;
@@ -139,9 +139,9 @@ export class BaseError<T extends string> extends Error {
   /**
    * Creates a new BaseError instance with automatic name inference.
    *
-   * @param message – Human-readable explanation (name will be inferred from constructor)
-   * @param cause   – Optional underlying error or extra context
-   * @param options – Optional runtime name settings
+   * @param message - Human-readable explanation (name will be inferred from constructor)
+   * @param cause - Optional underlying error or extra context
+   * @param options - Optional runtime name settings
    */
   // The /*#__PURE__*/ pragma lets tree-shakers know the constructor is side-effect free
   public /*#__PURE__*/ constructor(
@@ -156,10 +156,11 @@ export class BaseError<T extends string> extends Error {
     // otherwise fall back to the constructor name. Both `name` and `_tag`
     // derive from it so they can never diverge. Passing an explicit
     // `name` stabilizes the discriminant under class-name minification.
-    // A direct `new BaseError(...)` uses the literal instead of inference:
-    // the bundler rewrites this class into a renamed binding (its body reads
-    // its own statics), and `constructor.name` would report that binding
-    // (`_BaseError`). verify-dist.mjs guards this on every build.
+    // A direct `new BaseError(...)` uses the literal instead of inference.
+    // The bundler rewrites this class into a renamed binding, because its
+    // body reads its own statics. Without the literal, `constructor.name`
+    // reports that binding (`_BaseError`). verify-dist.mjs guards this on
+    // every build.
     const resolvedName =
       options.name ??
       (new.target === BaseError ? "BaseError" : this.constructor.name);
@@ -186,23 +187,24 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Redacts the given keys (deep, at any depth) from the **log** output
-   * (`toLogObject`/`toJSON`). Sticky on the instance, so it also applies when a
-   * logger auto-serializes the error via `JSON.stringify`, and when another
-   * error of the same realm logs this one as its `cause` (see
-   * {@link toLogObject}).
+   * (`toLogObject`/`toJSON`). The policy is sticky on the instance. So it also
+   * applies when a logger auto-serializes the error via `JSON.stringify`. It
+   * also applies when another error of the same realm logs this one as its
+   * `cause` (see {@link toLogObject}).
    *
    * ⚠️ Scope: redaction rewrites the **log object**, not every string render.
-   * When `keys` includes `"name"` or `"message"`, the log's `stack` fields
-   * are covered too: on the root, on every `cause`, and on every aggregate
-   * member, a header that repeats the node's own `name: message` is rewritten
-   * with the masked fields and keeps its frames, and a stack that does not
-   * start with that header is handed to the mask as a whole. {@link toString}
-   * masks a deny-listed technical message as well. The log states the time in
-   * two keys, `timestamp` and `timestampIso`; to hide it, deny both. The
-   * `err.stack` property and Node's `console.log(err)` inspection (which
-   * prints that property) stay unredacted. When redaction matters, log errors
-   * only through a structured serializer that hits `toJSON`, never via string
-   * interpolation.
+   * If `keys` includes `"name"` or `"message"`, the redaction also covers the
+   * `stack` fields of the log. This applies on the root, on every `cause`, and
+   * on every aggregate member. If a stack starts with the node's own
+   * `name: message` header, the redaction rewrites that header with the
+   * masked fields and keeps the frames. If a stack does not start with that
+   * header, the redaction hands the whole stack to the mask. The
+   * {@link toString} render masks a deny-listed technical message as well.
+   * The log states the time in two keys, `timestamp` and `timestampIso`; to
+   * hide it, deny both. The `err.stack` property and Node's `console.log(err)`
+   * inspection (which prints that property) stay unredacted. When redaction
+   * matters, log errors only through a structured serializer that hits
+   * `toJSON`, never via string interpolation.
    *
    * @param keys - Property names to mask wherever they appear in the log object.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
@@ -221,37 +223,38 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Allow-list redaction (higher assurance than {@link redact}): within any
-   * **data** region (a `details` subtree at any depth, the data-bearing
-   * fields of a `cause`, and any subclass-added top-level field): masks every
-   * leaf whose key is **not** listed, so a newly-added field leaks nothing by
-   * default. Container objects are recursed so nested allowed leaves survive.
-   * A leaf inside an **array** has no key of its own and is judged under the
-   * key of the array that holds it, so a list of tokens is masked as a whole
-   * unless that key is allowed.
-   * Only the library's own structural envelope is kept: the fixed top-level
-   * fields (`name`/`message`/`stack`/
-   * `code`/`category`/`retryable`/`timestamp`/`timestampIso`)
-   * and a cause's top-level structural envelope keys (`name`/`message`/`stack`/
+   * Allow-list redaction (higher assurance than {@link redact}). Within any
+   * **data** region, it masks every leaf whose key is **not** listed. So a
+   * newly-added field leaks nothing by default. A data region is a `details`
+   * subtree at any depth, the data-bearing fields of a `cause`, or any
+   * subclass-added top-level field. The redaction recurses into container
+   * objects, so nested allowed leaves survive. A leaf inside an **array** has
+   * no key of its own. The redaction judges it under the key of the array
+   * that holds it. So a list of tokens is masked as a whole, unless that key
+   * is allowed.
+   * The redaction keeps only the library's own structural envelope. At the
+   * top level, that is the fixed fields (`name`/`message`/`stack`/
+   * `code`/`category`/`retryable`/`timestamp`/`timestampIso`). In a cause,
+   * that is the top-level structural envelope keys (`name`/`message`/`stack`/
    * `code`/`category`/`retryable`). The top-level `cause` and `details` are
-   * links, not envelope leaves: a primitive under them is data, and the
-   * `cause` slot keeps only a serializer marker or an absent cause. Any other
+   * links, not envelope leaves. A primitive under them is data. The `cause`
+   * slot keeps only a serializer marker or an absent cause. Any other
    * top-level field (e.g. one a
    * subclass adds via `buildOwnLogFields`) is data: its leaves are masked unless
-   * allow-listed. A cause's foreign fields (anything outside that fixed set,
-   * and everything nested beneath them) are treated as data, so a plain object
-   * that merely *looks* like a structured error cannot smuggle siblings (or
-   * envelope-named keys buried in foreign subtrees) through. An envelope key
-   * holds a primitive: a **container** under an envelope name (`stack: {…}`,
-   * `code: {…}`) is data, at the root and inside a cause, so its leaves are
-   * masked whatever they are named. Sticky; last redactor wins, and the
-   * policy holds when another error of the same realm logs this one as its
-   * `cause` (see {@link toLogObject}).
+   * allow-listed. The foreign fields of a cause are data: anything outside
+   * that fixed set, and everything nested beneath them. So a plain object
+   * that only *looks* like a structured error cannot smuggle siblings
+   * through. It also cannot smuggle envelope-named keys buried in foreign
+   * subtrees. An envelope key holds a primitive. A **container** under an
+   * envelope name (`stack: {…}`, `code: {…}`) is data, at the root and inside
+   * a cause. So its leaves are masked, whatever their names are. The policy
+   * is sticky, and the last redactor wins. It also holds when another error
+   * of the same realm logs this one as its `cause` (see {@link toLogObject}).
    *
    * ⚠️ Scope: rewrites the **log object** only. The technical `message` is part
-   * of the kept structural envelope, so `toString`, `err.stack`, and Node's
-   * `console.log(err)` inspection carry it unchanged; see {@link redact} for
-   * masking the message itself.
+   * of the kept structural envelope. So `toString`, `err.stack`, and Node's
+   * `console.log(err)` inspection carry it unchanged. To mask the message
+   * itself, see {@link redact}.
    *
    * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
@@ -278,7 +281,7 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * The mask as one walk applies it. A function mask is consumer code and can
-   * return any value, so each result passes through the log-data copier, and
+   * return any value. So each result passes through the log-data copier, and
    * an outer policy meets plain data only. One copy context per walk bounds
    * the results of all its mask calls together.
    */
@@ -297,17 +300,18 @@ export class BaseError<T extends string> extends Error {
    * When this error is logged, successful output is not validated, copied, or
    * implicitly redacted again. The consumer owns its shape, JSON safety, and
    * sensitive content. When this error is the cause of another error, the log
-   * copies the output with the log-data copier, and the policy of the
-   * enclosing error walks that copy.
+   * copies the output with the log-data copier. The policy of the enclosing
+   * error then walks that copy.
    * A synchronous throw returns the pre-call diagnostic fields without payload.
    * The input holds copies only, so a mutation cannot reach an error.
    * Public logging calls inside the callback start independent builds.
    * The consumer must bound those calls and terminate the callback.
    *
-   * ⚠️ Scope: applies to the **log object** only. A custom redactor cannot be
-   * mapped onto the one-line {@link toString} render, so `toString`,
+   * ⚠️ Scope: applies to the **log object** only. The library cannot map a
+   * custom redactor onto the one-line {@link toString} render. So `toString`,
    * `err.stack`, and `console.log(err)` inspection keep the raw technical
-   * message even when the redactor scrubs it from the log.
+   * message. This holds even when the redactor scrubs the message from the
+   * log.
    * Changing the log's `message` does not automatically scrub its `stack`.
    */
   public redactWith(
@@ -380,13 +384,13 @@ export class BaseError<T extends string> extends Error {
    * Serialises the error for logs. Includes technical message, stack and cause,
    * with the instance redactor applied (see {@link redact} / {@link redactWith}).
    *
-   * A cause that is a BaseError of the same realm and carries its own sticky
-   * policy is masked by that policy first, over its node and everything
-   * beneath it, and this error's redactor walks the result afterwards. This
-   * holds for a nested cause and for an aggregate member alike. A cause from
-   * another realm (a worker boundary, a second copy of the package) and a
-   * Proxy around a BaseError carry no reachable policy and are logged like a
-   * foreign error.
+   * A cause can be a BaseError of the same realm with its own sticky policy.
+   * That policy masks the cause first, over its node and everything beneath
+   * it. The redactor of this error walks the result afterwards. This holds
+   * for a nested cause and for an aggregate member alike. A cause from
+   * another realm (a worker boundary, a second copy of the package) carries
+   * no reachable policy. A Proxy around a BaseError carries none either. The
+   * log writes both like a foreign error.
    *
    * The log writes an error that two branches share at its first position
    * only, and a cause policy covers the positions beneath its own error. If
@@ -493,10 +497,10 @@ export class BaseError<T extends string> extends Error {
   static #ownFieldsActive = false;
 
   /**
-   * The own fields a node carries: the hook's record with the library's own
-   * key names removed, each value copied as data, cut at the width cap. One
-   * reader for the root and for a cause, so both positions carry the same
-   * fields under the same rules.
+   * The own fields that a node carries: the record of the hook, without the
+   * library's own key names. This reader copies each value as data and cuts
+   * the record at the width cap. One reader for the root and for a cause, so
+   * both positions carry the same fields under the same rules.
    */
   /*#__PURE__*/ static #nodeOwnFields(
     value: unknown,
@@ -511,9 +515,9 @@ export class BaseError<T extends string> extends Error {
     const out = Object.create(null) as Record<string, unknown>;
     BaseError.#ownFieldsActive = true;
     try {
-      // The record is foreign data, not just the call that produced it: a
-      // getter on it throws, a Proxy trap on it throws, and reading its keys
-      // or its prototype throws. All of that stays inside this one try, so a
+      // The record is foreign data, not only the call that produced it. A
+      // getter on it, a Proxy trap on it, and a read of its keys or its
+      // prototype can throw. All of that stays inside this one try, so a
       // hostile record costs these fields and never the node.
       const fields: unknown = value.buildOwnLogFields();
       if (
@@ -617,11 +621,11 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * JSON serialization for logging-oriented consumers. Alias of
-   * {@link toLogObject}, so it returns the same **log** shape: technical message,
+   * {@link toLogObject}. It returns the same **log** shape: technical message,
    * stack, cause chain and raw `details`.
    *
-   * ⚠️ Because `JSON.stringify(err)`, `res.json(err)`, `Response.json(err)` and
-   * `return err` all route through `toJSON`, sending an error down any of those
+   * ⚠️ `JSON.stringify(err)`, `res.json(err)`, `Response.json(err)` and
+   * `return err` all route through `toJSON`. So an error sent down any of those
    * paths leaks the full technical payload to the client. **Never serialize an
    * error straight into a response.** Produce a client payload through the
    * `public-error` subpath (`project` / `toProblem`) instead. This shape is also
@@ -634,8 +638,9 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Readable one-liner plus the nested cause chain. For a chain of error
-   * objects it is bounded exactly like the log object: the same cause nodes
-   * are rendered, and past the cap the chain ends with the same depth marker.
+   * objects, the render has exactly the same bounds as the log object. It
+   * renders the same cause nodes, and past the cap the chain ends with the
+   * same depth marker.
    * A plain-object cause carries its data fields in the log object. This
    * render follows its `cause` links and ends them at the cap. Honors a deny-listed
    * `"message"` (see {@link redact}) per BaseError in the chain; other
@@ -697,21 +702,22 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Intelligently serializes the cause for JSON output.
-   * Preserves stack traces, StructuredError fields, and nested data. Every
-   * field taken off a native error is copied as data (see serializeLogData),
-   * so the log object shares no reference with the cause and the consumer's
-   * `JSON.stringify` never meets a bigint or a cycle the cause carried.
-   * Uses a cause walk (see {@link CauseWalk}) to mark cycles and shared nodes,
-   * and a depth bound so an acyclic but very deep chain is capped.
+   * Preserves stack traces, StructuredError fields, and nested data. The
+   * serializer copies every field that it takes off a native error as data
+   * (see serializeLogData). So the log object shares no reference with the
+   * cause. The consumer's `JSON.stringify` also never meets a bigint or a
+   * cycle that the cause carried. It uses a cause walk (see {@link CauseWalk})
+   * to mark cycles and shared nodes. A depth bound caps an acyclic but very
+   * deep chain.
    *
-   * Total per node: each foreign read is guarded, and a value that still
-   * defeats serialization (a Proxy whose traps throw) becomes a marker, so one
-   * hostile node costs its own entry in the log and nothing else.
+   * Total per node: each foreign read is guarded. A value that still defeats
+   * serialization (a Proxy whose traps throw) becomes a marker. So one hostile
+   * node costs its own entry in the log and nothing else.
    *
-   * A node that is a BaseError of this realm with a sticky redaction policy
-   * is masked by that policy, subtree included, before it is returned (see
-   * {@link BaseError.#redactorOf}). A throwing policy collapses that node to
-   * the triage envelope and nothing above it.
+   * A node can be a BaseError of this realm with a sticky redaction policy.
+   * Then that policy masks the node, subtree included, before the serializer
+   * returns it (see {@link BaseError.#redactorOf}). A throwing policy
+   * collapses that node to the triage envelope and nothing above it.
    */
   /*#__PURE__*/ #serializeCause(
     cause: unknown,
@@ -767,9 +773,9 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Writes one error node that the walk reaches for the first time: its
-   * envelope, its structured fields, its own fields, its members and its
-   * cause, masked by its own sticky policy last.
+   * Writes one error node that the walk reaches for the first time. The node
+   * holds its envelope, its structured fields, its own fields, its members
+   * and its cause. Its own sticky policy masks the node last.
    */
   /*#__PURE__*/ #serializeErrorNode(
     cause: Error,
@@ -777,11 +783,11 @@ export class BaseError<T extends string> extends Error {
     depth: number,
     context: LogBuildContext,
   ): unknown {
-    // Every field is a foreign read: a cause is whatever the caller threw,
-    // and this runs in a catch path, so a throwing getter reads as absent.
-    // Every value is copied as data (see serializeLogData): the log object
-    // must not share a reference with the cause, and the consumer's
-    // JSON.stringify must not meet a bigint or a cycle the cause carried.
+    // Every field is a foreign read: a cause is whatever the caller threw.
+    // This code runs in a catch path, so a throwing getter reads as absent.
+    // Every value is copied as data (see serializeLogData). The log object
+    // must not share a reference with the cause. The consumer's
+    // JSON.stringify must not meet a bigint or a cycle that the cause carried.
     const serialized: Record<string, unknown> = {
       name: BaseError.#serializeEnvelopeField(
         readProperty(cause, "name"),
@@ -798,8 +804,8 @@ export class BaseError<T extends string> extends Error {
     };
 
     // Preserve StructuredError fields if present (duck-typing). This is the
-    // only route for a foreign cause: a plain `Error` carrying these fields,
-    // a cross-realm instance and a Proxy have no reachable hook to ask.
+    // only route for a foreign cause. A plain `Error` that carries these
+    // fields, a cross-realm instance and a Proxy have no reachable hook to ask.
     for (const key of ["code", "category", "retryable", "details"]) {
       const value =
         key === "details"
@@ -813,13 +819,13 @@ export class BaseError<T extends string> extends Error {
 
     // A cause of this realm says what it is, through the one hook a fixed
     // roster cannot replace. The library's own key names win, so a hook
-    // cannot forge an envelope field or a bounded link, and every value is
-    // copied as data like the rest of the node.
+    // cannot forge an envelope field or a bounded link. Every value is
+    // copied as data, like the rest of the node.
     Object.assign(serialized, BaseError.#nodeOwnFields(cause, context));
 
     // An aggregate's members (`AggregateError.errors`, and any error-like
-    // value carrying the same shape) are own but **non-enumerable** on every
-    // supported runtime, so `JSON.stringify` and `Object.entries` drop them
+    // value with the same shape) are own but **non-enumerable** on every
+    // supported runtime. So `JSON.stringify` and `Object.entries` drop them
     // exactly like `message`/`stack`. Read explicitly, by shape rather than
     // by `instanceof AggregateError`, so cross-realm and custom fan-out
     // errors serialize too. Without this the branch failures that produced
@@ -841,10 +847,10 @@ export class BaseError<T extends string> extends Error {
     }
 
     // The cause's own sticky policy runs last, over the node and the subtree
-    // serialized above it, so it covers the cause's descendants exactly as
-    // it does when the cause logs itself. Bottom-up by construction: every
-    // deeper node applied its own policy first. The enclosing error's
-    // redactor walks the result afterwards.
+    // serialized above it. So the policy covers the descendants of the cause
+    // exactly as it does when the cause logs itself. Bottom-up by
+    // construction: every deeper node applied its own policy first. The
+    // enclosing error's redactor walks the result afterwards.
     const redactor = BaseError.#redactorOf(cause);
     if (redactor === undefined) return serialized;
     const masked = redactor(serialized);
@@ -877,10 +883,10 @@ export class BaseError<T extends string> extends Error {
   /**
    * Serializes an aggregate's members. The reader already capped them at
    * {@link MAX_AGGREGATE_MEMBERS}; the count it reports marks the
-   * remainder. Members share the enclosing cause walk, so an error reachable
-   * from more than one branch is written at its first occurrence and marked
-   * as shared afterwards, and a self-referencing aggregate ends in the
-   * circular marker.
+   * remainder. Members share the enclosing cause walk. So the serializer
+   * writes an error that more than one branch reaches at its first
+   * occurrence, and marks it as shared afterwards. A self-referencing
+   * aggregate ends in the circular marker.
    */
   /*#__PURE__*/ #serializeAggregate(
     aggregate: AggregateMembers,
@@ -906,24 +912,25 @@ export class BaseError<T extends string> extends Error {
 
   /**
    * Captures the stack now but defers symbolization and filtering to the
-   * first read. V8 formats stacks lazily (via `Error.prepareStackTrace`) only
-   * when `stack` is accessed; reading it in the constructor would force that
-   * work for every error, including ones that are caught and never logged. So
+   * first read. V8 formats stacks lazily (via `Error.prepareStackTrace`), only
+   * when code reads `stack`. A read in the constructor would force that work
+   * for every error, including errors that are caught and never logged. So
    * the raw capture lands on a side holder, and `this.stack` becomes a
-   * memoizing accessor: the first get symbolizes, filters, and replaces
-   * itself with a plain writable data property; a set before the first get
+   * memoizing accessor. The first get symbolizes, filters, and replaces
+   * itself with a plain writable data property. A set before the first get
    * (a rehydrated or user-assigned stack) wins unfiltered.
    *
    * This capture duplicates the one `super()` already performed, and that is
-   * deliberate: both remedies measure or behave worse. Suppressing the first
-   * capture with `Error.stackTraceLimit = 0` around `super()` deopts V8's
-   * capture fast path process-wide (measured on Node 24: construction 4x
-   * slower, and plain `new Error` slower for the rest of the process). And
-   * the frames `super()` captured cannot replace the holder's: on V8 11
-   * (Node 20) reading their descriptor materializes them eagerly, and on
-   * V8 12+ they lack the constructor trimming `captureStackTrace` gives the
-   * holder. The unread first capture costs ~1 microsecond and is discarded
-   * unformatted (see the `delete` below).
+   * deliberate: both remedies measure or behave worse. If `super()` runs with
+   * `Error.stackTraceLimit = 0` to suppress the first capture, V8 deopts its
+   * capture fast path process-wide. A measurement on Node 24 showed
+   * construction 4x slower, and plain `new Error` slower for the rest of the
+   * process. And the frames that `super()` captured cannot replace the
+   * frames of the holder. On V8 11 (for example Chromium 110 to 119), a read
+   * of their descriptor materializes them eagerly. On V8 12+, they lack the
+   * constructor trimming that `captureStackTrace` gives the holder. The unread
+   * first capture costs ~1 microsecond. The `delete` of the own `stack` in
+   * this method discards it unformatted.
    */
   /*#__PURE__*/ #installLazyStack(): void {
     // Cast Error to our local interface for type-safe access.
@@ -961,11 +968,12 @@ export class BaseError<T extends string> extends Error {
         enumerable: false,
       });
     };
-    // The engine-managed `stack` that `super()` captured is removed, not
-    // redefined over: on V8 11 (Node 20) redefining it materializes the held
-    // stack first, which calls `Error.prepareStackTrace` eagerly for frames
-    // nobody reads. `delete` discards them without formatting on every
-    // engine; V8 12+ (`stack` as a plain accessor pair) needs neither.
+    // The code removes the engine-managed `stack` that `super()` captured,
+    // and does not redefine over it. On V8 11 (for example Chromium 110 to
+    // 119), a redefinition materializes the held stack first. That calls
+    // `Error.prepareStackTrace` eagerly for frames that nobody reads.
+    // `delete` discards them without formatting on every engine; V8 12+
+    // (`stack` as a plain accessor pair) needs neither.
     const ownStack = this as { stack?: string };
     delete ownStack.stack;
     Object.defineProperty(this, "stack", {

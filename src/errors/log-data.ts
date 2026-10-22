@@ -46,7 +46,7 @@ function pastDepthCap(position: WalkPosition): boolean {
 
 /**
  * Tags of built-in objects that hold no wrapper slot. Each wrapper probe
- * throws for such an object, and each thrown TypeError captures a stack, so
+ * throws for such an object, and each thrown TypeError captures a stack. So
  * a value with one of these tags skips the probes. A crafted wrapper that
  * borrows such a tag is copied as an object, which is safe.
  */
@@ -142,9 +142,10 @@ function unboxData(value: object): unknown {
 
 /**
  * A foreign value as the log object carries it: decoupled from its source
- * and safe for the consumer's `JSON.stringify`. One rule for a plain-object
- * cause and for every field copied off a native error (`details`, `code`,
- * an object under `stack`), so both branches carry the same guarantees.
+ * and safe for the consumer's `JSON.stringify`. One rule covers a
+ * plain-object cause and every field copied off a native error (`details`,
+ * `code`, an object under `stack`). So both branches carry the same
+ * guarantees.
  *
  * Numbers follow JSON conversion; a bigint, which has no JSON form, is
  * written as its decimal string, at every depth. A function or symbol has

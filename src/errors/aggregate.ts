@@ -16,13 +16,13 @@ export type StructuredAggregateErrorOptions<
  * `Promise.allSettled` fan-out, a batch job, or saga compensation.
  *
  * It carries its members in `errors`, the same field a native `AggregateError`
- * uses, so everything in this library that reads aggregates by shape works on
- * it unchanged: `toLogObject` serializes the members (width-capped and
- * cycle-safe), `redact`/`redactAllow` reach into them, `toString` counts them,
- * `StructuredError.fromJSON` restores them, and the cause-chain helpers walk
- * them with `{ aggregates: true }`.
+ * uses. So everything in this library that reads aggregates by shape works on
+ * it unchanged. `toLogObject` serializes the members (width-capped and
+ * cycle-safe), and `redact`/`redactAllow` reach into them. `toString` counts
+ * them, `StructuredError.fromJSON` restores them, and the cause-chain helpers
+ * walk them with `{ aggregates: true }`.
  *
- * It deliberately does **not** extend `AggregateError`: single inheritance is
+ * It deliberately does **not** extend `AggregateError`. Single inheritance is
  * already spent on `BaseError`, and `AggregateError`'s iterable-first
  * constructor conflicts with the options object used across this library.
  * Consumers duck-type `errors`, so the identity buys nothing.

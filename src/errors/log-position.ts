@@ -29,10 +29,10 @@ export function childPosition(
  * keep/mask decision is made in the region it lives in). Data is sticky for
  * the whole subtree. `details` → data. `cause`, and `errors` when it holds
  * a list → cause: they are the only containers on the cause spine. Every
- * other container, an object under `errors` included, drops
- * to data, at the root as well as inside a cause. That covers a foreign key
- * (a field a subclass added via `buildOwnLogFields`, a sibling a plain-object
- * cause carries) and also an **envelope-named** key: the envelope fields
+ * other container, an object under `errors` included, drops to data, at the
+ * root as well as inside a cause. That covers a foreign key (a field a
+ * subclass added via `buildOwnLogFields`, a sibling a plain-object cause
+ * carries). It also covers an **envelope-named** key. The envelope fields
  * (`name`/`message`/`stack`/`code`/`category`/`retryable`) are primitives,
  * so a container found under one of those names is not the envelope. It is
  * data, and an envelope-named leaf nested inside it stays masked.
@@ -45,11 +45,11 @@ export function childRegion(
   if (region === "data") return "data";
   if (key === "details") return "data";
   if (key === "cause") return "cause";
-  // An aggregate's members are further cause nodes, so they keep the same
+  // An aggregate's members are further cause nodes. So they keep the same
   // structural envelope a `cause` gets, at the root as well as inside a
-  // cause. Only a list transitions: the serializer writes `errors` as a
-  // list, so an object under that name is foreign data, and it is bounded
-  // by the data depth like any other foreign subtree. `errors` is
+  // cause. Only a list transitions, because the serializer writes `errors`
+  // as a list. An object under that name is foreign data, and the data depth
+  // bounds it like any other foreign subtree. `errors` is
   // deliberately **not** added to the root envelope: a scalar named
   // `errors` is still a data leaf and stays masked under an allow-list.
   if (key === "errors") return Array.isArray(value) ? "cause" : "data";
