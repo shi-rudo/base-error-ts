@@ -243,3 +243,55 @@ it("does not let a wrapper's tag replace its JSON primitive value", () => {
     value: 1,
   });
 });
+
+/** Counts the wrapper slot probes that the log copy runs on `target`. */
+function wrapperProbes(target: object, run: () => void): number {
+  let probes = 0;
+  const prototypes = [
+    Number.prototype,
+    String.prototype,
+    Boolean.prototype,
+    BigInt.prototype,
+  ] as unknown as { valueOf: (this: unknown) => unknown }[];
+  const originals = prototypes.map((prototype) => prototype.valueOf);
+  prototypes.forEach((prototype, index) => {
+    prototype.valueOf = function (this: unknown) {
+      if (this === target) probes++;
+      return originals[index]!.call(this);
+    };
+  });
+  try {
+    run();
+  } finally {
+    prototypes.forEach((prototype, index) => {
+      prototype.valueOf = originals[index]!;
+    });
+  }
+  return probes;
+}
+
+it.each([
+  ["Map", new Map([["k", 1]])],
+  ["Set", new Set(["k"])],
+])("does not probe a %s for a wrapper slot", (_name, value) => {
+  let log: Log = {};
+
+  const probes = wrapperProbes(value, () => {
+    log = new Fields({ data: { value } }).toLogObject();
+  });
+
+  expect(probes).toBe(0);
+  expect(log.data).toEqual({ value: {} });
+});
+
+it("unboxes a Number subclass that names its own tag", () => {
+  class Money extends Number {
+    get [Symbol.toStringTag](): string {
+      return "Money";
+    }
+  }
+
+  const log = new Fields({ data: { price: new Money(12) } }).toLogObject();
+
+  expect(log.data).toEqual({ price: 12 });
+});

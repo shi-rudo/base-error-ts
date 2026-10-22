@@ -416,7 +416,9 @@ export class BaseError<T extends string> extends Error {
 
   static #newLogContext(): LogBuildContext {
     return createLogBuildContext((value) =>
-      BaseError.#sameRealm(value) ? value.#dataErrorEnvelope() : undefined,
+      BaseError.#sameRealm(value)
+        ? () => value.#dataErrorEnvelope()
+        : undefined,
     );
   }
 

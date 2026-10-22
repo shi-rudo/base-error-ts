@@ -85,6 +85,23 @@ describe("log build guards", () => {
     },
   );
 
+  it("does not build the view of an error in data past the depth cap", () => {
+    let views = 0;
+    const deep = new BaseError("deep").redactWith((log) => {
+      views++;
+      return log;
+    });
+    let data: unknown = deep;
+    for (let level = 0; level < 100; level++) data = { child: data };
+
+    const log = new OwnFieldsError(() => ({ data })).toLogObject();
+
+    expect(views).toBe(0);
+    expect(JSON.stringify(log.data)).toBe(
+      '{"child":'.repeat(100) + "{}" + "}".repeat(100),
+    );
+  });
+
   it("does not re-enter a hook through a nested error", () => {
     let calls = 0;
     const error = new OwnFieldsError(() => {
