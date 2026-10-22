@@ -37,7 +37,7 @@ function main() {
     validateUser({ name: "", email: "invalid-email" });
   } catch (error) {
     console.log("Caught error:");
-    console.log(error.toString());
+    console.log(String(error));
     console.log("\nJSON representation:");
     console.log(JSON.stringify(error, null, 2));
   }
@@ -49,7 +49,7 @@ function main() {
     findUser("user-123");
   } catch (error) {
     console.log("Caught error:");
-    console.log(error.toString());
+    console.log(String(error));
   }
 
   console.log("\n---\n");
@@ -59,7 +59,7 @@ function main() {
     saveUser({ name: "John", email: "john@example.com" });
   } catch (error) {
     console.log("Caught error with cause:");
-    console.log(error.toString());
+    console.log(String(error));
   }
 }
 

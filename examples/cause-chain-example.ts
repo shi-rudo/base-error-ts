@@ -53,7 +53,7 @@ async function fetchUserData(
     });
   }
 
-  return response.json();
+  return (await response.json()) as { name: string; email: string };
 }
 
 async function getUserWithProfile(
@@ -90,7 +90,8 @@ async function getUserWithProfile(
     });
   }
 
-  return { user: { name: user.name }, profile: await profileResponse.json() };
+  const profile = (await profileResponse.json()) as { bio: string };
+  return { user: { name: user.name }, profile };
 }
 
 async function processUserOperation(userId: string): Promise<void> {
