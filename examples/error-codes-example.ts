@@ -31,7 +31,7 @@ class UserError<T extends ErrorCode> extends BaseError<T> {
   // The log reads `code` by shape. Other fields go through the own-fields
   // hook, which keeps them when the error becomes the cause of another error.
   protected override buildOwnLogFields(): OwnLogFields {
-    return { userId: this.userId ?? null };
+    return { ...(this.userId !== undefined && { userId: this.userId }) };
   }
 }
 

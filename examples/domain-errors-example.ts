@@ -22,7 +22,10 @@ class UserServiceError extends BaseError<"UserServiceError"> {
   // Add domain-specific context to every log of this error. The hook keeps
   // these fields when the error becomes the cause of another error.
   protected override buildOwnLogFields(): OwnLogFields {
-    return { userId: this.userId ?? null, service: "UserService" };
+    return {
+      ...(this.userId !== undefined && { userId: this.userId }),
+      service: "UserService",
+    };
   }
 }
 
