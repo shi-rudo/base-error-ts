@@ -1,9 +1,10 @@
 # Proposal 0005: user messages out of the core, technology-agnostic error presentation
 
-**Status:** Superseded by 0011. The `presentation` module
-(`PublicErrorPresenter`/`PublicErrorRegistry`/`PublicErrorView`) was removed in
-8.0.0; its localization primitives (`LocalizedMessageSet`/`resolveUserMessage`)
-moved to the `public-error` subpath. Kept for design history. This proposal
+Status: superseded by 0011; release: 8.0.0. The `presentation` module
+(`PublicErrorPresenter`/`PublicErrorRegistry`/`PublicErrorView`) shipped in
+6.0.0, and 8.0.0 removed it; its localization primitives
+(`LocalizedMessageSet`/`resolveUserMessage`) moved to the `public-error`
+subpath. Kept for design history. This proposal
 **superseded** the localized-message design shipped in PR #58 (`ctx.message` +
 `ctx.messageLocalized` on the response envelope).
 

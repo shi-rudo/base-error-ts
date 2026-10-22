@@ -1,10 +1,7 @@
 import type { LocalizedMessageSet } from "./LocalizedMessageSet.js";
 import { resolveByCodeThenPredicate } from "./error-resolution.js";
 import type { PredicateEntry } from "./error-resolution.js";
-import {
-  isHttpStatusCode,
-  isNonEmptyString,
-} from "../utils/problem-validation.js";
+import { isHttpStatusCode, isNonEmptyString } from "./problem-validation.js";
 import type {
   OnProject,
   ProjectionOutcome,

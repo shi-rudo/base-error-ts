@@ -6,7 +6,7 @@ import {
   isNonEmptyString,
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
-} from "../utils/problem-validation.js";
+} from "./problem-validation.js";
 import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 import { copyFieldFaults } from "./field-faults.js";
 import { canonicalizeLocale } from "./locale.js";
