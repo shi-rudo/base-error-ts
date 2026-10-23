@@ -96,9 +96,9 @@ function renderLine(
  * and holes included, so the budget bounds the output.
  *
  * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
- * at which its `cause` lands. The two differ only at the root. The log
- * serializer starts the root's `cause` at depth 0 and the root's members at
- * depth 1. Every cause node puts both one level below itself. Both counters
+ * at which its `cause` and its members land. The two differ only at the
+ * root: the log serializer starts the root's `cause` and the root's members
+ * at depth 0. Every cause node puts its links one level below itself. Both counters
  * mirror the cause serializer of `BaseError`. So for a chain of error
  * objects, `toString()` shows the same nodes as `toLogObject()` and cuts at
  * the same marker. Near the budget the two differ: the log also
@@ -125,7 +125,6 @@ function renderChain(
   }
   let current: unknown = start;
   let prefix = head;
-  let nodeDepth = depth;
   let nextCauseDepth = causeDepth;
   // Each spine node of this chain is an ancestor of the nodes after it.
   const entered: object[] = [];
@@ -169,8 +168,8 @@ function renderChain(
           render,
           `${indent}  - `,
           `${indent}    `,
-          nodeDepth + 1,
-          nodeDepth + 2,
+          nextCauseDepth,
+          nextCauseDepth + 1,
         );
         if (render.cut) return;
       }
@@ -196,7 +195,6 @@ function renderChain(
       }
       current = cause;
       prefix = `${indent}Caused by: `;
-      nodeDepth = nextCauseDepth;
       nextCauseDepth++;
     }
   } finally {
