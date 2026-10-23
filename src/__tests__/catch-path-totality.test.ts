@@ -128,6 +128,19 @@ describe("totality in catch paths: an error whose name or message is an object",
     expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
   });
 
+  it("reads the stack and renders a BaseError whose message is a revoked Proxy", () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    const error = new BaseError<"Root">("root", undefined, { name: "Root" });
+    Object.defineProperty(error, "message", { value: proxy });
+
+    const read = () => error.stack;
+
+    expect(read).not.toThrow();
+    expect(read()).toMatch(/^Root: \n/);
+    expect(error.toString()).toBe("[Root] ");
+  });
+
   it("keeps the stack of a native cause whose name and message are strings", () => {
     const cause = new Error("failed");
 

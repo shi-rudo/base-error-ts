@@ -657,7 +657,7 @@ export class BaseError<T extends string> extends Error {
   public override toString(): string {
     return renderCauseChain(this, (node) =>
       node instanceof BaseError
-        ? `[${renderValue(node.name)}] ${node.#renderMessage()}`
+        ? `[${renderValue(node.name, "Error")}] ${node.#renderMessage()}`
         : undefined,
     );
   }
@@ -673,11 +673,12 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ #renderMessage(): string {
     if (this.#messageMask === undefined) {
-      return renderValue(this.message);
+      return renderValue(this.message, "");
     }
     try {
       return renderValue(
         BaseError.#applyMask(this.#messageMask, this.message, "message"),
+        "[REDACTED]",
       );
     } catch {
       return "[REDACTED]";
@@ -1011,7 +1012,7 @@ export class BaseError<T extends string> extends Error {
 
     // Update the header with proper error name and message
     filteredLines.push(
-      `${renderValue(this.name)}: ${renderValue(this.message)}`,
+      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
     );
 
     // Filter out internal frames

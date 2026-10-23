@@ -8,6 +8,7 @@ import type { CauseWalk } from "./cause-walk.js";
 import {
   isObjectLike,
   readCause,
+  readObjectTag,
   readCappedMembers,
   readProperty,
 } from "./guarded-read.js";
@@ -199,9 +200,10 @@ function renderChain(
  * deny-listed `message` of a `BaseError`. A native error and an error-shaped
  * plain object (string `name` and `message`) render as `name: message`. A
  * string render runs in catch paths and must not throw. A foreign
- * `name`/`message` that throws falls back to the `Error.prototype` defaults.
- * Any other value renders through {@link renderValue}. A value whose tag
- * cannot be read (a revoked Proxy) renders as a marker.
+ * `name`/`message` that throws, or whose tag cannot be read, falls back to
+ * the `Error.prototype` defaults. Any other value renders through
+ * {@link renderValue}. A value whose tag cannot be read (a revoked Proxy)
+ * renders as a marker.
  */
 function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
   try {
@@ -210,7 +212,7 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (isNativeError(node)) {
       const name = readProperty(node, "name") ?? "Error";
       const message = readProperty(node, "message") ?? "";
-      return `${renderValue(name)}: ${renderValue(message)}`;
+      return `${renderValue(name, "Error")}: ${renderValue(message, "")}`;
     }
     // A plain object shaped like an error reads as its name and message, not
     // as "[object Object]". An example is a revived or cloned error at a
@@ -220,7 +222,7 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (typeof name === "string" && typeof message === "string") {
       return `${name}: ${message}`;
     }
-    return renderValue(node);
+    return renderValue(node, UNRENDERABLE_CAUSE_MARKER);
   } catch {
     return UNRENDERABLE_CAUSE_MARKER;
   }
@@ -230,10 +232,12 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
  * The text of a value that the render did not create. A primitive renders
  * with `String`. An object renders by its tag, such as `[object Array]`,
  * and its own conversion never runs: that conversion can be any work, and
- * the one of an array joins every element up to its `length`.
+ * the one of an array joins every element up to its `length`. A tag that
+ * cannot be read, such as the tag of a revoked Proxy, renders as
+ * `unreadable`.
  */
-export function renderValue(value: unknown): string {
+export function renderValue(value: unknown, unreadable: string): string {
   return isObjectLike(value)
-    ? Object.prototype.toString.call(value)
+    ? (readObjectTag(value as object) ?? unreadable)
     : String(value);
 }
