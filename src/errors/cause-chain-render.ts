@@ -18,7 +18,7 @@ import {
   MAX_LOG_SIZE_MARKER,
   SHARED_CAUSE_MARKER,
   UNRENDERABLE_CAUSE_MARKER,
-  moreAggregatedErrorsMarker,
+  droppedMembersMarker,
 } from "./serializer-markers.js";
 import {
   MAX_AGGREGATE_MEMBERS,
@@ -147,13 +147,14 @@ function renderChain(
         entered.push(current);
       }
 
-      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
+      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS + 1);
       const total = aggregate === undefined ? 0 : aggregate.total;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
       const node = `${renderNode(current, render.ownNodeLine)}${suffix}`;
       if (!renderLine(render, prefix, node)) return;
 
-      const shown = aggregate === undefined ? [] : aggregate.members;
+      const read = aggregate === undefined ? [] : aggregate.members;
+      const shown = read.slice(0, MAX_AGGREGATE_MEMBERS);
       for (const member of shown) {
         // A hole reads as undefined. It keeps its slot, as in the log, so the
         // count on the node line matches the list.
@@ -178,7 +179,7 @@ function renderChain(
         !renderLine(
           render,
           `${indent}  `,
-          moreAggregatedErrorsMarker(total - shown.length),
+          droppedMembersMarker(total - shown.length, read[shown.length]),
         )
       ) {
         return;

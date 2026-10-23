@@ -287,11 +287,10 @@ describe("deny-listed names in log stack headers", () => {
 
     const log = err.toLogObject();
 
-    expect(nodeOf(nodeOf(nodeOf(log.cause).details).nested)).toMatchObject({
-      name: "[REDACTED]",
-      message: "nested",
-      stack: "[REDACTED]: nested\n    at nested (file:1:1)",
-    });
+    const view = nodeOf(nodeOf(nodeOf(log.cause).details).nested);
+    expect(view).toMatchObject({ name: "[REDACTED]", message: "nested" });
+    expect(view).not.toHaveProperty("stack");
+    expect(JSON.stringify(log)).not.toContain("SecretNameError");
   });
 
   it("masks the stack header with a copy of an object that the name mask returns", () => {

@@ -24,6 +24,24 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
+const MORE_AGGREGATED_ERRORS = /^\[\d+ more aggregated errors\]$/;
+
+/**
+ * The tail for `dropped` members past the width cap. A list from a log of
+ * this library holds its own tail as the one entry past the cap. That tail
+ * comes back unchanged, so a round trip keeps the original count.
+ */
+export function droppedMembersMarker(
+  dropped: number,
+  pastCap: unknown,
+): string {
+  return dropped === 1 &&
+    typeof pastCap === "string" &&
+    MORE_AGGREGATED_ERRORS.test(pastCap)
+    ? pastCap
+    : moreAggregatedErrorsMarker(dropped);
+}
+
 /** Work omitted because the shared log-build allowance is exhausted. */
 export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 
@@ -66,8 +84,6 @@ const CAUSE_SPINE_MARKERS: ReadonlySet<string> = new Set([
   UNSERIALIZABLE_CAUSE_MARKER,
   MAX_LOG_SIZE_MARKER,
 ]);
-
-const MORE_AGGREGATED_ERRORS = /^\[\d+ more aggregated errors\]$/;
 
 /**
  * Whether `value` is a marker that the serializer writes in a cause slot or

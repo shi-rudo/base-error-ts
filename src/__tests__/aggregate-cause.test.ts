@@ -291,6 +291,22 @@ describe("AggregateError round-trip through fromJSON", () => {
     expect(cause.errors[100]).toBe("[30 more aggregated errors]");
   });
 
+  it("keeps the count of a capped aggregate through a round trip, in the log and in toString", () => {
+    const branches = Array.from(
+      { length: 130 },
+      (_, index) => new Error(`branch ${index}`),
+    );
+    const original = wrap(new AggregateError(branches, "wide"));
+
+    const restored = StructuredError.fromJSON(
+      JSON.parse(JSON.stringify(original)),
+    );
+
+    expect(aggregatedOf(restored)[100]).toBe("[30 more aggregated errors]");
+    expect(restored.toString()).toContain("[30 more aggregated errors]");
+    expect(restored.toString()).not.toContain("[1 more aggregated errors]");
+  });
+
   it("leaves a non-aggregate cause a plain Error", () => {
     const cause = roundTrip(wrap(new Error("plain")));
 
