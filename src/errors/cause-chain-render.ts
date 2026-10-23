@@ -8,7 +8,8 @@ import type { CauseWalk } from "./cause-walk.js";
 import {
   isObjectLike,
   readCause,
-  readMembers,
+  readObjectTag,
+  readCappedMembers,
   readProperty,
 } from "./guarded-read.js";
 import { isNativeError } from "./native-error.js";
@@ -18,13 +19,9 @@ import {
   MAX_LOG_SIZE_MARKER,
   SHARED_CAUSE_MARKER,
   UNRENDERABLE_CAUSE_MARKER,
-  droppedMembersMarker,
+  moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
-import {
-  MAX_AGGREGATE_MEMBERS,
-  MAX_CAUSE_DEPTH,
-  MAX_LOG_NODES,
-} from "./walker-bounds.js";
+import { MAX_CAUSE_DEPTH, MAX_LOG_NODES } from "./walker-bounds.js";
 
 /**
  * The line of a node that the caller renders itself, such as a `BaseError`
@@ -96,9 +93,9 @@ function renderLine(
  * and holes included, so the budget bounds the output.
  *
  * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
- * at which its `cause` lands. The two differ only at the root. The log
- * serializer starts the root's `cause` at depth 0 and the root's members at
- * depth 1. Every cause node puts both one level below itself. Both counters
+ * at which its `cause` and its members land. The two differ only at the
+ * root: the log serializer starts the root's `cause` and the root's members
+ * at depth 0. Every cause node puts its links one level below itself. Both counters
  * mirror the cause serializer of `BaseError`. So for a chain of error
  * objects, `toString()` shows the same nodes as `toLogObject()` and cuts at
  * the same marker. Near the budget the two differ: the log also
@@ -125,7 +122,6 @@ function renderChain(
   }
   let current: unknown = start;
   let prefix = head;
-  let nodeDepth = depth;
   let nextCauseDepth = causeDepth;
   // Each spine node of this chain is an ancestor of the nodes after it.
   const entered: object[] = [];
@@ -147,14 +143,14 @@ function renderChain(
         entered.push(current);
       }
 
-      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS + 1);
-      const total = aggregate === undefined ? 0 : aggregate.total;
+      const aggregate = readCappedMembers(current);
+      const shown = aggregate === undefined ? [] : aggregate.members;
+      const dropped = aggregate === undefined ? 0 : aggregate.dropped;
+      const total = shown.length + dropped;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
       const node = `${renderNode(current, render.ownNodeLine)}${suffix}`;
       if (!renderLine(render, prefix, node)) return;
 
-      const read = aggregate === undefined ? [] : aggregate.members;
-      const shown = read.slice(0, MAX_AGGREGATE_MEMBERS);
       for (const member of shown) {
         // A hole reads as undefined. It keeps its slot, as in the log, so the
         // count on the node line matches the list.
@@ -169,18 +165,14 @@ function renderChain(
           render,
           `${indent}  - `,
           `${indent}    `,
-          nodeDepth + 1,
-          nodeDepth + 2,
+          nextCauseDepth,
+          nextCauseDepth + 1,
         );
         if (render.cut) return;
       }
       if (
-        total > shown.length &&
-        !renderLine(
-          render,
-          `${indent}  `,
-          droppedMembersMarker(total - shown.length, read[shown.length]),
-        )
+        dropped > 0 &&
+        !renderLine(render, `${indent}  `, moreAggregatedErrorsMarker(dropped))
       ) {
         return;
       }
@@ -196,7 +188,6 @@ function renderChain(
       }
       current = cause;
       prefix = `${indent}Caused by: `;
-      nodeDepth = nextCauseDepth;
       nextCauseDepth++;
     }
   } finally {
@@ -209,9 +200,10 @@ function renderChain(
  * deny-listed `message` of a `BaseError`. A native error and an error-shaped
  * plain object (string `name` and `message`) render as `name: message`. A
  * string render runs in catch paths and must not throw. A foreign
- * `name`/`message` that throws falls back to the `Error.prototype` defaults.
- * Any other value renders through {@link renderValue}. A value whose tag
- * cannot be read (a revoked Proxy) renders as a marker.
+ * `name`/`message` that throws, or whose tag cannot be read, falls back to
+ * the `Error.prototype` defaults. Any other value renders through
+ * {@link renderValue}. A value whose tag cannot be read (a revoked Proxy)
+ * renders as a marker.
  */
 function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
   try {
@@ -220,7 +212,7 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (isNativeError(node)) {
       const name = readProperty(node, "name") ?? "Error";
       const message = readProperty(node, "message") ?? "";
-      return `${renderValue(name)}: ${renderValue(message)}`;
+      return `${renderValue(name, "Error")}: ${renderValue(message, "")}`;
     }
     // A plain object shaped like an error reads as its name and message, not
     // as "[object Object]". An example is a revived or cloned error at a
@@ -230,7 +222,7 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (typeof name === "string" && typeof message === "string") {
       return `${name}: ${message}`;
     }
-    return renderValue(node);
+    return renderValue(node, UNRENDERABLE_CAUSE_MARKER);
   } catch {
     return UNRENDERABLE_CAUSE_MARKER;
   }
@@ -240,10 +232,12 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
  * The text of a value that the render did not create. A primitive renders
  * with `String`. An object renders by its tag, such as `[object Array]`,
  * and its own conversion never runs: that conversion can be any work, and
- * the one of an array joins every element up to its `length`.
+ * the one of an array joins every element up to its `length`. A tag that
+ * cannot be read, such as the tag of a revoked Proxy, renders as
+ * `unreadable`.
  */
-export function renderValue(value: unknown): string {
+export function renderValue(value: unknown, unreadable: string): string {
   return isObjectLike(value)
-    ? Object.prototype.toString.call(value)
+    ? (readObjectTag(value as object) ?? unreadable)
     : String(value);
 }
