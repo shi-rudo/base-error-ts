@@ -9,13 +9,13 @@ import { renderCauseChain, renderValue } from "./cause-chain-render.js";
 import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
 import { isNativeError } from "./native-error.js";
 import {
-  readCappedMembers,
+  readMembers,
   readOwnEnumerableKeys,
   readOwnProperty,
   readProperty,
   readPropertyResult,
   readStack,
-  type CappedMembers,
+  type AggregateMembers,
 } from "./guarded-read.js";
 import type { JsonSafeValue } from "./json-safe.js";
 import { toTimestampIso } from "./timestamp-iso.js";
@@ -30,6 +30,7 @@ import {
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
 import {
+  MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
   MAX_OWN_LOG_FIELDS,
   MAX_OWN_LOG_FIELDS_READ,
@@ -335,7 +336,7 @@ export class BaseError<T extends string> extends Error {
       ["message", message],
       ["timestamp", timestamp],
       ["timestampIso", toTimestampIso(timestamp)],
-      ["stack", readProperty(this, "stack")],
+      ["stack", readStack(this, name, message)],
     ];
     for (const [key, read] of envelope) {
       const value = BaseError.#serializeEnvelopeField(read, context);
@@ -353,11 +354,8 @@ export class BaseError<T extends string> extends Error {
     // A subclass that aggregates failures carries them in `errors`, the field
     // a native `AggregateError` uses. Read by shape, so any such subclass gets
     // the same bounded, cycle-safe serialization as an aggregate cause.
-    const aggregate = readCappedMembers(this);
-    if (
-      aggregate !== undefined &&
-      aggregate.members.length + aggregate.dropped > 0
-    ) {
+    const aggregate = readMembers(this, MAX_AGGREGATE_MEMBERS);
+    if (aggregate !== undefined && aggregate.total > 0) {
       json.errors = this.#serializeAggregate(
         aggregate,
         rootCauseWalk(this),
@@ -799,15 +797,13 @@ export class BaseError<T extends string> extends Error {
     // JSON.stringify must not meet a bigint or a cycle that the cause carried.
     const name = readProperty(cause, "name");
     const message = readProperty(cause, "message");
-    // A BaseError of this realm builds its own stack header with renderValue,
-    // so reading its stack stays bounded whatever its name and message hold.
-    const stack = BaseError.#sameRealm(cause)
-      ? readProperty(cause, "stack")
-      : readStack(cause, name, message);
     const serialized: Record<string, unknown> = {
       name: BaseError.#serializeEnvelopeField(name, context),
       message: BaseError.#serializeEnvelopeField(message, context),
-      stack: BaseError.#serializeEnvelopeField(stack, context),
+      stack: BaseError.#serializeEnvelopeField(
+        readStack(cause, name, message),
+        context,
+      ),
     };
 
     // Preserve StructuredError fields if present (duck-typing). This is the
@@ -837,11 +833,8 @@ export class BaseError<T extends string> extends Error {
     // by `instanceof AggregateError`, so cross-realm and custom fan-out
     // errors serialize too. Without this the branch failures that produced
     // the error never reach the log at all.
-    const aggregate = readCappedMembers(cause);
-    if (
-      aggregate !== undefined &&
-      aggregate.members.length + aggregate.dropped > 0
-    ) {
+    const aggregate = readMembers(cause, MAX_AGGREGATE_MEMBERS);
+    if (aggregate !== undefined && aggregate.total > 0) {
       serialized.errors = this.#serializeAggregate(
         aggregate,
         walk,
@@ -891,15 +884,16 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Serializes an aggregate's members, which the reader capped at the width
-   * cap; the tail marker states the members past the cap. Members share the enclosing cause walk. So the serializer
+   * Serializes an aggregate's members. The reader already capped them at
+   * {@link MAX_AGGREGATE_MEMBERS}; the count it reports marks the
+   * remainder. Members share the enclosing cause walk. So the serializer
    * writes an error that more than one branch reaches at its first
    * occurrence, and marks it as shared afterwards. A self-referencing
    * aggregate ends in the circular marker. `depth` is the cause hop of the
    * aggregate that holds the members.
    */
   /*#__PURE__*/ #serializeAggregate(
-    aggregate: CappedMembers,
+    aggregate: AggregateMembers,
     walk: CauseWalk,
     depth: number,
     context: LogBuildContext,
@@ -912,8 +906,10 @@ export class BaseError<T extends string> extends Error {
       }
       serialized.push(this.#serializeCause(error, walk, depth, context));
     }
-    if (aggregate.dropped > 0) {
-      serialized.push(moreAggregatedErrorsMarker(aggregate.dropped));
+
+    const dropped = aggregate.total - serialized.length;
+    if (dropped > 0) {
+      serialized.push(moreAggregatedErrorsMarker(dropped));
     }
     return serialized;
   }

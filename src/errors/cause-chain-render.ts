@@ -8,8 +8,8 @@ import type { CauseWalk } from "./cause-walk.js";
 import {
   isObjectLike,
   readCause,
+  readMembers,
   readObjectTag,
-  readCappedMembers,
   readProperty,
 } from "./guarded-read.js";
 import { isNativeError } from "./native-error.js";
@@ -21,7 +21,11 @@ import {
   UNRENDERABLE_CAUSE_MARKER,
   moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
-import { MAX_CAUSE_DEPTH, MAX_LOG_NODES } from "./walker-bounds.js";
+import {
+  MAX_AGGREGATE_MEMBERS,
+  MAX_CAUSE_DEPTH,
+  MAX_LOG_NODES,
+} from "./walker-bounds.js";
 
 /**
  * The line of a node that the caller renders itself, such as a `BaseError`
@@ -93,12 +97,12 @@ function renderLine(
  * and holes included, so the budget bounds the output.
  *
  * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
- * at which its `cause` and its members land. The two differ only at the
+ * at which its `cause` and its members land. The two are equal only at the
  * root: the log serializer starts the root's `cause` and the root's members
- * at depth 0. Every cause node puts its links one level below itself. Both counters
- * mirror the cause serializer of `BaseError`. So for a chain of error
- * objects, `toString()` shows the same nodes as `toLogObject()` and cuts at
- * the same marker. Near the budget the two differ: the log also
+ * at depth 0. Every other node puts its links one level below itself. Both
+ * counters mirror the cause serializer of `BaseError`. So for a chain of
+ * error objects, `toString()` shows the same nodes as `toLogObject()` and
+ * cuts at the same marker. Near the budget the two differ: the log also
  * spends its allowance on data, and the render spends one unit per line.
  * For a plain-object cause, the serializer also copies its data fields and
  * cuts deep containers without a marker.
@@ -143,14 +147,13 @@ function renderChain(
         entered.push(current);
       }
 
-      const aggregate = readCappedMembers(current);
-      const shown = aggregate === undefined ? [] : aggregate.members;
-      const dropped = aggregate === undefined ? 0 : aggregate.dropped;
-      const total = shown.length + dropped;
+      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
+      const total = aggregate === undefined ? 0 : aggregate.total;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
       const node = `${renderNode(current, render.ownNodeLine)}${suffix}`;
       if (!renderLine(render, prefix, node)) return;
 
+      const shown = aggregate === undefined ? [] : aggregate.members;
       for (const member of shown) {
         // A hole reads as undefined. It keeps its slot, as in the log, so the
         // count on the node line matches the list.
@@ -171,8 +174,12 @@ function renderChain(
         if (render.cut) return;
       }
       if (
-        dropped > 0 &&
-        !renderLine(render, `${indent}  `, moreAggregatedErrorsMarker(dropped))
+        total > shown.length &&
+        !renderLine(
+          render,
+          `${indent}  `,
+          moreAggregatedErrorsMarker(total - shown.length),
+        )
       ) {
         return;
       }

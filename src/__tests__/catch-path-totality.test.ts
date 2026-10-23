@@ -22,6 +22,17 @@ import {
 } from "./hostile-values.fixture.js";
 import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
+/**
+ * Captures the stack of `error` again, as a framework can. On V8 that
+ * replaces the stack with an engine accessor that formats its header from
+ * `name` and `message` on the first read.
+ */
+function captureStackAgain(error: object): void {
+  const capture = (Error as { captureStackTrace?: (target: object) => void })
+    .captureStackTrace;
+  capture?.(error);
+}
+
 function wrap(cause: unknown): BaseError<"Outer"> {
   return new BaseError<"Outer">("outer failed", cause, { name: "Outer" });
 }
@@ -115,16 +126,27 @@ describe("totality in catch paths: an error whose name or message is an object",
     expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
   });
 
-  it("keeps the stack of a BaseError cause whose message is an array-like, within the log budget", () => {
+  it("omits the stack of a BaseError cause whose message is an array-like, also after a new capture", () => {
     const wide = wideArrayLike();
     const inner = new BaseError<"Inner">("inner");
     Object.defineProperty(inner, "message", { value: wide.value });
+    captureStackAgain(inner);
 
     const log = wrap(inner).toLogObject();
 
-    expect((log.cause as Record<string, unknown>).stack).toMatch(
-      /^BaseError: \[object Array\]\n/,
-    );
+    expect((log.cause as Record<string, unknown>).stack).toBeUndefined();
+    expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
+  });
+
+  it("omits the stack of a logged BaseError whose message is an array-like, also after a new capture", () => {
+    const wide = wideArrayLike();
+    const error = new BaseError<"Root">("root");
+    Object.defineProperty(error, "message", { value: wide.value });
+    captureStackAgain(error);
+
+    const log = error.toLogObject();
+
+    expect(log.stack).toBeUndefined();
     expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
   });
 
