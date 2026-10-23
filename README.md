@@ -2,30 +2,61 @@
 
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![npm](https://img.shields.io/npm/v/@shirudo/base-error?color=blue)](https://www.npmjs.com/package/@shirudo/base-error)
+[![JSR](https://jsr.io/badges/@shirudo/base-error)](https://jsr.io/@shirudo/base-error)
 [![Bundle Size](https://img.shields.io/bundlejs/size/%40shirudo%2Fbase-error)](https://bundlejs.com/?q=%40shirudo%2Fbase-error)
 [![Tests](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml/badge.svg)](https://github.com/shi-rudo/base-error-ts/actions/workflows/tests.yml)
 
-A base error class for TypeScript. It runs on Node.js, on modern browsers, and
-on edge runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge). The package
-has no runtime dependencies.
+**Structured errors for TypeScript: the full error for your logs, a safe answer
+for your clients.**
 
-The library separates two audiences: your logs and your clients. An error that
-you throw carries the full technical truth for your logs: message, stack,
-cause chain, and details. None of that reaches a client by accident, because
-the core cannot serialize an error for a client at all. When a client must see
-an error, the separate public-error pipeline builds the response from an
-allowlist that you registered. That response is a safe view, an optional
-localized message, and an RFC 9457 body.
+`@shirudo/base-error` gives each error a stable `code`, a `category` and a
+`retryable` flag. Your logs get the whole error, with every cause. A client gets
+only the answer that you registered for that code.
 
-## The problem
+The package runs on Node.js, Bun, Deno, in browsers and on edge runtimes such
+as Cloudflare Workers. It has no runtime dependencies.
 
-A leaked exception message, stack trace, or database detail in an API response
-is a recognized vulnerability
-([CWE-209](https://cwe.mitre.org/data/definitions/209.html)). The usual generic
-error handler must choose between two bad answers: it serializes the error and
-leaks, or it flattens every failure into a blank 500. This library removes the
-choice. The error that you throw keeps its full technical truth for the log,
-and the client response comes only from an allowlist that you registered.
+## Why
+
+A plain `Error` carries only text. In a service, that causes three problems:
+
+- **You cannot handle it safely.** Code that tests
+  `err.message.includes("not found")` breaks when somebody changes the text.
+- **Your logs lose it.** `JSON.stringify(new Error("failed"))` gives `{}`. A
+  logger that serializes an error this way loses the message, the stack and
+  every cause.
+- **Your clients can see too much.** An error handler that sends the error to
+  the client also sends its stack and its database message. That is a known
+  vulnerability
+  ([CWE-209](https://cwe.mitre.org/data/definitions/209.html)).
+
+This library removes the three problems:
+
+| Problem             | With `@shirudo/base-error`                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Handling by text    | You match on a typed `code`. The compiler tells you when a code has no handler.                                                   |
+| Errors lost in logs | `toLogObject()` writes the message, the stack, every cause and the details. You can mask fields that hold personal data.          |
+| Leaks to clients    | The core cannot serialize an error for a client. A separate pipeline builds the response only from the codes that you registered. |
+
+## How it works
+
+An error that you throw takes one of two paths:
+
+```text
+                      ┌─▶ toLogObject() ──────────────────▶ your logger
+                      │     message, stack, causes, details
+throw StructuredError ┤
+                      │
+                      └─▶ project() ─▶ toProblem() ───────▶ HTTP response
+                            registered public codes only (RFC 9457)
+```
+
+Each path has its own import:
+
+| Import                             | Use it to                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------ |
+| `@shirudo/base-error`              | Throw, match, inspect and log errors.                                    |
+| `@shirudo/base-error/public-error` | Build the response for a client. This is the only path to client output. |
 
 ## Installation
 
@@ -33,48 +64,73 @@ and the client response comes only from an allowlist that you registered.
 npm install @shirudo/base-error
 ```
 
+The package is also on JSR: `deno add jsr:@shirudo/base-error`, or
+`npx jsr add @shirudo/base-error`.
+
 ## Quick start
 
-### Throw and log
+### 1. Define an error
 
 ```ts
-import { StructuredError, matchError } from "@shirudo/base-error";
+import { StructuredError } from "@shirudo/base-error";
 
-class UserNotFoundError extends StructuredError<"USER_NOT_FOUND", "NOT_FOUND"> {
-  constructor(userId: string) {
+export class UserNotFoundError extends StructuredError<
+  "USER_NOT_FOUND",
+  "NOT_FOUND"
+> {
+  constructor(userId: string, cause?: unknown) {
     super({
       code: "USER_NOT_FOUND",
       category: "NOT_FOUND",
       retryable: false,
-      message: `User ${userId} not found in primary db`, // technical (for logs)
+      message: `No user ${userId} in the primary database`, // for the log
+      details: { userId },
+      cause,
     });
   }
 }
-
-const err = new UserNotFoundError("123");
-
-// The technical truth goes to your logger:
-logger.error(err.toLogObject()); // message, stack, cause, details
-
-// Exhaustive handling on the stable code:
-const status = matchError(err, {
-  USER_NOT_FOUND: () => 404,
-  _: () => 500,
-});
 ```
 
-For additional log fields, override `buildOwnLogFields()` and use the exported
-`OwnLogFields` return type. These fields survive when the error becomes a cause.
-For an optional field, return `requestId: this.requestId ?? null`, or omit its key.
+The `message` is technical text for the log. A client never sees it.
 
-9.0.0 removes `buildLogObject()`.
-TypeScript rejects old overrides and `super.buildLogObject()` calls.
-The library no longer calls JavaScript methods with that name.
-Move log layout changes to the consumer's logging adapter after redaction.
-See the [log field contract](docs/guide/base-error.md#adding-your-own-log-fields)
-and [migration guide](MIGRATION.md#log-field-hooks).
+### 2. Log and handle it
 
-### Answer the client
+```ts
+import { matchError } from "@shirudo/base-error";
+
+const error = new UserNotFoundError("123", dbError);
+
+logger.error(error.toLogObject());
+// { name, message, timestamp, timestampIso, stack,
+//   cause: { name: "Error", message: "connection reset by peer", ... },
+//   code: "USER_NOT_FOUND", category: "NOT_FOUND", retryable: false,
+//   details: { userId: "123" } }
+
+const user = matchError(error, {
+  USER_NOT_FOUND: () => null, // a missing user is "no result" here
+  _: (other) => {
+    throw other;
+  },
+}); // null
+```
+
+`toLogObject()` copies the error into plain data. `JSON.stringify(error)` gives
+the same result, so a logger that serializes the error gets the full content.
+If a caught value has the type `unknown`, `toStructuredError(value)` turns it
+into a `StructuredError`.
+
+### 3. Mask personal data in the log (optional)
+
+```ts
+error.redact(["userId"]);
+// Every log of this error now writes details.userId as "[REDACTED]".
+```
+
+The policy stays on the error. It also applies when another error logs this
+one as its cause. `redactAllow` works the other way: it masks every data field
+that you did not list.
+
+### 4. Answer the client
 
 ```ts
 import {
@@ -83,7 +139,7 @@ import {
   toProblem,
 } from "@shirudo/base-error/public-error";
 
-// Register once, at startup. Only what you register can reach a client.
+// Register once, at startup. Only a registered code reaches a client.
 const publicErrors = definePublicErrors({
   fallback: { publicCode: "internal_error", status: 500 },
 }).registerByCode("USER_NOT_FOUND", {
@@ -91,70 +147,76 @@ const publicErrors = definePublicErrors({
   status: 404,
 });
 
-// In the error handler at your HTTP edge:
-const view = project(publicErrors, err); // total: any input gives a safe view
-const { status, body } = toProblem(publicErrors, view);
-// status: 404
-// body:   { "status": 404, "code": "user_not_found" }
-// The technical message, the stack, and the details never cross.
+// In the error handler of your HTTP server:
+const view = project(publicErrors, error);
+const { status, headers, body } = toProblem(publicErrors, view);
+// status:  404
+// headers: { "content-type": "application/problem+json" }
+// body:    { "status": 404, "code": "user_not_found" }
 ```
 
-An unregistered error degrades to the fallback (`500`, `internal_error`)
-instead of a leak. The optional `localize` stage adds an end-user message per
-locale, and a descriptor can project vetted fields into the response. Read the
-[public-error guide](docs/guide/public-error.md).
-
-## Two entry points
-
-| Import                             | What it holds                                                                     |
-| ---------------------------------- | --------------------------------------------------------------------------------- |
-| `@shirudo/base-error`              | The core: error classes, matching, guards, cause-chain traversal, redaction.      |
-| `@shirudo/base-error/public-error` | The boundary: the pipeline that builds the client response. The only client path. |
+The technical message, the stack and the details do not cross. An error that
+you did not register gets the fallback: `500` with the code `internal_error`.
+The optional `localize` stage adds a message for the end user in the language
+of the request.
 
 ## Features
 
-**What you throw**
+**Define errors**
 
-- 🧱 **Structured errors**: Each error has a typed `code`, a `category`, a `retryable` flag, and `details`.
-- 🧵 **Fan-out errors**: `StructuredAggregateError` collects many failures in one error. The cause-chain helpers walk the members with `{ aggregates: true }`.
-- ✅ **Validation aggregate**: You can collect field issues into one error. The issues are compatible with Standard Schema.
-- 🌐 **Cross-platform**: The package runs on Node.js, on browsers, and on edge runtimes. It keeps rich stack traces and the cause chain.
+- `StructuredError` carries a typed `code`, a `category`, a `retryable` flag and
+  `details`.
+- `defineErrors` defines many codes in one place, with typed factories and
+  metadata per code.
+- `StructuredAggregateError` collects many failures in one error, for example
+  from `Promise.allSettled`.
+- `ValidationError` collects field issues. The issue format is compatible with
+  Standard Schema, and `publicIssues()` gives the subset that is safe for a
+  client.
 
-**How you handle**
+**Handle errors**
 
-- 🎯 **Exhaustive `matchError`**: The compiler checks the dispatch on `code`.
-- 🗂️ **Exhaustive class sets**: A `defineErrorClassSet` definition gives a complete and precisely typed handler table. You can use one definition many times.
-- 🧩 **Open-world `matchThrown`**: A fluent matcher accepts constructors and guards for any caught value.
-- 🧭 **General error guards**: You can narrow native errors, Node.js-style errors, and custom errors without a cast.
-- 📒 **Error catalog**: `defineErrors` gives namespaced factories, immutable metadata, provenance guards, and redaction for the catalog.
+- `matchError` dispatches on `code`. The compiler makes sure that every code
+  has a handler.
+- `defineErrorClassSet` does the same for a set of error classes.
+- `matchThrown` matches any caught value by class or by guard.
+- Guards such as `isError`, `isStructuredError`, `hasErrorCode` and
+  `isRetryable` narrow a caught value without a cast. They also work for an
+  error from a worker or from a second copy of the package.
+- The cause-chain helpers (`getRootCause`, `findInCauseChain`,
+  `isChainRetryable` and more) follow the `cause` links, also into the members
+  of an `AggregateError`.
 
-**What the client sees**
+**Log errors**
 
-- 🔒 **Safe by default**: The core has no public serializer. Only the explicit allowlist of the public-error pipeline makes client output.
-- 🌍 **Public error pipeline**: `@shirudo/base-error/public-error` turns an error into a curated view, an optional localized variant, and an RFC 9457 `application/problem+json` body. One descriptor per public code controls all three.
+- `toLogObject()` writes the complete error as plain JSON data: the message,
+  the stack, every cause, the members of an aggregate, and the details.
+- `redact`, `redactAllow`, `partialMask` and `redactWith` mask personal data in
+  the log.
+- `StructuredError.fromJSON` rebuilds a typed error from a log or from a worker
+  message. `structuredClone` drops the members of an `AggregateError`, but this
+  round trip keeps them.
 
-**What you log**
+**Answer clients**
 
-- 🛡️ **PII redaction**: `redact`, `redactAllow` and `partialMask` add sticky redaction to the log path. This redaction is opt-in.
-- 🔁 **Wire round-trip**: `toLogObject` writes an error, and `fromJSON` rebuilds it in the same context, also from a stored log. Both keep the members of an `AggregateError`, which `structuredClone` drops.
+- The public-error pipeline turns an error into a safe view (`project`), adds a
+  localized message (`localize`) and builds an RFC 9457 body (`toProblem`).
+- One registration per public code controls the status, the type, the message
+  and the details that a client can see.
 
-## Main types
+**Safe in a `catch` block**
 
-| Type                       | Layer    | What it is                                                                                          |
-| -------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
-| `BaseError`                | Core     | The base error for every runtime. It keeps the `cause` chain, a rich stack, and timestamps.         |
-| `StructuredError`          | Core     | The technical error that you **throw** and log. It adds `code`, `category`, `retryable`, `details`. |
-| `StructuredAggregateError` | Core     | A `StructuredError` that collects many failures in `errors`.                                        |
-| `PublicError`              | Boundary | The safe and **message-free** view of an error. This view crosses to the client.                    |
-| `LocalizedPublicError`     | Boundary | A `PublicError` with a `message` and a `locale`. The backend makes it only when it localizes.       |
-| `ProblemDetails`           | Boundary | The RFC 9457 `application/problem+json` body for HTTP.                                              |
+- No function on the logging, rendering or traversal path throws. A getter that
+  throws, a revoked Proxy or a cyclic cause chain costs only the affected
+  value. The log shows a marker there, or leaves the field out.
+- The work stays bounded for any value that code throws, also for very deep or
+  very wide error graphs.
 
-You throw and log a **Core** type. The three **Boundary** types are not
-alternatives. They are the shapes that one error takes in order on its way out.
-First, `project` curates the error. Then `localize` can add a message. Last,
-`toProblem` maps the result to RFC 9457. The subpath
-`@shirudo/base-error/public-error` drives this flow from one descriptor per
-public code.
+## When to use it
+
+The library fits a service or an API that has more than a few error cases,
+writes structured logs, or answers HTTP clients. For a small script, a plain
+`Error` is enough.
 
 ## Documentation
 
@@ -190,12 +252,19 @@ To read it locally, run `pnpm docs:dev`.
 
 ## Requirements
 
-- Node.js 24 or a later version. Modern browsers and edge runtimes work too.
+- Node.js 24 or a later version. Bun, Deno, modern browsers and edge runtimes
+  work too.
 - TypeScript 5.0 or a later version, with `strict` mode, for full type safety.
 - `lib` ES2020 or a later version.
 - Module resolution `node16`, `nodenext` or `bundler`. `node10` works with
-  TypeScript 5 and 6, and TypeScript 7 removed it.
-- The package ships ESM, CommonJS, and type declarations.
+  TypeScript 5 and 6. TypeScript 7 removed it.
+- The package ships ESM, CommonJS and type declarations.
+
+## Upgrade from 8.x
+
+Version 9 changes the log output and some APIs. For example, it removes
+`buildLogObject()` in favor of `buildOwnLogFields()`. Read the
+[migration guide](MIGRATION.md#v8-to-v9) before you upgrade.
 
 ## License
 
