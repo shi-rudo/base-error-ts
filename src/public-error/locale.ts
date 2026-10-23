@@ -18,10 +18,10 @@ export function canonicalizeLocale(tag: string): string | undefined {
 
 /**
  * The RFC 4647 lookup fallback chain for a canonical tag: the tag itself, then
- * progressively truncated from the right one subtag at a time. Whenever
- * truncation would leave a single-character singleton subtag (a `u` extension,
- * an `x` private-use marker, and so on) as the trailing subtag, that singleton
- * is removed as well before the next candidate is yielded.
+ * progressively truncated from the right one subtag at a time. A singleton
+ * subtag has a single character (a `u` extension, an `x` private-use marker,
+ * and so on). If a truncation leaves a singleton as the trailing subtag, the
+ * chain drops that singleton as well before it yields the next candidate.
  *
  * `zh-Hant-TW` -> `zh-Hant` -> `zh`
  * `de-DE-u-co-phonebk` -> `de-DE-u-co` -> `de-DE` -> `de`

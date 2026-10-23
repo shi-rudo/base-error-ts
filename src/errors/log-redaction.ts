@@ -1,7 +1,7 @@
 /**
  * The built-in redaction policies over a log object: the deny-list of
  * `redact` and the allow-list of `redactAllow`. The log build copies every
- * value that it reads, and the output of a cause's custom redactor and each
+ * value that it reads. The output of a cause's custom redactor and each
  * mask result pass through the same copier. The walk therefore meets plain
  * data only: plain objects, arrays and JSON primitives, as a finite tree
  * within the log budget. It needs no bounds, guards or markers of its own
@@ -130,12 +130,13 @@ function redactionWalk(
         items.push(redactionWalk(item, decide, region, headers, key));
         continue;
       }
-      // A leaf inside an array has no key of its own, so it is judged under the
-      // key of the array that holds it, in every region. Without this an
-      // allow-list keeps every scalar element, which is the opposite of what
-      // it promises: an aggregate's members are arbitrary values (a
-      // `Promise.allSettled` reason need not be an `Error`), and `errors` is
-      // not an envelope key, so a string member is data like any other.
+      // A leaf inside an array has no key of its own. So the walk judges it
+      // under the key of the array that holds it, in every region. Without
+      // this rule, an allow-list keeps every scalar element, which is the
+      // opposite of what it promises. An aggregate's members are arbitrary
+      // values (a `Promise.allSettled` reason need not be an `Error`).
+      // `errors` is not an envelope key, so a string member is data like any
+      // other.
       const decision =
         region === "cause" && isCauseSpineMarker(item)
           ? RECURSE
@@ -144,11 +145,11 @@ function redactionWalk(
     }
     return items;
   }
-  // Null-prototype target so an own `__proto__`/`constructor` key from
+  // Null-prototype target, so an own `__proto__`/`constructor` key from
   // untrusted details is copied as ordinary data (and masked/recursed like
-  // any other key) instead of routing through a prototype setter. Matches
-  // the null-prototype clones used by the public-error catalog and transport
-  // stage. (OWASP Prototype Pollution Prevention.)
+  // any other key). Such a key does not route through a prototype setter.
+  // Matches the null-prototype clones used by the public-error catalog and
+  // transport stage. (OWASP Prototype Pollution Prevention.)
   const out = Object.create(null) as Record<string, unknown>;
   const header: RedactionStackHeader | undefined =
     region !== "data" && headers !== undefined ? { target: out } : undefined;
@@ -188,13 +189,14 @@ function redactionWalk(
 }
 
 /**
- * The `stack` of one node whose name or message is deny-listed. A header
- * that is the node's own `name: message` (or the bare `name` that V8 writes
- * for an empty message) is rebuilt from the masked fields, and the frames after
- * it stay. Any other stack goes to the mask as a whole, under the key
- * `stack`, because the library cannot prove that the denied text is absent
- * from it: a foreign error can carry a header from an earlier name or
- * message, and some engines write no header at all.
+ * The `stack` of one node whose name or message is deny-listed. The node's
+ * own header is `name: message`, or the bare `name` that V8 writes for an
+ * empty message. If the stack starts with that header, the function rebuilds
+ * it from the masked fields, and the frames after it stay. Any other stack
+ * goes to the mask as a whole, under the key `stack`. The library cannot
+ * prove that the denied text is absent from such a stack. A foreign error can
+ * carry a header from an earlier name or message, and some engines write no
+ * header at all.
  */
 function maskStackHeader(
   stack: string,

@@ -65,5 +65,6 @@ scrubbed. See [Observability & logging](./observability).
 ## "But I need the full error for Sentry"
 
 You do, and you get it on the log path: `toLogObject()` keeps the full,
-(optionally redacted) error. The client path is a separate concern handled by the
-presenter. See [Observability & logging](./observability).
+(optionally redacted) error. See [Observability & logging](./observability).
+The client path is a separate concern: the `public-error` pipeline builds the
+client payload. See [Public error pipeline](./public-error).

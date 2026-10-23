@@ -207,3 +207,78 @@ describe("log data replaces only repeated ancestor references", () => {
     expect(laterReads).toBe(0);
   });
 });
+
+/** An object with `width` keys whose values all return to the object. */
+function wideSelfReference(width: number): {
+  value: Log;
+  ownKeysCalls: () => number;
+} {
+  let calls = 0;
+  const target: Log = {};
+  const value = new Proxy(target, {
+    ownKeys(inner) {
+      calls++;
+      return Reflect.ownKeys(inner);
+    },
+  });
+  for (let index = 0; index < width; index++) target[`k${index}`] = value;
+  return { value, ownKeysCalls: () => calls };
+}
+
+describe("the circular-object marker", () => {
+  it("lists the keys of a repeated ancestor once, however often it repeats", () => {
+    const wide = wideSelfReference(200);
+
+    const log = new DataError({ root: wide.value }).toLogObject();
+
+    const root = log.root as Log;
+    expect(root.k0).toBe(
+      "[Circular Object with keys: [k0, k1, k2, k3, k4]...]",
+    );
+    expect(root.k199).toBe(root.k0);
+    expect(wide.ownKeysCalls()).toBeLessThanOrEqual(2);
+  });
+
+  it("adds the ellipsis when a hidden key precedes the named keys", () => {
+    const graph: Log = {};
+    Object.defineProperty(graph, "hidden", { value: 1, enumerable: false });
+    for (const key of ["a", "b", "c", "d", "e", "f"]) graph[key] = 1;
+    graph.self = graph;
+
+    const log = new DataError({ graph }).toLogObject();
+
+    expect((log.graph as Log).self).toBe(
+      "[Circular Object with keys: [a, b, c, d, e]...]",
+    );
+  });
+
+  it("names only the type of a repeated ancestor whose keys cannot be read", () => {
+    class Registry {}
+    let reads = 0;
+    const target = new Registry() as unknown as Log;
+    const registry = new Proxy(target, {
+      ownKeys(inner) {
+        reads++;
+        if (reads > 1) throw new Error("keys unavailable");
+        return Reflect.ownKeys(inner);
+      },
+    });
+    target.self = registry;
+
+    const log = new DataError({ registry }).toLogObject();
+
+    expect((log.registry as Log).self).toBe("[Circular Registry]");
+  });
+
+  it("takes the type from a constructor function only, never from data under a constructor key", () => {
+    const data: Log = { constructor: { name: "hunter2" } };
+    data.self = data;
+
+    const log = new DataError({ data }).redact(["name"]).toLogObject();
+
+    expect((log.data as Log).self).toBe(
+      "[Circular Object with keys: [constructor, self]]",
+    );
+    expect(JSON.stringify(log)).not.toContain("hunter2");
+  });
+});

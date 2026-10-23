@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BaseError } from "../index.js";
+import { BaseError, StructuredAggregateError } from "../index.js";
 import { MAX_LOG_SIZE_MARKER } from "../errors/serializer-markers.js";
 import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
@@ -101,6 +101,27 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
     // The member itself is one node of the spine; its causes are the rest.
     expect(memberCauses).toHaveLength(spine.nodes - 1);
     expect(spine.terminal).toBe(DEPTH_MARKER);
+  });
+
+  it("cuts a chain under a member of the root at the same node as under its cause", () => {
+    const rootWithMember = (length: number) =>
+      new StructuredAggregateError({
+        code: "FAN_OUT",
+        category: "INTERNAL",
+        retryable: false,
+        message: "root",
+        errors: [chainOf(length)],
+      });
+    const fits = rootWithMember(100);
+    const cut = rootWithMember(101);
+
+    const fitsSpine = walkLogSpine((fits.toLogObject().errors as unknown[])[0]);
+    const cutSpine = walkLogSpine((cut.toLogObject().errors as unknown[])[0]);
+
+    expect(fits.toString()).not.toContain(DEPTH_MARKER);
+    expect(fitsSpine).toEqual({ nodes: 100, terminal: undefined });
+    expect(cut.toString()).toContain(`Caused by: ${DEPTH_MARKER}`);
+    expect(cutSpine).toEqual({ nodes: 100, terminal: DEPTH_MARKER });
   });
 
   it("renders a cycle shorter than the cap as the circular marker, never the depth marker", () => {

@@ -19,13 +19,15 @@ export type LocalizedMessageSetOptions = {
 /**
  * An immutable, canonicalized set of localized messages keyed by BCP 47 locale.
  *
- * Construction enforces the write-side invariants: every key is canonicalized
- * with `Intl.getCanonicalLocales` (invalid tags throw), keys that collide after
- * canonicalization throw, every message must contain at least one non-whitespace
- * character, and an entry for the (canonical) `baseLocale` must exist. Lookups
- * are exact, canonical matches with no parent fallback: walking up a tag
- * (`de-DE` to `de`) and choosing between preferences is the resolver's job, not
- * the set's. On the read side an invalid requested tag is a miss, never a throw.
+ * The constructor enforces the write-side invariants. It canonicalizes every
+ * key with `Intl.getCanonicalLocales`, and an invalid tag throws. Two keys that
+ * collide after canonicalization throw. Every message must contain at least one
+ * non-whitespace character. An entry for the (canonical) `baseLocale` must exist.
+ *
+ * A lookup is an exact, canonical match with no parent fallback. Walking up a
+ * tag (`de-DE` to `de`) and choosing between preferences is the job of the
+ * resolver, not of the set. On the read side an invalid requested tag is a
+ * miss, never a throw.
  */
 export class LocalizedMessageSet {
   /** Canonical BCP 47 tag of the guaranteed-fallback locale. */

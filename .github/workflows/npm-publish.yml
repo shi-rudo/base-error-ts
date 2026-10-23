@@ -29,14 +29,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Use Node.js 22.x
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v6
         with:
-          node-version: 22.x
+          node-version: 24.x
           registry-url: https://registry.npmjs.org
 
-      # Trusted Publishing needs npm 11.5.1 or later, which is newer than the
-      # npm bundled with Node 22.
+      # Trusted Publishing needs npm 11.5.1 or later. The step does not rely
+      # on the npm that the Node.js release bundles.
       - name: Use a publish-capable npm
         run: npm install -g npm@latest
 

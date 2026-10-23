@@ -162,9 +162,9 @@ export class ValidationError<
     }
     const path = readProperty(issue, "path");
     if (Array.isArray(path)) {
-      // Fresh copy with object segments narrowed to { key }: a validator may
+      // Fresh copy with object segments narrowed to { key }. A validator can
       // attach internals to segment objects (Valibot puts the parent input and
-      // the rejected value there), and the whitelist must not carry them (or a
+      // the rejected value there). The whitelist must not carry them (or a
       // shared array reference) to the wire.
       const segments = path.map((segment: unknown) =>
         typeof segment === "object" && segment !== null

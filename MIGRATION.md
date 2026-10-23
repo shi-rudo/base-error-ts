@@ -4,10 +4,24 @@
 
 v9 applies a threat model to the error model (proposal 0017). The log copies
 every value that it reads, root `details` included, and redaction walks that
-copy. `publicIssues()` leaves the validator message out, the error stores its
-time once, and `buildOwnLogFields()` replaces `buildLogObject()`. A `null`
-cause ends a cause chain, and a shared cause reads `[Shared cause]` instead of
-`[Circular cause chain]`. Each section names one change and its migration.
+copy. `toString()` renders an object cause by its tag. `publicIssues()` leaves
+the validator message out, the error stores its time once, and
+`buildOwnLogFields()` replaces `buildLogObject()`. A `null` cause ends a cause
+chain, and a shared cause reads `[Shared cause]` instead of
+`[Circular cause chain]`. The package requires Node.js 24 or later. Each
+section names one change and its migration.
+
+### Node.js 24 or later
+
+The package requires Node.js 24 or a later version (`engines.node` is
+`>=24`). Node.js 20 reached its end of life in April 2026, and CI tests on
+Node.js 24 and 26.
+
+- On Node.js 20 or 22, a package manager that enforces `engines` refuses the
+  install, for example pnpm with `engine-strict`. Upgrade the runtime to
+  Node.js 24.
+- Browsers and edge runtimes are not affected. The package still targets
+  ES2020.
 
 ### Redaction walks plain data
 
@@ -146,6 +160,20 @@ repeated upstream failure across the branches of a fan-out, match
 
 A chain that returns to the root now ends in `[Circular cause chain]` one hop
 earlier in the log. The log no longer writes the root a second time.
+
+### `toString()` renders an object cause by its tag
+
+`toString()` no longer calls the conversion of a cause that is neither an
+error nor error-shaped. An object renders as its tag: `throw ["a", "b"]`
+renders as `[object Array]`, where it rendered `a,b`. A `Date`, a `URL` or an
+object with its own `toString` renders as `[object Date]`, `[object URL]` or
+`[object Object]`. A non-string `name` or `message` of an error renders the
+same way. A primitive cause renders as before.
+
+If a log query or a test matched the text of such a cause in `toString()`,
+read the cause from the log object instead. The log object keeps its data. For
+a readable line, throw an error with a message, or wrap the value in one:
+`new BaseError(String(value), value)`.
 
 ### Log field hooks
 

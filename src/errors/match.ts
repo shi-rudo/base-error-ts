@@ -4,9 +4,9 @@ import type { StructuredError } from "./StructuredError.js";
  * Narrows a member of an error union to a single `code`.
  *
  * When `E` is a real union of structured error types (e.g. produced by a
- * catalog), this resolves to the precise member, so `details` is the per-code
- * type. When `E` is a single `StructuredError<"A" | "B">` there is nothing to
- * narrow, so it falls back to `E` instead of `never`.
+ * catalog), this resolves to the precise member. Then `details` is the
+ * per-code type. When `E` is a single `StructuredError<"A" | "B">`, there is
+ * nothing to narrow, so it falls back to `E` instead of `never`.
  */
 type CaseArg<E extends StructuredError<string, string>, K extends string> = [
   Extract<E, { code: K }>,
@@ -47,14 +47,14 @@ type Exhaustive<
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
  *
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
- * error types and you omit a handler, it is a **compile error** (unless you
- * provide a `_` catch-all). Each handler receives the error narrowed to its
- * case, so `details` is the precise per-code type, and the return type is the
- * union of the handler return types.
+ * error types, an omitted handler is a **compile error** (unless you provide
+ * a `_` catch-all). Each handler receives the error narrowed to its case, so
+ * `details` is the precise per-code type. The return type is the union of the
+ * handler return types.
  *
- * Errors caught as `unknown` must be narrowed first (e.g. with
- * `isStructuredError`) and annotated as the expected union; exhaustiveness
- * cannot be derived from `unknown`.
+ * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
+ * and annotate it as the expected union. The compiler cannot derive
+ * exhaustiveness from `unknown`.
  *
  * @param error - The structured error to match on
  * @param cases - A handler per `code`, optionally with a `_` catch-all
@@ -85,9 +85,10 @@ export function matchError<
   const C extends Cases<E>,
 >(error: E, cases: Exhaustive<E, C>): Result<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
-  // Own-property lookup only: a `code` that collides with an `Object.prototype`
+  // Own-property lookup only. A `code` that collides with an `Object.prototype`
   // member (e.g. "toString", "valueOf", "hasOwnProperty") must route to its
-  // explicit case or the `_` catch-all, never to an inherited method.
+  // explicit case or the `_` catch-all. It must never route to an inherited
+  // method.
   const ownHandler = Object.prototype.hasOwnProperty.call(table, error.code)
     ? table[error.code]
     : undefined;

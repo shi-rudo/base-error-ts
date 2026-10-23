@@ -54,7 +54,7 @@ describe("a cause from another realm", () => {
         .cause as Record<string, unknown>;
       expect(cause.message).toBe("foreign msg");
 
-      // The toString fallback branch (Node 20 and 22 have no Error.isError).
+      // The toString fallback branch (runtimes without Error.isError).
       delete ErrorCtor.isError;
       cause = new BaseError("outer", tagged()).toLogObject().cause as Record<
         string,
@@ -107,5 +107,20 @@ describe("a list from another realm on the wire", () => {
 
     expect(result.body.details).toEqual({ list: ["o-1", "o-2"] });
     expect(result.outcome.omitted).toEqual([]);
+  });
+});
+
+describe("a wrapper from another realm in log data", () => {
+  it("unboxes a tagged Number subclass by its slot, as JSON does", () => {
+    const money = vm.runInNewContext(
+      'class Money extends Number { get [Symbol.toStringTag]() { return "Money"; } } new Money(12)',
+    ) as object;
+    const error = new BaseError("outer");
+    Object.defineProperty(error, "details", { value: { price: money } });
+
+    const log = error.toLogObject();
+
+    expect(JSON.stringify(money)).toBe("12");
+    expect(log.details).toEqual({ price: 12 });
   });
 });

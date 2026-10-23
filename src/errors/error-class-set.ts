@@ -64,9 +64,9 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
     throw new Error("defineErrorClassSet: constructors must be unique");
   }
 
-  // match() is first-match-wins in key order, so a base class listed before
-  // one of its subclasses would silently make the subclass handler
-  // unreachable; surface that as a definition error with the fix in the text.
+  // match() is first-match-wins in key order. A base class listed before one
+  // of its subclasses would silently make the subclass handler unreachable.
+  // This check surfaces that as a definition error with the fix in the text.
   for (let earlier = 0; earlier < constructors.length; earlier++) {
     for (let later = earlier + 1; later < constructors.length; later++) {
       const earlierClass = constructors[earlier] as ErrorClass;

@@ -190,7 +190,7 @@ To read it locally, run `pnpm docs:dev`.
 
 ## Requirements
 
-- Node.js 20 or a later version. Modern browsers and edge runtimes work too.
+- Node.js 24 or a later version. Modern browsers and edge runtimes work too.
 - TypeScript 5.0 or a later version, with `strict` mode, for full type safety.
 - `lib` ES2020 or a later version.
 - Module resolution `node16`, `nodenext` or `bundler`. `node10` works with

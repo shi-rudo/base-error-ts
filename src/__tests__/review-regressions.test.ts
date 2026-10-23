@@ -25,21 +25,16 @@ describe("review regressions", () => {
     });
     const log = new BaseError("root", inner).toLogObject();
     expect(log.cause).toMatchObject({
-      details: {
-        inner: {
-          name: "BaseError",
-          message: "inner message",
-          stack: expect.any(String),
-        },
-      },
+      details: { inner: { name: "BaseError", message: "inner message" } },
     });
+    const details = (log.cause as Log).details as Log;
+    expect(details.inner).not.toHaveProperty("stack");
   });
   it("applies the nested data error's sticky policy", () => {
-    const nested = new BaseError("private").redact(["message", "stack"]);
+    const nested = new BaseError("private").redact(["message"]);
     const log = new Fields({ payload: { nested } }).toLogObject();
-    expect(log.payload).toMatchObject({
-      nested: { message: "[REDACTED]", stack: "[REDACTED]" },
-    });
+    expect(log.payload).toMatchObject({ nested: { message: "[REDACTED]" } });
+    expect(JSON.stringify(log)).not.toContain("private");
   });
   it.each([{}, { foo: undefined }])(
     "keeps the envelope for an empty own-fields contribution %j",
@@ -242,4 +237,86 @@ it("does not let a wrapper's tag replace its JSON primitive value", () => {
   expect(new Fields({ data: { value } }).toLogObject().data).toEqual({
     value: 1,
   });
+});
+
+/** Counts the wrapper slot probes that the log copy runs on `target`. */
+function wrapperProbes(target: object, run: () => void): number {
+  let probes = 0;
+  const prototypes = [
+    Number.prototype,
+    String.prototype,
+    Boolean.prototype,
+    BigInt.prototype,
+  ] as unknown as { valueOf: (this: unknown) => unknown }[];
+  const originals = prototypes.map((prototype) => prototype.valueOf);
+  prototypes.forEach((prototype, index) => {
+    prototype.valueOf = function (this: unknown) {
+      if (this === target) probes++;
+      return originals[index]!.call(this);
+    };
+  });
+  try {
+    run();
+  } finally {
+    prototypes.forEach((prototype, index) => {
+      prototype.valueOf = originals[index]!;
+    });
+  }
+  return probes;
+}
+
+it.each([
+  ["Map", new Map([["k", 1]])],
+  ["Set", new Set(["k"])],
+])("does not probe a %s for a wrapper slot", (_name, value) => {
+  let log: Log = {};
+
+  const probes = wrapperProbes(value, () => {
+    log = new Fields({ data: { value } }).toLogObject();
+  });
+
+  expect(probes).toBe(0);
+  expect(log.data).toEqual({ value: {} });
+});
+
+it("unboxes a Number subclass that names its own tag", () => {
+  class Money extends Number {
+    get [Symbol.toStringTag](): string {
+      return "Money";
+    }
+  }
+
+  const log = new Fields({ data: { price: new Money(12) } }).toLogObject();
+
+  expect(log.data).toEqual({ price: 12 });
+});
+
+it("reads no prototype of a tagged Proxy whose chain returns to itself", () => {
+  let prototypeReads = 0;
+  const loop: object = new Proxy(
+    {},
+    {
+      get: (_target, key) => (key === Symbol.toStringTag ? "Loop" : undefined),
+      getPrototypeOf: () => {
+        prototypeReads++;
+        return loop;
+      },
+    },
+  );
+
+  new Fields({ data: { loop } }).toLogObject();
+
+  expect(prototypeReads).toBe(0);
+});
+
+it("still unboxes a reparented String wrapper with its own tag, as JSON does", () => {
+  const text = Object.setPrototypeOf(
+    Object.assign(new String("s"), { [Symbol.toStringTag]: "Text" }),
+    Object.prototype,
+  ) as object;
+
+  const log = new Fields({ data: { text } }).toLogObject();
+
+  expect(JSON.stringify(text)).toBe('"[object Text]"');
+  expect(log.data).toEqual({ text: "[object Text]" });
 });

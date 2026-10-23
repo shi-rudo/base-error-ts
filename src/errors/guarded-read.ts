@@ -2,9 +2,10 @@
  * Guarded reads of foreign error properties.
  *
  * The error model reads `cause`, `errors`, `code` and the like from values it
- * did not create, on paths that run inside `catch`: logging, traversal, and
- * string rendering. There a new exception destroys the original error, so a
- * throwing getter or Proxy trap is a real input, not a bug to surface.
+ * did not create. It reads them on paths that run inside `catch`: logging,
+ * traversal, and string rendering. There a new exception destroys the
+ * original error, so a throwing getter or Proxy trap is a real input, not a
+ * bug to surface.
  */
 
 /**
@@ -18,6 +19,30 @@ export function readProperty(value: unknown, key: string | symbol): unknown {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Reads `stack` of a foreign value only when its `name` and `message` are
+ * primitives. An engine formats a lazy stack on the first read, and the
+ * header converts `name` and `message` to text. For an array, that
+ * conversion joins every element up to its `length`, and no budget of the
+ * library reaches inside it.
+ */
+export function readStack(
+  value: unknown,
+  name: unknown,
+  message: unknown,
+): unknown {
+  return isObjectLike(name) || isObjectLike(message)
+    ? undefined
+    : readProperty(value, "stack");
+}
+
+/** Whether a conversion of `value` to text can run code of its own. */
+export function isObjectLike(value: unknown): boolean {
+  return (
+    (typeof value === "object" && value !== null) || typeof value === "function"
+  );
 }
 
 /** Distinguish a failed read from an undefined value at fail-closed boundaries. */
@@ -38,7 +63,7 @@ export function readPropertyResult(
 /**
  * Reads the `cause` link of a foreign value for a walk over the chain. A
  * nullish cause is no cause, as in .NET and Java and as the `??` operator reads
- * it, so the link reads as `undefined`, like a missing link or a throwing
+ * it. So the link reads as `undefined`, like a missing link or a throwing
  * getter. A serializer that copies the slot as data reads it with
  * {@link readProperty} instead.
  */
@@ -119,8 +144,8 @@ export function* readOwnEnumerableKeys(
 
 /**
  * The members of an aggregate, materialized. `members` holds at most the
- * requested number of them, and `total` is the count the aggregate reports,
- * so a consumer can mark the members it did not take.
+ * requested number of them. `total` is the count the aggregate reports, so a
+ * consumer can mark the members it did not take.
  */
 export type AggregateMembers = {
   readonly members: readonly unknown[];
@@ -128,15 +153,15 @@ export type AggregateMembers = {
 };
 
 /**
- * Reads the members of an aggregate by shape (an array-valued `errors`)
- * rather than by `instanceof AggregateError`, so a cross-realm or custom
- * fan-out error is handled too. Returns `undefined` when `errors` is not an
- * array, which includes a throwing getter and a revoked Proxy.
+ * Reads the members of an aggregate by shape (an array-valued `errors`), not
+ * by `instanceof AggregateError`. So the read also covers a cross-realm or
+ * custom fan-out error. Returns `undefined` when `errors` is not an array,
+ * which includes a throwing getter and a revoked Proxy.
  *
  * The result is a fresh, frozen copy of at most `limit` members, each read
- * through a guarded index read. The foreign array is never handed on: a
- * consumer that sliced or iterated it would run its index getters, its
- * `length` trap and its `Symbol.species` outside any guard. A `length` that
+ * through a guarded index read. This function never hands on the foreign
+ * array. A consumer that sliced or iterated it would run its index getters,
+ * its `length` trap and its `Symbol.species` outside any guard. A `length` that
  * is not a non-negative safe integer reads as zero members, and a member whose
  * read throws reads as `undefined`.
  */
@@ -204,14 +229,16 @@ export function readObjectTag(value: object): string | undefined {
   }
 }
 
-/** A diagnostic constructor name, including a callable constructor's name. */
+/**
+ * The name of the constructor function of a value, for a diagnostic. A
+ * `constructor` that is not a function is data, and its `name` is data
+ * text, so it gives no name.
+ */
 export function readConstructorName(value: object): string | undefined {
   const constructor = readProperty(value, "constructor");
+  if (typeof constructor !== "function") return undefined;
   try {
-    const name: unknown =
-      typeof constructor === "function"
-        ? Reflect.get(constructor, "name")
-        : readProperty(constructor, "name");
+    const name: unknown = Reflect.get(constructor, "name");
     return typeof name === "string" ? name : undefined;
   } catch {
     return undefined;

@@ -6,7 +6,7 @@ import {
   isNonEmptyString,
   isRetryAfterSeconds,
   PROBLEM_DETAILS_JSON,
-} from "../utils/problem-validation.js";
+} from "./problem-validation.js";
 import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
 import { copyFieldFaults } from "./field-faults.js";
 import { canonicalizeLocale } from "./locale.js";
@@ -42,9 +42,10 @@ type ReservedBodyField = (typeof RESERVED_BODY_FIELDS)[number];
 
 /**
  * Keys an extension may never carry: every reserved body member, plus the
- * pollution-vector names that would otherwise serialize onto the body and revive
- * as `__proto__`/`constructor`/`prototype` own keys on a non-hardened downstream
- * `JSON.parse`. The body is null-prototype, so this is defense in depth.
+ * pollution-vector names. Without this set, those names serialize onto the
+ * body, and a non-hardened downstream `JSON.parse` revives them as
+ * `__proto__`/`constructor`/`prototype` own keys. The body is null-prototype,
+ * so this is defense in depth.
  */
 const FORBIDDEN_EXTENSION_KEYS: ReadonlySet<string> = new Set<string>([
   ...RESERVED_BODY_FIELDS,
@@ -72,9 +73,10 @@ type StringKeyedExtensionShape<TExtensions extends object> =
 
 /**
  * Per-occurrence members added while mapping one view to a problem. `extensions`
- * are additional top-level body members; they are compile-time constrained to be
- * JSON-safe, string-keyed, and free of reserved field names, and re-validated at
- * runtime (a non-JSON-safe or colliding set drops to `outcome.omitted`).
+ * are additional top-level body members. The type constrains them at compile
+ * time to be JSON-safe, string-keyed, and free of reserved field names.
+ * `toProblem` validates them again at runtime: a non-JSON-safe or colliding set
+ * drops to `outcome.omitted`.
  */
 export type ToProblemContext<
   TExtensions extends object = Record<never, never>,
@@ -153,11 +155,12 @@ export type ProblemDetailsResult<
 
 /**
  * Stage 3: transport. Maps a (possibly localized) {@link PublicError} to an RFC
- * 9457 result. The transport `source` is either a {@link PublicErrorCatalog}
- * (looks up `status`/`type` by public code) or an explicit {@link Transport}
- * `{ status, type? }` for catalog-free use; the machine members ride from the
- * view. A `title` and a `content-language` header appear only when the view was
- * localized, so the structure-only path is a first-class, RFC-valid response.
+ * 9457 result. The transport `source` is a {@link PublicErrorCatalog} or an
+ * explicit {@link Transport}. A catalog looks up `status`/`type` by public code.
+ * An explicit `{ status, type? }` serves catalog-free use. The machine members
+ * come from the view. A `title` and a `content-language` header appear only
+ * when the view was localized, so the structure-only path is a first-class,
+ * RFC-valid response.
  *
  * This is the wire boundary. `details` is deep-cloned into a frozen, JSON-safe
  * structure. For a value that is not JSON-safe, `toProblem` drops the member
@@ -241,14 +244,14 @@ export function toProblem<
       // Extensions first: the reserved members below always win a collision.
       ...extensions,
       ...(transport.type !== undefined && { type: transport.type }),
-      // typeof guard, not `!== undefined`: a cast/JSON-revived non-string
-      // descriptor or transport `title` must not reach the wire body, the same
-      // wire-safety the detail/instance guards below enforce.
+      // A typeof guard, not `!== undefined`. A cast or JSON-revived non-string
+      // `title` of the descriptor or the transport must not reach the wire
+      // body. The `detail` and `instance` guards give the same wire safety.
       ...(typeof title === "string" && { title }),
       status: transport.status,
-      // The TS type already constrains these to strings; the runtime guard keeps
-      // an untyped caller (an `as` cast, a value from JSON.parse) from writing a
-      // non-string, non-RFC-9457 value straight onto the wire body.
+      // The TS type already constrains these to strings. An untyped caller (an
+      // `as` cast, a value from JSON.parse) can still pass a non-string. The
+      // runtime guard keeps that non-RFC-9457 value off the wire body.
       ...(typeof detail === "string" && { detail }),
       ...(typeof instance === "string" && { instance }),
       code,
@@ -317,9 +320,9 @@ function fieldsForWire(value: unknown): readonly FieldFault[] | undefined {
 /**
  * Validates and clones the explicit `extensions`: a plain object whose own keys
  * are all strings, none forbidden ({@link FORBIDDEN_EXTENSION_KEYS}), and whose
- * values are all JSON-safe. The whole set is dropped (recorded in
- * `outcome.omitted`) if any key collides or any value is not JSON-safe, so a bad
- * set never partially leaks onto the body. One listing of the own keys decides
+ * values are all JSON-safe. If any key collides or any value is not JSON-safe,
+ * `toProblem` drops the whole set and records it in `outcome.omitted`. A bad set
+ * never partially leaks onto the body. One listing of the own keys decides
  * both the check and the copy. A Proxy that lists other keys later cannot add a
  * forbidden key, such as a `__proto__` own key from `JSON.parse`, after the check.
  * The clone cannot hold more than {@link MAX_DATA_NODES} values, so a set with

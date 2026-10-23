@@ -1,8 +1,8 @@
 /**
  * Shared RFC 9457 / HTTP helpers. One definition of "a valid problem status", "a
- * usable type/title string", and the problem media type, reused across the
- * public-error pipeline (projection, catalog registration, and the transport
- * stage) so the rules cannot drift between them.
+ * usable type/title string", and the problem media type. The public-error
+ * pipeline reuses it in projection, catalog registration, and the transport
+ * stage, so the rules cannot drift between them.
  */
 
 /** Media type for RFC 9457 JSON problem details. */
