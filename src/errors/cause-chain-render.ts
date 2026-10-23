@@ -8,7 +8,7 @@ import type { CauseWalk } from "./cause-walk.js";
 import {
   isObjectLike,
   readCause,
-  readMembers,
+  readCappedMembers,
   readProperty,
 } from "./guarded-read.js";
 import { isNativeError } from "./native-error.js";
@@ -18,13 +18,9 @@ import {
   MAX_LOG_SIZE_MARKER,
   SHARED_CAUSE_MARKER,
   UNRENDERABLE_CAUSE_MARKER,
-  droppedMembersMarker,
+  moreAggregatedErrorsMarker,
 } from "./serializer-markers.js";
-import {
-  MAX_AGGREGATE_MEMBERS,
-  MAX_CAUSE_DEPTH,
-  MAX_LOG_NODES,
-} from "./walker-bounds.js";
+import { MAX_CAUSE_DEPTH, MAX_LOG_NODES } from "./walker-bounds.js";
 
 /**
  * The line of a node that the caller renders itself, such as a `BaseError`
@@ -146,14 +142,14 @@ function renderChain(
         entered.push(current);
       }
 
-      const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS + 1);
-      const total = aggregate === undefined ? 0 : aggregate.total;
+      const aggregate = readCappedMembers(current);
+      const shown = aggregate === undefined ? [] : aggregate.members;
+      const dropped = aggregate === undefined ? 0 : aggregate.dropped;
+      const total = shown.length + dropped;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
       const node = `${renderNode(current, render.ownNodeLine)}${suffix}`;
       if (!renderLine(render, prefix, node)) return;
 
-      const read = aggregate === undefined ? [] : aggregate.members;
-      const shown = read.slice(0, MAX_AGGREGATE_MEMBERS);
       for (const member of shown) {
         // A hole reads as undefined. It keeps its slot, as in the log, so the
         // count on the node line matches the list.
@@ -174,12 +170,8 @@ function renderChain(
         if (render.cut) return;
       }
       if (
-        total > shown.length &&
-        !renderLine(
-          render,
-          `${indent}  `,
-          droppedMembersMarker(total - shown.length, read[shown.length]),
-        )
+        dropped > 0 &&
+        !renderLine(render, `${indent}  `, moreAggregatedErrorsMarker(dropped))
       ) {
         return;
       }

@@ -8,6 +8,9 @@
  * bug to surface.
  */
 
+import { droppedMembersOf } from "./serializer-markers.js";
+import { MAX_AGGREGATE_MEMBERS } from "./walker-bounds.js";
+
 /**
  * Reads one property of a foreign value. A non-object, a missing property and
  * a throwing getter all read as `undefined`.
@@ -179,6 +182,34 @@ export function readMembers(
     members.push(readProperty(errors, String(index)));
   }
   return { members: Object.freeze(members), total };
+}
+
+/**
+ * The members of an aggregate up to the width cap, and the number of
+ * members past it.
+ */
+export type CappedMembers = {
+  readonly members: readonly unknown[];
+  readonly dropped: number;
+};
+
+/**
+ * Reads the members of an aggregate up to {@link MAX_AGGREGATE_MEMBERS}, and
+ * counts the rest. A list from a log of this library holds its tail marker
+ * as the one entry past the cap, and the count of that tail stands for the
+ * members that the log dropped. So a round trip keeps the original count. A
+ * crafted list can state any count this way: the count is diagnostic text,
+ * and it bounds no work.
+ */
+export function readCappedMembers(value: unknown): CappedMembers | undefined {
+  const read = readMembers(value, MAX_AGGREGATE_MEMBERS + 1);
+  if (read === undefined) return undefined;
+  const members = Object.freeze(read.members.slice(0, MAX_AGGREGATE_MEMBERS));
+  const tail =
+    read.total === MAX_AGGREGATE_MEMBERS + 1
+      ? droppedMembersOf(read.members[MAX_AGGREGATE_MEMBERS])
+      : undefined;
+  return { members, dropped: tail ?? read.total - members.length };
 }
 
 /** `Array.isArray` itself throws on a revoked Proxy; such a value is no array. */

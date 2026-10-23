@@ -303,6 +303,7 @@ describe("AggregateError round-trip through fromJSON", () => {
     );
 
     expect(aggregatedOf(restored)[100]).toBe("[30 more aggregated errors]");
+    expect(restored.toString()).toContain("wide (+130 aggregated)");
     expect(restored.toString()).toContain("[30 more aggregated errors]");
     expect(restored.toString()).not.toContain("[1 more aggregated errors]");
   });
@@ -380,6 +381,36 @@ describe("fromJSON hardening", () => {
 
     expect(cause.errors).toHaveLength(101);
     expect(cause.errors[100]).toBe("[400 more aggregated errors]");
+  });
+
+  it("counts the members of a logged tail when the reconstruction budget stops early", () => {
+    const leaf = { name: "Error", message: "leaf" };
+    const wide = {
+      name: "AggregateError",
+      message: "wide",
+      errors: Array.from({ length: 100 }, () => ({
+        name: "AggregateError",
+        message: "inner",
+        errors: Array.from({ length: 100 }, () => leaf),
+      })),
+    };
+    const payload = {
+      code: "OUTER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "outer failed",
+      errors: [
+        wide,
+        ...Array.from({ length: 99 }, () => leaf),
+        "[30 more aggregated errors]",
+      ],
+    };
+
+    const restored = StructuredError.fromJSON(payload);
+
+    const members = (restored as unknown as { errors: unknown[] }).errors;
+    expect(members).toHaveLength(2);
+    expect(members[1]).toBe("[129 more aggregated errors]");
   });
 
   it("bounds the total number of reconstructed errors, not just depth and width", () => {

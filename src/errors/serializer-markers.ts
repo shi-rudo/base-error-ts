@@ -24,22 +24,16 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
-const MORE_AGGREGATED_ERRORS = /^\[\d+ more aggregated errors\]$/;
+const MORE_AGGREGATED_ERRORS = /^\[(\d+) more aggregated errors\]$/;
 
 /**
- * The tail for `dropped` members past the width cap. A list from a log of
- * this library holds its own tail as the one entry past the cap. That tail
- * comes back unchanged, so a round trip keeps the original count.
+ * The count that a tail marker states, or `undefined` for any other value
+ * and for a count that is no safe integer.
  */
-export function droppedMembersMarker(
-  dropped: number,
-  pastCap: unknown,
-): string {
-  return dropped === 1 &&
-    typeof pastCap === "string" &&
-    MORE_AGGREGATED_ERRORS.test(pastCap)
-    ? pastCap
-    : moreAggregatedErrorsMarker(dropped);
+export function droppedMembersOf(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const count = Number(MORE_AGGREGATED_ERRORS.exec(value)?.[1]);
+  return Number.isSafeInteger(count) ? count : undefined;
 }
 
 /** Work omitted because the shared log-build allowance is exhausted. */
