@@ -67,4 +67,4 @@ The log build and the `fromJSON` check use it, so the form that the log writes a
 
 ## Migration
 
-`MIGRATION.md` has the section "Next major: `timestampIso` is a log key only".
+`MIGRATION.md` has the section "`timestampIso` is a log key only" under "v8 to v9".

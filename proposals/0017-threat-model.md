@@ -1,6 +1,6 @@
 # A threat model for the error model
 
-Status: accepted; release: 9.0.0.
+Status: implemented; release: 9.0.0.
 Tracking: `base-error-ts-af5.2`.
 
 ## Decision
@@ -23,7 +23,7 @@ After the entry, the library works on its own plain data and needs no further de
 
 The defenses grew one finding at a time, and no rule said where they stop.
 
-- The unreleased section of the changelog has 52 entries. About 30 of them are about hostile getters, Proxies, budgets or markers.
+- When this proposal was written, the changelog of the release had 52 entries. About 30 of them are about hostile getters, Proxies, budgets or markers.
 - At least 7 of these entries repair the defenses themselves, for example "Budget exhaustion preserves scalar cause decisions".
 - Two bugs of this release cycle came from the interplay of budget, marker, region and policy: `base-error-ts-4vw` drops fields silently, and in `base-error-ts-clk` the member order decides whether a secret reaches the log.
 - The redaction walker defends against Proxies and throwing reflection. Since proposal 0015, the log build copies every value that it reads. Raw data reaches the walker only through the output of a custom `redactWith` of a cause and through the results of a mask. Both are consumer code.
@@ -72,4 +72,4 @@ A silent loss of data in a log costs more than the crafted inputs that these def
 
 ## Migration
 
-`MIGRATION.md` has the section "Next major: redaction walks plain data".
+`MIGRATION.md` has the section "Redaction walks plain data" under "v8 to v9".

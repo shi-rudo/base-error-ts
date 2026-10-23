@@ -1,6 +1,17 @@
 # Migration Guide
 
-## Next major: Node.js 24 or later
+## v8 to v9
+
+v9 applies a threat model to the error model (proposal 0017). The log copies
+every value that it reads, root `details` included, and redaction walks that
+copy. `toString()` renders an object cause by its tag. `publicIssues()` leaves
+the validator message out, the error stores its time once, and
+`buildOwnLogFields()` replaces `buildLogObject()`. A `null` cause ends a cause
+chain, and a shared cause reads `[Shared cause]` instead of
+`[Circular cause chain]`. The package requires Node.js 24 or later. Each
+section names one change and its migration.
+
+### Node.js 24 or later
 
 The package requires Node.js 24 or a later version (`engines.node` is
 `>=24`). Node.js 20 reached its end of life in April 2026, and CI tests on
@@ -12,7 +23,7 @@ Node.js 24 and 26.
 - Browsers and edge runtimes are not affected. The package still targets
   ES2020.
 
-## Next major: redaction walks plain data
+### Redaction walks plain data
 
 Proposal 0017 sets a threat model. The log build copies every value that it
 reads, and redaction walks only that copy.
@@ -31,7 +42,7 @@ reads, and redaction walks only that copy.
   query or an alert matches one of them, match the marker of the copy instead:
   an empty container at the depth cap, and `[Max log size exceeded]`.
 
-## Next major: `timestampIso` is a log key only
+### `timestampIso` is a log key only
 
 The error stores its time once, in `timestamp`. The log object still writes
 `timestampIso` after `timestamp`, and each log build derives it from
@@ -60,7 +71,7 @@ The error stores its time once, in `timestamp`. The log object still writes
 - `fromJSON` writes `timestamp` only. If the payload has no usable
   `timestamp`, it still takes the time from `timestampIso`.
 
-## Next major: root details are copied as log data
+### Root details are copied as log data
 
 The log object copies the `details` of the error itself, as it already copied
 the `details` of each cause. `error.details` keeps its original value; only the
@@ -86,7 +97,7 @@ const at = (err.details as { at: Date }).at;
 A `redactWith` callback receives the copy. If a callback changed
 `raw.details` to change the error itself, change `error.details` directly.
 
-## Next major: `publicIssues()` without the message
+### `publicIssues()` without the message
 
 `publicIssues()` leaves the `message` of an issue out. A validator's default
 message can embed the rejected value, so the message now crosses only on
@@ -114,7 +125,7 @@ of `PublicIssue["path"]` admits `null` and `{ key: null }`.
 `PublicIssuesOptions` holds `messages` only. If you typed an options object
 with `mapIssue` as `PublicIssuesOptions`, pass the object literal directly.
 
-## Next major: a null cause is no cause
+### A null cause is no cause
 
 `isErrorWithCause` and the cause-chain helpers now treat `cause: null` like
 `cause: undefined`: the chain ends there. `getRootCause(error)` returns
@@ -135,7 +146,7 @@ const root = getRootCause(error) as { cause?: unknown };
 const threwNull = root.cause === null;
 ```
 
-## Next major: shared cause marker
+### Shared cause marker
 
 A cause that the same walk already wrote, without a cycle, is now
 `[Shared cause]` in the log object and in `toString`. Before, it was
@@ -150,21 +161,21 @@ repeated upstream failure across the branches of a fan-out, match
 A chain that returns to the root now ends in `[Circular cause chain]` one hop
 earlier in the log. The log no longer writes the root a second time.
 
-## Next major: `toString()` renders an object cause by its tag
+### `toString()` renders an object cause by its tag
 
 `toString()` no longer calls the conversion of a cause that is neither an
 error nor error-shaped. An object renders as its tag: `throw ["a", "b"]`
 renders as `[object Array]`, where it rendered `a,b`. A `Date`, a `URL` or an
 object with its own `toString` renders as `[object Date]`, `[object URL]` or
-`[object Object]`. A non-string `name` or `message` of a native error renders
-the same way. A primitive cause renders as before.
+`[object Object]`. A non-string `name` or `message` of an error renders the
+same way. A primitive cause renders as before.
 
 If a log query or a test matched the text of such a cause in `toString()`,
 read the cause from the log object instead. The log object keeps its data. For
 a readable line, throw an error with a message, or wrap the value in one:
 `new BaseError(String(value), value)`.
 
-## Next major: log field hooks
+### Log field hooks
 
 `buildLogObject()` is removed from `BaseError` and `StructuredError`.
 Overrides and `super.buildLogObject()` calls no longer compile.
@@ -213,19 +224,18 @@ A getter that throws costs its own field; other diagnostics and the cause surviv
 There is no legacy record inspection, inspection-cut suffix, or fallback assembly.
 Undefined or unreadable root fields are omitted, except for the own `cause` slot.
 The readable fields retain their order. `StructuredError` still adds `details` only when present.
-Root `details` is copied as data, like cause data. See [Next major: root details are copied as log data](#next-major-root-details-are-copied-as-log-data).
+Root `details` is copied as data, like cause data. See [Root details are copied as log data](#root-details-are-copied-as-log-data).
 
 Copied log numbers follow JSON conversion at every depth: `NaN` and positive or negative `Infinity` become `null`; `-0` becomes `0`.
 This includes own fields, root and cause `details`, and fixed numeric envelope fields, even after budget exhaustion.
-Finite numbers retain their values. Successful custom-redactor output keeps its separate contract.
+Finite numbers retain their values. Successful output of the logged error's own custom redactor keeps its separate contract.
 
 Data copying shares an explicit budget across fields and cause nodes in each library-owned build.
 An exhausted budget emits `[Max log size exceeded]`, including at a later
 data field the reader could not expand. It never labels that cut as a cycle.
 Already-read scalar envelope fields survive exhaustion, including `code` and `retryable: false`.
 After exhaustion, non-scalar envelope fields are omitted without expansion.
-Redaction preserves the empty containers that the serializer produced at its depth cap.
-Both walkers start each data field at depth zero, including fields on plain-object causes.
+The copy starts each data field at depth zero, including fields on plain-object causes, and redaction adds no depth cap of its own.
 Redaction can retain one more data level than before; the data depth cap remains 100.
 Failed property reads, serialization callbacks, primitive conversions, and key enumeration now produce `[Unserializable value]` at the affected value.
 Readable siblings remain in objects and arrays. The marker receives normal key-based redaction and contains no exception text.
@@ -244,16 +254,17 @@ The library projects nested data errors directly without invoking their `toJSON`
 Deny-list masking of message text in stack headers uses values captured during the copy.
 It does not read source getters or cause-array indices a second time.
 
-### Deny-list failures
+#### Deny-list failures
 
 If built-in deny-list redaction fails, recovery now omits explicitly denied diagnostic fields.
 For example, a failed mask under `redact(["name"])` no longer restores the original name.
 Recovery does not call the mask again. Undenied typed diagnostic fields retain their values.
 
-### Custom redactor failures
+#### Custom redactor failures
 
 `redactWith` keeps its synchronous `Record<string, unknown>` callback signature.
-Successful returns retain their existing behavior and require no migration.
+Successful returns of the logged error retain their existing behavior and require no migration.
+As the cause of another error, the output is now copied; see [Redaction walks plain data](#redaction-walks-plain-data).
 The consumer owns output shape, JSON safety, sensitive content, and callback termination.
 
 A thrown callback now recovers diagnostic fields captured before invocation.
@@ -261,7 +272,7 @@ For example, the failure record retains `code: "PERMANENT"` and `retryable: fals
 even if the callback overwrites those values and then throws.
 Deleting `code` or replacing it with a throwing getter no longer removes the original readable code from recovery.
 Recovery omits payload, stack, and links and keeps the existing failure message.
-Callback mutations to shared objects, such as the custom output of a cause, are not rolled back.
+The callback receives copies only, so its mutations cannot reach an error.
 
 Do not rely on partially transformed metadata after an exception.
 Return a complete record for a successful transformation.

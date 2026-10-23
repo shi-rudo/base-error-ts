@@ -26,7 +26,7 @@ features:
   - title: Public error pipeline
     details: The public-error subpath turns a technical error into a curated, message-free PublicError, optionally localizes it, and maps it to framework-neutral RFC 9457 ProblemDetails, all from one descriptor per public code and without exposing the technical error.
   - title: Built for observability
-    details: toLogObject() keeps the full truth (technical message, stack, cause chain and raw details) for logs, Sentry and APM, separate from the client path.
+    details: toLogObject() keeps the full truth (technical message, stack, cause chain and full details) for logs, Sentry and APM, separate from the client path.
   - title: Zero runtime dependencies
     details: Ships ESM + CJS + types, tree-shakeable, no peer dependencies.
 ---

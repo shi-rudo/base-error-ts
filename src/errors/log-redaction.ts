@@ -213,7 +213,8 @@ function maskStackHeader(
         try {
           return `${String(masked.name)}: ${String(masked.message)}${stack.slice(header.length)}`;
         } catch {
-          // A custom mask can return a value that cannot render as text.
+          // A copied mask result can carry an own toString that is no
+          // function, and then it cannot render as text.
           return "[REDACTED]";
         }
       }
