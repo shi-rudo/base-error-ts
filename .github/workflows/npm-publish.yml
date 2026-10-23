@@ -1,20 +1,29 @@
 name: Publish
 
-# Publishes to npm with Trusted Publishing (OIDC): npm trusts this workflow in
-# this repository, so there is no token to store, rotate, or let expire. The
-# trust is configured once on npmjs.com under the package's Trusted Publisher
-# settings and must name this file (npm-publish.yml).
+# Publishes to npm and to JSR with OIDC, so there is no token to store,
+# rotate, or let expire. npm trusts this workflow through the Trusted
+# Publisher settings of the package on npmjs.com, which must name this file
+# (npm-publish.yml). JSR trusts this repository through the GitHub link in the
+# package settings on jsr.io.
 #
 # Release flow:
 #   1. commit the version bump (package.json, jsr.json, CHANGELOG.md) to main
 #   2. git tag v8.2.0 && git push --tags
 #
 # Tags only, never a branch push: otherwise every documentation commit on main
-# would attempt a publish of a version that is already on the registry.
+# would attempt a publish of a version that is already on the registry. A
+# manual run publishes an existing release tag to JSR only, for a tag that
+# reached npm but not JSR.
 on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An existing release tag that npm already has, for example v9.0.0. Publishes it to JSR only."
+        required: true
+        type: string
 
 permissions:
   # write: the workflow creates the GitHub Release for the tag.
@@ -24,6 +33,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
 
     steps:
@@ -76,3 +86,39 @@ jobs:
         run: |
           node scripts/changelog-section.mjs "${GITHUB_REF_NAME#v}" > release-notes.md
           gh release create "$GITHUB_REF_NAME" --verify-tag --latest --title "$GITHUB_REF_NAME" --notes-file release-notes.md
+
+  # Waits for the npm job, because its prepublishOnly is the gate that tests
+  # the tag. A failed JSR publish then re-runs alone with "Re-run failed jobs".
+  # A manual run skips the npm job and publishes the tag that it names.
+  jsr:
+    needs: publish
+    if: ${{ !cancelled() && (needs.publish.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.publish.result == 'skipped')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Check the tag against jsr.json
+        run: |
+          VERSION="${TAG#v}"
+          JSR="$(node -p "require('./jsr.json').version")"
+          echo "tag=$VERSION jsr.json=$JSR"
+          if [ "$VERSION" != "$JSR" ]; then
+            echo "::error::tag $VERSION does not match jsr.json ($JSR)"
+            exit 1
+          fi
+
+      - name: Publish to JSR
+        run: npx --yes jsr publish
