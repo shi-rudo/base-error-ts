@@ -260,6 +260,24 @@ describe("StructuredError.fromJSON", () => {
       expect(spineEnd(relog)).toEqual(spineEnd(log));
     });
 
+    it("cuts and restores a chain under a member of the root at the same hop as under its cause", () => {
+      const viaMember = logOf(
+        new StructuredAggregateError({
+          code: "FAN_OUT",
+          category: "INTERNAL",
+          retryable: false,
+          message: "root",
+          errors: [nativeChain(MAX_CAUSE_DEPTH)],
+        }),
+      );
+      const viaCause = logOf(structured("root", nativeChain(MAX_CAUSE_DEPTH)));
+
+      const relog = logOf(StructuredError.fromJSON(viaMember));
+
+      expect(spineEnd(viaMember)).toEqual(spineEnd(viaCause));
+      expect(spineEnd(relog)).toEqual(spineEnd(viaMember));
+    });
+
     it("keeps the depth marker of a chain that the log cut", () => {
       const log = logOf(structured("root", nativeChain(MAX_CAUSE_DEPTH + 50)));
 

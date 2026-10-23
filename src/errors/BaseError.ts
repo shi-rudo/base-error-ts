@@ -359,7 +359,7 @@ export class BaseError<T extends string> extends Error {
       json.errors = this.#serializeAggregate(
         aggregate,
         rootCauseWalk(this),
-        1,
+        0,
         context,
       );
     }
@@ -709,7 +709,8 @@ export class BaseError<T extends string> extends Error {
    * cause. The consumer's `JSON.stringify` also never meets a bigint or a
    * cycle that the cause carried. It uses a cause walk (see {@link CauseWalk})
    * to mark cycles and shared nodes. A depth bound caps an acyclic but very
-   * deep chain.
+   * deep chain. `depth` is the cause hop of the node that holds `cause`: 0
+   * for the cause and the members of the logged error.
    *
    * Total per node: each foreign read is guarded. A value that still defeats
    * serialization (a Proxy whose traps throw) becomes a marker. So one hostile
@@ -883,7 +884,8 @@ export class BaseError<T extends string> extends Error {
    * remainder. Members share the enclosing cause walk. So the serializer
    * writes an error that more than one branch reaches at its first
    * occurrence, and marks it as shared afterwards. A self-referencing
-   * aggregate ends in the circular marker.
+   * aggregate ends in the circular marker. `depth` is the cause hop of the
+   * aggregate that holds the members.
    */
   /*#__PURE__*/ #serializeAggregate(
     aggregate: AggregateMembers,
