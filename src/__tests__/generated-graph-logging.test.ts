@@ -2,9 +2,9 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { LOG_REDACTION_FAILED_MARKER } from "../errors/serializer-markers.js";
-import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 import {
   CORPUS,
+  READ_LIMIT,
   THROWN_TOKEN,
   buildGraph,
   rootPolicyWithoutRedactor,
@@ -165,8 +165,8 @@ describe("generated cause graphs: the log build", () => {
           graph.root.toString();
           const renderReads = graph.reads() - beforeRender;
 
-          expect(logReads).toBeLessThanOrEqual(MAX_LOG_NODES);
-          expect(renderReads).toBeLessThanOrEqual(MAX_LOG_NODES);
+          expect(logReads).toBeLessThanOrEqual(READ_LIMIT);
+          expect(renderReads).toBeLessThanOrEqual(READ_LIMIT);
         }),
         CORPUS,
       );

@@ -26,12 +26,22 @@ import {
   circularObjectMarker,
   moreAggregatedErrorsMarker,
 } from "../errors/serializer-markers.js";
+import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
 /**
  * The fixed corpus. A failure prints its seed and its path; pass both to
  * `fc.assert` to replay the shrunk counterexample.
  */
 export const CORPUS = { seed: 20_261_022, numRuns: 120 } as const;
+
+/**
+ * The most foreign reads that one log build, one render or one
+ * reconstruction may make. A visit of the log budget covers one value, but a
+ * getter read and the reads inside the list that it returns count
+ * separately, so the limit is twice the budget. Unbounded work exceeds it by
+ * orders of magnitude.
+ */
+export const READ_LIMIT: number = 2 * MAX_LOG_NODES;
 
 /**
  * The payload of every value that the graph throws. It must never reach an

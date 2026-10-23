@@ -2,9 +2,11 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../index.js";
-import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
+import { MAX_LOG_SIZE_MARKER } from "../errors/serializer-markers.js";
+import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
 import {
   CORPUS,
+  READ_LIMIT,
   buildGraph,
   rootPolicyWithoutRedactor,
   buildPayload,
@@ -57,11 +59,14 @@ const payloadArb: fc.Arbitrary<DataSpec> = fc.oneof(dataArb, envelopeArb);
 
 /**
  * Walks a log and the log of its reconstruction side by side, along `cause`
- * and the members of an aggregate. A primitive on that spine (a marker, a
- * mask, a thrown string) comes back unchanged. So does every decision field
- * that the original log carries with its type.
+ * and the members of an aggregate, up to the cause-depth cap. A primitive on
+ * that spine (a marker, a mask, a thrown string) comes back unchanged. So
+ * does every decision field that the original log carries with its type.
+ * Past the cap, the log and the reconstruction each write their own cut: a
+ * plain-object cause ends in an empty container there, as data does.
  */
-function expectSameCauseSpine(restored: unknown, original: unknown) {
+function expectSameCauseSpine(restored: unknown, original: unknown, hop = 0) {
+  if (hop > MAX_CAUSE_DEPTH) return;
   if (!isLog(original)) {
     expect(restored, "a primitive on the cause spine").toEqual(original);
     return;
@@ -73,13 +78,17 @@ function expectSameCauseSpine(restored: unknown, original: unknown) {
       expect(node[field], field).toBe(original[field]);
     }
   }
-  expectSameCauseSpine(node.cause, original.cause);
+  expectSameCauseSpine(node.cause, original.cause, hop + 1);
   const members = original.errors;
   if (Array.isArray(members) && members.length > 0) {
     const restoredMembers = node.errors;
     expect(Array.isArray(restoredMembers), "restored members").toBe(true);
     members.forEach((member, position) =>
-      expectSameCauseSpine((restoredMembers as unknown[])[position], member),
+      expectSameCauseSpine(
+        (restoredMembers as unknown[])[position],
+        member,
+        hop + 1,
+      ),
     );
   }
 }
@@ -145,7 +154,9 @@ describe("generated payloads: StructuredError.fromJSON", () => {
           const { root } = buildGraph(plan, {
             rootPolicy: rootPolicyWithoutRedactor(plan),
           });
-          const log: unknown = JSON.parse(JSON.stringify(root.toLogObject()));
+          const json = JSON.stringify(root.toLogObject());
+          fc.pre(!json.includes(MAX_LOG_SIZE_MARKER));
+          const log: unknown = JSON.parse(json);
 
           const restored = StructuredError.fromJSON(log);
           const relog: unknown = JSON.parse(JSON.stringify(restored));
@@ -173,7 +184,7 @@ describe("generated payloads: StructuredError.fromJSON", () => {
           StructuredError.fromJSON(payload.value);
           const reads = payload.reads() - before;
 
-          expect(reads).toBeLessThanOrEqual(MAX_LOG_NODES);
+          expect(reads).toBeLessThanOrEqual(READ_LIMIT);
         }),
         CORPUS,
       );
