@@ -2,7 +2,6 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../index.js";
-import { MAX_LOG_SIZE_MARKER } from "../errors/serializer-markers.js";
 import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
 import {
   CORPUS,
@@ -155,7 +154,6 @@ describe("generated payloads: StructuredError.fromJSON", () => {
             rootPolicy: rootPolicyWithoutRedactor(plan),
           });
           const json = JSON.stringify(root.toLogObject());
-          fc.pre(!json.includes(MAX_LOG_SIZE_MARKER));
           const log: unknown = JSON.parse(json);
 
           const restored = StructuredError.fromJSON(log);

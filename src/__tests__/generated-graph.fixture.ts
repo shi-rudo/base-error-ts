@@ -519,7 +519,6 @@ export function buildGraph(
   const memberLists = new Map<number, unknown[]>();
   const chainTails = new Map<number, Error>();
   const sharedObjects = new Map<number, object>();
-  const sharedInProgress = new Set<number>();
 
   const text = (denied: boolean): string =>
     `${denied ? DENIED_TOKEN : PLAIN_TOKEN}-${serial++}`;
@@ -647,7 +646,7 @@ export function buildGraph(
         return ancestors[ancestors.length - 1 - (spec.up % ancestors.length)];
       }
       case "shared":
-        return sharedObject(spec.id, placement);
+        return sharedObject(spec.id);
       case "errorRef":
         return nodeAt(spec.node);
       case "diamond":
@@ -657,17 +656,14 @@ export function buildGraph(
     }
   }
 
-  function sharedObject(id: number, placement: Placement): unknown {
+  function sharedObject(id: number): unknown {
     const existing = sharedObjects.get(id);
     if (existing) return existing;
-    if (sharedInProgress.has(id)) return text(placement.denied);
-    sharedInProgress.add(id);
     const target = {};
     sharedObjects.set(id, target);
     for (const entry of plan.shared[id] ?? []) {
       defineEntry(target, entry, TOP);
     }
-    sharedInProgress.delete(id);
     return target;
   }
 
