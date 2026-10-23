@@ -1,7 +1,7 @@
 import { BaseError } from "./BaseError.js";
 import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
-import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
+import { droppedMembersMarker } from "./serializer-markers.js";
 import {
   isArrayValue,
   readMembers,
@@ -334,16 +334,7 @@ export class StructuredError<
 
     const rest = total - taken;
     if (rest > 0) {
-      // A payload this library produced is already capped, and its tail is the
-      // serializer's own count marker. Carry that string through verbatim
-      // rather than replacing it with "[1 more …]", which would understate the
-      // original truncation on every round-trip.
-      const tail = members[taken];
-      reconstructed.push(
-        rest === 1 && typeof tail === "string"
-          ? tail
-          : moreAggregatedErrorsMarker(rest),
-      );
+      reconstructed.push(droppedMembersMarker(rest, members[taken]));
     }
     return reconstructed;
   }
