@@ -229,14 +229,16 @@ export function readObjectTag(value: object): string | undefined {
   }
 }
 
-/** A diagnostic constructor name, including a callable constructor's name. */
+/**
+ * The name of the constructor function of a value, for a diagnostic. A
+ * `constructor` that is not a function is data, and its `name` is data
+ * text, so it gives no name.
+ */
 export function readConstructorName(value: object): string | undefined {
   const constructor = readProperty(value, "constructor");
+  if (typeof constructor !== "function") return undefined;
   try {
-    const name: unknown =
-      typeof constructor === "function"
-        ? Reflect.get(constructor, "name")
-        : readProperty(constructor, "name");
+    const name: unknown = Reflect.get(constructor, "name");
     return typeof name === "string" ? name : undefined;
   } catch {
     return undefined;
