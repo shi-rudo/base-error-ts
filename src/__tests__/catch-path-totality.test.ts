@@ -115,6 +115,19 @@ describe("totality in catch paths: an error whose name or message is an object",
     expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
   });
 
+  it("keeps the stack of a BaseError cause whose message is an array-like, within the log budget", () => {
+    const wide = wideArrayLike();
+    const inner = new BaseError<"Inner">("inner");
+    Object.defineProperty(inner, "message", { value: wide.value });
+
+    const log = wrap(inner).toLogObject();
+
+    expect((log.cause as Record<string, unknown>).stack).toMatch(
+      /^BaseError: \[object Array\]\n/,
+    );
+    expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
+  });
+
   it("keeps the stack of a native cause whose name and message are strings", () => {
     const cause = new Error("failed");
 
