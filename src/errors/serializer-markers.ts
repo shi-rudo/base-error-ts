@@ -24,18 +24,6 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
-const MORE_AGGREGATED_ERRORS = /^\[(\d+) more aggregated errors\]$/;
-
-/**
- * The count that a tail marker states, or `undefined` for any other value
- * and for a count that is no safe integer.
- */
-export function droppedMembersOf(value: unknown): number | undefined {
-  if (typeof value !== "string") return undefined;
-  const count = Number(MORE_AGGREGATED_ERRORS.exec(value)?.[1]);
-  return Number.isSafeInteger(count) ? count : undefined;
-}
-
 /** Work omitted because the shared log-build allowance is exhausted. */
 export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 
@@ -78,6 +66,8 @@ const CAUSE_SPINE_MARKERS: ReadonlySet<string> = new Set([
   UNSERIALIZABLE_CAUSE_MARKER,
   MAX_LOG_SIZE_MARKER,
 ]);
+
+const MORE_AGGREGATED_ERRORS = /^\[\d+ more aggregated errors\]$/;
 
 /**
  * Whether `value` is a marker that the serializer writes in a cause slot or

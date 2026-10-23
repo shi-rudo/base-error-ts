@@ -4,12 +4,13 @@ import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
 import {
   isArrayValue,
-  readCappedMembers,
+  readMembers,
   readProperty,
   readStack,
-  type CappedMembers,
+  type AggregateMembers,
 } from "./guarded-read.js";
 import {
+  MAX_AGGREGATE_MEMBERS,
   MAX_CAUSE_DEPTH,
   MAX_RECONSTRUCTED_CAUSE_NODES,
 } from "./walker-bounds.js";
@@ -233,7 +234,7 @@ export class StructuredError<
     // wire keeps them. This restores them the way a native aggregate holds
     // them (non-enumerable), which also makes the round-trip stable across
     // repeats.
-    const aggregate = readCappedMembers(obj);
+    const aggregate = readMembers(obj, StructuredError.#MEMBERS_READ);
     if (aggregate !== undefined) {
       Object.defineProperty(error, "errors", {
         value: StructuredError.#reconstructMembers(aggregate, depth, budget),
@@ -302,6 +303,13 @@ export class StructuredError<
   }
 
   /**
+   * Members read from a payload: one past the width cap. So the element
+   * that follows the last reconstructed member is in hand when that element
+   * is the serializer's own count marker.
+   */
+  static readonly #MEMBERS_READ = MAX_AGGREGATE_MEMBERS + 1;
+
+  /**
    * Rebuilds an aggregate's members. Each member goes back through
    * {@link StructuredError.#reconstructCause}. So a nested aggregate, a
    * structured branch and the serializer's width marker (a plain string) all
@@ -310,23 +318,33 @@ export class StructuredError<
    * the cause hop of the aggregate that holds the members.
    */
   static #reconstructMembers(
-    aggregate: CappedMembers,
+    aggregate: AggregateMembers,
     depth: number,
     budget: { nodes: number },
   ): unknown[] {
-    const { members, dropped } = aggregate;
+    const { members, total } = aggregate;
     const reconstructed: unknown[] = [];
     let taken = 0;
-    while (taken < members.length && budget.nodes > 0) {
+    while (taken < total && taken < MAX_AGGREGATE_MEMBERS && budget.nodes > 0) {
       reconstructed.push(
         StructuredError.#reconstructCause(members[taken], depth, budget),
       );
       taken++;
     }
 
-    const rest = dropped + members.length - taken;
+    const rest = total - taken;
     if (rest > 0) {
-      reconstructed.push(moreAggregatedErrorsMarker(rest));
+      // A payload this library produced is already capped, and its tail is the
+      // serializer's own count marker. Carry that string through verbatim, so
+      // the restored list states the original truncation. A later log caps the
+      // restored list again and counts that entry as one member: the library
+      // never reads a count back out of its own marker text.
+      const tail = members[taken];
+      reconstructed.push(
+        rest === 1 && typeof tail === "string"
+          ? tail
+          : moreAggregatedErrorsMarker(rest),
+      );
     }
     return reconstructed;
   }
@@ -399,7 +417,7 @@ export class StructuredError<
     // the wire. `structuredClone` drops them (verified on Node, Bun, Deno and
     // workerd, where it also degrades the class to a plain `Error`). So this
     // round-trip is the only lossless way across a worker or queue boundary.
-    const members = readCappedMembers(obj);
+    const members = readMembers(obj, StructuredError.#MEMBERS_READ);
     const messageField = readProperty(obj, "message");
     const nameField = readProperty(obj, "name");
     const stackField = readStack(obj, nameField, messageField);
