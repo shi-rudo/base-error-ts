@@ -5,7 +5,7 @@ import {
 } from "./log-build-context.js";
 import { serializeLogData, normalizeLogNumber } from "./log-data.js";
 import { allowListRedaction, denyListRedaction } from "./log-redaction.js";
-import { renderCauseChain } from "./cause-chain-render.js";
+import { renderCauseChain, renderValue } from "./cause-chain-render.js";
 import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
 import { isNativeError } from "./native-error.js";
 import {
@@ -359,7 +359,7 @@ export class BaseError<T extends string> extends Error {
       json.errors = this.#serializeAggregate(
         aggregate,
         rootCauseWalk(this),
-        1,
+        0,
         context,
       );
     }
@@ -651,7 +651,7 @@ export class BaseError<T extends string> extends Error {
   public override toString(): string {
     return renderCauseChain(this, (node) =>
       node instanceof BaseError
-        ? `[${node.name}] ${node.#renderMessage()}`
+        ? `[${renderValue(node.name)}] ${node.#renderMessage()}`
         : undefined,
     );
   }
@@ -667,10 +667,10 @@ export class BaseError<T extends string> extends Error {
    */
   /*#__PURE__*/ #renderMessage(): string {
     if (this.#messageMask === undefined) {
-      return this.message;
+      return renderValue(this.message);
     }
     try {
-      return String(
+      return renderValue(
         BaseError.#applyMask(this.#messageMask, this.message, "message"),
       );
     } catch {
@@ -709,7 +709,8 @@ export class BaseError<T extends string> extends Error {
    * cause. The consumer's `JSON.stringify` also never meets a bigint or a
    * cycle that the cause carried. It uses a cause walk (see {@link CauseWalk})
    * to mark cycles and shared nodes. A depth bound caps an acyclic but very
-   * deep chain.
+   * deep chain. `depth` is the cause hop of the node that holds `cause`: 0
+   * for the cause and the members of the logged error.
    *
    * Total per node: each foreign read is guarded. A value that still defeats
    * serialization (a Proxy whose traps throw) becomes a marker. So one hostile
@@ -883,7 +884,8 @@ export class BaseError<T extends string> extends Error {
    * remainder. Members share the enclosing cause walk. So the serializer
    * writes an error that more than one branch reaches at its first
    * occurrence, and marks it as shared afterwards. A self-referencing
-   * aggregate ends in the circular marker.
+   * aggregate ends in the circular marker. `depth` is the cause hop of the
+   * aggregate that holds the members.
    */
   /*#__PURE__*/ #serializeAggregate(
     aggregate: AggregateMembers,
@@ -1000,7 +1002,9 @@ export class BaseError<T extends string> extends Error {
     const filteredLines: string[] = [];
 
     // Update the header with proper error name and message
-    filteredLines.push(`${this.name}: ${this.message}`);
+    filteredLines.push(
+      `${renderValue(this.name)}: ${renderValue(this.message)}`,
+    );
 
     // Filter out internal frames
     for (let i = 1; i < lines.length; i++) {

@@ -77,8 +77,9 @@ for mutation, JSON safety, policy order, and recursion limits.
 
 `toString()` runs in `catch` paths, so it never calls the conversion of a value
 that it did not create. A cause that is not an error renders as its primitive
-value, or as its tag if it is an object, such as `[object Array]`. The log
-object keeps the data of such a cause.
+value, or as its tag if it is an object, such as `[object Array]`. The same
+holds for a `name` or `message` that is not a string. The log object keeps the
+data of such a cause.
 
 `toLogObject()` / `toJSON()` are **internal, full-fidelity log output**. They are
 not safe to send to clients: they carry the technical message, stack and cause

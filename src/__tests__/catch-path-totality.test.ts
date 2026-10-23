@@ -74,7 +74,7 @@ describe("totality in catch paths: a throwing getter on a cause", () => {
   });
 });
 
-describe("totality in catch paths: a native cause whose name or message is an object", () => {
+describe("totality in catch paths: an error whose name or message is an object", () => {
   for (const field of ["name", "message"]) {
     it(`omits the stack of a native cause whose \`${field}\` is an array-like, within the log budget`, () => {
       const wide = wideArrayLike();
@@ -87,6 +87,33 @@ describe("totality in catch paths: a native cause whose name or message is an ob
       expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
     });
   }
+
+  it("reads a logged BaseError whose name is an array-like within the log budget", () => {
+    const wide = wideArrayLike();
+    const error = new BaseError<"Root">("root");
+    Object.defineProperty(error, "name", { value: wide.value });
+
+    error.toLogObject();
+
+    expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
+  });
+
+  it("reads a BaseError in details whose message is an array-like within the log budget", () => {
+    const wide = wideArrayLike();
+    const inner = new BaseError<"Inner">("inner");
+    Object.defineProperty(inner, "message", { value: wide.value });
+    const error = new StructuredError({
+      code: "OUTER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "outer",
+      details: { inner },
+    });
+
+    error.toLogObject();
+
+    expect(wide.reads()).toBeLessThanOrEqual(MAX_LOG_NODES);
+  });
 
   it("keeps the stack of a native cause whose name and message are strings", () => {
     const cause = new Error("failed");
@@ -189,6 +216,23 @@ describe("totality in catch paths: toString of a cause that is not an error", ()
     const rendered = wrap(cause).toString();
 
     expect(rendered).toContain("Caused by: [object Array]: readable");
+  });
+
+  it("renders a BaseError cause whose name or message is an array-like by their tags", () => {
+    const wide = wideArrayLike();
+    const named = new BaseError<"Inner">("readable");
+    Object.defineProperty(named, "name", { value: wide.value });
+    const messaged = new BaseError<"Inner">("readable", undefined, {
+      name: "Inner",
+    });
+    Object.defineProperty(messaged, "message", { value: wide.value });
+
+    const renderedName = wrap(named).toString();
+    const renderedMessage = wrap(messaged).toString();
+
+    expect(renderedName).toContain("Caused by: [[object Array]] readable");
+    expect(renderedMessage).toContain("Caused by: [Inner] [object Array]");
+    expect(wide.reads()).toBe(0);
   });
 
   it("renders the unrenderable marker for a cause whose tag cannot be read", () => {

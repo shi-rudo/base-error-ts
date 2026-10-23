@@ -162,6 +162,17 @@ describe("a native cause's extension fields are decoupled from the cause", () =>
     expect(nameNode.name).toEqual({ first: "n" });
     expect(() => JSON.stringify([stackNode, nameNode])).not.toThrow();
   });
+
+  it("drops the stack of a cause whose name is an object, whatever the stack holds", () => {
+    const cause = new Error("db") as Extended;
+    cause.stack = { message: "Bearer token" } as unknown as string;
+    cause.name = { first: "n" } as unknown as string;
+
+    const node = causeNode(wrap(cause));
+
+    expect(node.stack).toBeUndefined();
+    expect(node.name).toEqual({ first: "n" });
+  });
 });
 
 describe("a well-formed cause serializes as before", () => {
