@@ -18,6 +18,8 @@ type Log = Record<string, unknown>;
 
 const PROPERTY_TIMEOUT = 120_000;
 
+const DROPPED_MEMBERS = /^\[\d+ more aggregated errors\]$/;
+
 const DECISION_TYPES = {
   code: "string",
   category: "string",
@@ -62,11 +64,17 @@ const payloadArb: fc.Arbitrary<DataSpec> = fc.oneof(dataArb, envelopeArb);
  * that spine (a marker, a mask, a thrown string) comes back unchanged. So
  * does every decision field that the original log carries with its type.
  * Past the cap, the log and the reconstruction each write their own cut: a
- * plain-object cause ends in an empty container there, as data does.
+ * plain-object cause ends in an empty container there, as data does. A tail
+ * of dropped members comes back as a tail, but a later log counts the
+ * carried tail as one member, so its number is not compared.
  */
 function expectSameCauseSpine(restored: unknown, original: unknown, hop = 0) {
   if (hop > MAX_CAUSE_DEPTH) return;
   if (!isLog(original)) {
+    if (typeof original === "string" && DROPPED_MEMBERS.test(original)) {
+      expect(restored, "a tail of dropped members").toMatch(DROPPED_MEMBERS);
+      return;
+    }
     expect(restored, "a primitive on the cause spine").toEqual(original);
     return;
   }
