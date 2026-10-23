@@ -38,7 +38,8 @@ export function readStack(
     : readProperty(value, "stack");
 }
 
-function isObjectLike(value: unknown): boolean {
+/** Whether a conversion of `value` to text can run code of its own. */
+export function isObjectLike(value: unknown): boolean {
   return (
     (typeof value === "object" && value !== null) || typeof value === "function"
   );

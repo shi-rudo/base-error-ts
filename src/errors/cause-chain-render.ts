@@ -5,7 +5,12 @@
  * the guarded reader and never throws.
  */
 import type { CauseWalk } from "./cause-walk.js";
-import { readCause, readMembers, readProperty } from "./guarded-read.js";
+import {
+  isObjectLike,
+  readCause,
+  readMembers,
+  readProperty,
+} from "./guarded-read.js";
 import { isNativeError } from "./native-error.js";
 import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
@@ -236,9 +241,8 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
  * and its own conversion never runs: that conversion can be any work, and
  * the one of an array joins every element up to its `length`.
  */
-function renderValue(value: unknown): string {
-  return (typeof value === "object" && value !== null) ||
-    typeof value === "function"
+export function renderValue(value: unknown): string {
+  return isObjectLike(value)
     ? Object.prototype.toString.call(value)
     : String(value);
 }
