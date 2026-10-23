@@ -335,7 +335,7 @@ export class BaseError<T extends string> extends Error {
       ["message", message],
       ["timestamp", timestamp],
       ["timestampIso", toTimestampIso(timestamp)],
-      ["stack", readProperty(this, "stack")],
+      ["stack", readStack(this, name, message)],
     ];
     for (const [key, read] of envelope) {
       const value = BaseError.#serializeEnvelopeField(read, context);
@@ -799,15 +799,13 @@ export class BaseError<T extends string> extends Error {
     // JSON.stringify must not meet a bigint or a cycle that the cause carried.
     const name = readProperty(cause, "name");
     const message = readProperty(cause, "message");
-    // A BaseError of this realm builds its own stack header with renderValue,
-    // so reading its stack stays bounded whatever its name and message hold.
-    const stack = BaseError.#sameRealm(cause)
-      ? readProperty(cause, "stack")
-      : readStack(cause, name, message);
     const serialized: Record<string, unknown> = {
       name: BaseError.#serializeEnvelopeField(name, context),
       message: BaseError.#serializeEnvelopeField(message, context),
-      stack: BaseError.#serializeEnvelopeField(stack, context),
+      stack: BaseError.#serializeEnvelopeField(
+        readStack(cause, name, message),
+        context,
+      ),
     };
 
     // Preserve StructuredError fields if present (duck-typing). This is the
