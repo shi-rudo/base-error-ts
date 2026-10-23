@@ -30,7 +30,7 @@ export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 /** The message of the recovery record when a redaction policy throws. */
 export const LOG_REDACTION_FAILED_MARKER = "[log redaction failed]";
 
-/** A cause node in `toString` that has no string form at all. */
+/** A cause node in `toString` whose tag cannot be read, such as a revoked Proxy. */
 export const UNRENDERABLE_CAUSE_MARKER = "[Unrenderable cause]";
 
 /** Most keys that the circular-object marker names. */

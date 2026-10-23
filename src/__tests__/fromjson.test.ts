@@ -1,9 +1,66 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { StructuredError, matchError } from "../index.js";
+import {
+  StructuredAggregateError,
+  StructuredError,
+  matchError,
+} from "../index.js";
+import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
+import { wideArrayLike } from "./hostile-values.fixture.js";
 
 afterEach(() => {
   vi.useRealTimers();
 });
+
+/** A chain of native errors; the deepest one has the message `hop-0`. */
+function nativeChain(length: number): Error {
+  let head = new Error("hop-0");
+  for (let hop = 1; hop < length; hop++) {
+    const next = new Error(`hop-${hop}`);
+    Object.defineProperty(next, "cause", {
+      value: head,
+      configurable: true,
+      writable: true,
+    });
+    head = next;
+  }
+  return head;
+}
+
+function structured(
+  message: string,
+  cause?: unknown,
+): StructuredError<string, string> {
+  return new StructuredError({
+    code: "C",
+    category: "INTERNAL",
+    retryable: false,
+    message,
+    cause,
+  });
+}
+
+/**
+ * The end of a logged cause spine. The walk follows the first member of an
+ * aggregate, else the cause, and reports the slot after the last node.
+ */
+function spineEnd(log: unknown) {
+  let node = log as Record<string, unknown>;
+  let hops = 0;
+  for (;;) {
+    const members = node.errors;
+    const next =
+      Array.isArray(members) && members.length > 0 ? members[0] : node.cause;
+    if (typeof next !== "object" || next === null) {
+      return { hops, last: node.message, after: next };
+    }
+    node = next as Record<string, unknown>;
+    hops++;
+  }
+}
+
+function logOf(error: Error): unknown {
+  return JSON.parse(JSON.stringify(error));
+}
 
 describe("StructuredError.fromJSON", () => {
   describe("round-trip", () => {
@@ -182,6 +239,56 @@ describe("StructuredError.fromJSON", () => {
     });
   });
 
+  describe("the cause-depth cap after a round trip", () => {
+    it("restores a chain through a structured aggregate as deep as the log wrote it", () => {
+      const fanOut = new StructuredAggregateError({
+        code: "FAN_OUT",
+        category: "INTERNAL",
+        retryable: false,
+        message: "fan-out",
+        errors: [structured("member", nativeChain(MAX_CAUSE_DEPTH - 2))],
+      });
+      const log = logOf(structured("root", fanOut));
+
+      const relog = logOf(StructuredError.fromJSON(log));
+
+      expect(spineEnd(log)).toEqual({
+        hops: MAX_CAUSE_DEPTH,
+        last: "hop-0",
+        after: undefined,
+      });
+      expect(spineEnd(relog)).toEqual(spineEnd(log));
+    });
+
+    it("cuts and restores a chain under a member of the root at the same hop as under its cause", () => {
+      const viaMember = logOf(
+        new StructuredAggregateError({
+          code: "FAN_OUT",
+          category: "INTERNAL",
+          retryable: false,
+          message: "root",
+          errors: [nativeChain(MAX_CAUSE_DEPTH)],
+        }),
+      );
+      const viaCause = logOf(structured("root", nativeChain(MAX_CAUSE_DEPTH)));
+
+      const relog = logOf(StructuredError.fromJSON(viaMember));
+
+      expect(spineEnd(viaMember)).toEqual(spineEnd(viaCause));
+      expect(spineEnd(relog)).toEqual(spineEnd(viaMember));
+    });
+
+    it("keeps the depth marker of a chain that the log cut", () => {
+      const log = logOf(structured("root", nativeChain(MAX_CAUSE_DEPTH + 50)));
+
+      const restored = StructuredError.fromJSON(log);
+
+      expect(spineEnd(log).after).toBe("[Max cause depth exceeded]");
+      expect(spineEnd(logOf(restored))).toEqual(spineEnd(log));
+      expect(restored.toString()).toMatch(/\[Max cause depth exceeded\]$/);
+    });
+  });
+
   describe("lenient reconstruction", () => {
     it("fills safe defaults for a plain-error payload", () => {
       const restored = StructuredError.fromJSON({
@@ -268,6 +375,39 @@ describe("StructuredError.fromJSON", () => {
 
       expect(restored.code).toBe("C");
       expect(restored.details).toBeUndefined();
+    });
+
+    it("reads no stack of a payload error whose name or message is an object", () => {
+      const wide = wideArrayLike();
+      const cause = new Error("cause");
+      Object.defineProperty(cause, "message", { value: wide.value });
+      const root = new Error("root");
+      Object.defineProperty(root, "name", { value: wide.value });
+      Object.defineProperty(root, "cause", { value: cause });
+
+      const restored = StructuredError.fromJSON(root);
+
+      expect(restored).toBeInstanceOf(StructuredError);
+      expect(wide.reads()).toBe(0);
+    });
+
+    it("drops details that is a revoked Proxy, at the root and on a cause", () => {
+      const { proxy, revoke } = Proxy.revocable({}, {});
+      revoke();
+      const envelope = { code: "C", category: "X", retryable: false };
+
+      const restored = StructuredError.fromJSON({
+        ...envelope,
+        message: "root",
+        details: proxy,
+        cause: { name: "Error", message: "cause", code: "D", details: proxy },
+      });
+
+      const { cause } = restored as unknown as { cause: unknown };
+      expect(restored.code).toBe("C");
+      expect(restored.details).toBeUndefined();
+      expect(cause).toMatchObject({ message: "cause", code: "D" });
+      expect(cause).not.toHaveProperty("details");
     });
   });
 

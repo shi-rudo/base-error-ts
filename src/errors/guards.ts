@@ -42,12 +42,11 @@ export function isError(value: unknown): value is ErrorLike {
       return false;
     }
 
-    const { name, message, stack } = value as Record<string, unknown>;
-    return (
-      typeof name === "string" &&
-      typeof message === "string" &&
-      (stack === undefined || typeof stack === "string")
-    );
+    const record = value as Record<string, unknown>;
+    const { name, message } = record;
+    if (typeof name !== "string" || typeof message !== "string") return false;
+    const { stack } = record;
+    return stack === undefined || typeof stack === "string";
   } catch {
     return false;
   }

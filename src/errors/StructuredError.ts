@@ -3,8 +3,10 @@ import type { ErrorOptions } from "./ErrorOptions.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { moreAggregatedErrorsMarker } from "./serializer-markers.js";
 import {
+  isArrayValue,
   readMembers,
   readProperty,
+  readStack,
   type AggregateMembers,
 } from "./guarded-read.js";
 import {
@@ -165,6 +167,7 @@ export class StructuredError<
     });
   }
 
+  /** `depth` is the cause hop of `json` itself: 0 for the root. */
   static #fromJSON(
     json: unknown,
     depth: number,
@@ -217,7 +220,7 @@ export class StructuredError<
     StructuredError.#rehydrate(
       error,
       "stack",
-      readProperty(obj, "stack"),
+      readStack(obj, readProperty(obj, "name"), rawMessage),
       "string",
     );
     const time = StructuredError.#originalTime(
@@ -250,7 +253,7 @@ export class StructuredError<
    * envelope survives without it.
    */
   static #copyDetails(value: unknown): Record<string, unknown> | undefined {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    if (typeof value !== "object" || value === null || isArrayValue(value)) {
       return undefined;
     }
     try {
@@ -311,7 +314,8 @@ export class StructuredError<
    * {@link StructuredError.#reconstructCause}. So a nested aggregate, a
    * structured branch and the serializer's width marker (a plain string) all
    * come back in their logged shape. The walk stops at the width
-   * cap or when the node budget runs out, whichever comes first.
+   * cap or when the node budget runs out, whichever comes first. `depth` is
+   * the cause hop of the aggregate that holds the members.
    */
   static #reconstructMembers(
     aggregate: AggregateMembers,
@@ -323,7 +327,7 @@ export class StructuredError<
     let taken = 0;
     while (taken < total && taken < MAX_AGGREGATE_MEMBERS && budget.nodes > 0) {
       reconstructed.push(
-        StructuredError.#reconstructCause(members[taken], depth + 1, budget),
+        StructuredError.#reconstructCause(members[taken], depth, budget),
       );
       taken++;
     }
@@ -331,9 +335,10 @@ export class StructuredError<
     const rest = total - taken;
     if (rest > 0) {
       // A payload this library produced is already capped, and its tail is the
-      // serializer's own count marker. Carry that string through verbatim
-      // rather than replacing it with "[1 more …]", which would understate the
-      // original truncation on every round-trip.
+      // serializer's own count marker. Carry that string through verbatim, so
+      // the restored list states the original truncation. A later log caps the
+      // restored list again and counts that entry as one member: the library
+      // never reads a count back out of its own marker text.
       const tail = members[taken];
       reconstructed.push(
         rest === 1 && typeof tail === "string"
@@ -368,17 +373,21 @@ export class StructuredError<
     if (details !== undefined) fields.details = details;
   }
 
+  /**
+   * `depth` is the cause hop of the node that holds `value`, so `value` sits
+   * one hop deeper. A primitive costs no walk and is kept verbatim, also past
+   * the cap: there the log writes its depth marker, and the marker survives.
+   */
   static #reconstructCause(
     value: unknown,
     depth: number,
     budget: { nodes: number },
   ): unknown {
+    if (typeof value !== "object" || value === null) {
+      return value;
+    }
     if (depth >= MAX_CAUSE_DEPTH) {
       return undefined;
-    }
-    if (typeof value !== "object" || value === null) {
-      // Primitives (and null) are kept verbatim.
-      return value;
     }
     // The one site that charges {@link MAX_RECONSTRUCTED_CAUSE_NODES}.
     if (budget.nodes <= 0) {
@@ -411,10 +420,10 @@ export class StructuredError<
     const members = readMembers(obj, StructuredError.#MEMBERS_READ);
     const messageField = readProperty(obj, "message");
     const nameField = readProperty(obj, "name");
-    const stackField = readProperty(obj, "stack");
+    const stackField = readStack(obj, nameField, messageField);
     if (members !== undefined) {
       const aggregate = new AggregateError(
-        StructuredError.#reconstructMembers(members, depth, budget),
+        StructuredError.#reconstructMembers(members, depth + 1, budget),
         typeof messageField === "string" ? messageField : "",
       );
       if (typeof nameField === "string") {

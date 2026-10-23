@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
+import {
+  hostileProxy,
+  revokedProxy,
+  wideArrayLike,
+} from "./hostile-values.fixture.js";
 
 import {
   hasErrorCode,
@@ -55,6 +59,18 @@ describe("isError", () => {
 
   it("fails closed when prototype inspection throws", () => {
     expect(isError(hostileProxy(["getPrototypeOf"]))).toBe(false);
+  });
+
+  it("reads no stack of a native error whose name or message is not a string", () => {
+    const wide = wideArrayLike();
+    const named = new Error("failed");
+    Object.defineProperty(named, "name", { value: wide.value });
+    const messaged = new Error("failed");
+    Object.defineProperty(messaged, "message", { value: wide.value });
+
+    expect(isError(named)).toBe(false);
+    expect(isError(messaged)).toBe(false);
+    expect(wide.reads()).toBe(0);
   });
 });
 

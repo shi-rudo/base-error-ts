@@ -5,7 +5,13 @@
  * the guarded reader and never throws.
  */
 import type { CauseWalk } from "./cause-walk.js";
-import { readCause, readMembers, readProperty } from "./guarded-read.js";
+import {
+  isObjectLike,
+  readCause,
+  readMembers,
+  readObjectTag,
+  readProperty,
+} from "./guarded-read.js";
 import { isNativeError } from "./native-error.js";
 import {
   CIRCULAR_CAUSE_CHAIN_MARKER,
@@ -91,12 +97,12 @@ function renderLine(
  * and holes included, so the budget bounds the output.
  *
  * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
- * at which its `cause` lands. The two differ only at the root. The log
- * serializer starts the root's `cause` at depth 0 and the root's members at
- * depth 1. Every cause node puts both one level below itself. Both counters
- * mirror the cause serializer of `BaseError`. So for a chain of error
- * objects, `toString()` shows the same nodes as `toLogObject()` and cuts at
- * the same marker. Near the budget the two differ: the log also
+ * at which its `cause` and its members land. The two are equal only at the
+ * root: the log serializer starts the root's `cause` and the root's members
+ * at depth 0. Every other node puts its links one level below itself. Both
+ * counters mirror the cause serializer of `BaseError`. So for a chain of
+ * error objects, `toString()` shows the same nodes as `toLogObject()` and
+ * cuts at the same marker. Near the budget the two differ: the log also
  * spends its allowance on data, and the render spends one unit per line.
  * For a plain-object cause, the serializer also copies its data fields and
  * cuts deep containers without a marker.
@@ -120,7 +126,6 @@ function renderChain(
   }
   let current: unknown = start;
   let prefix = head;
-  let nodeDepth = depth;
   let nextCauseDepth = causeDepth;
   // Each spine node of this chain is an ancestor of the nodes after it.
   const entered: object[] = [];
@@ -163,8 +168,8 @@ function renderChain(
           render,
           `${indent}  - `,
           `${indent}    `,
-          nodeDepth + 1,
-          nodeDepth + 2,
+          nextCauseDepth,
+          nextCauseDepth + 1,
         );
         if (render.cut) return;
       }
@@ -190,7 +195,6 @@ function renderChain(
       }
       current = cause;
       prefix = `${indent}Caused by: `;
-      nodeDepth = nextCauseDepth;
       nextCauseDepth++;
     }
   } finally {
@@ -203,9 +207,10 @@ function renderChain(
  * deny-listed `message` of a `BaseError`. A native error and an error-shaped
  * plain object (string `name` and `message`) render as `name: message`. A
  * string render runs in catch paths and must not throw. A foreign
- * `name`/`message` that throws falls back to the `Error.prototype` defaults.
- * A value with no string form at all (a null-prototype object, a throwing
- * `Symbol.toPrimitive`) renders as a marker.
+ * `name`/`message` that throws, or whose tag cannot be read, falls back to
+ * the `Error.prototype` defaults. Any other value renders through
+ * {@link renderValue}. A value whose tag cannot be read (a revoked Proxy)
+ * renders as a marker.
  */
 function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
   try {
@@ -214,7 +219,7 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (isNativeError(node)) {
       const name = readProperty(node, "name") ?? "Error";
       const message = readProperty(node, "message") ?? "";
-      return `${String(name)}: ${String(message)}`;
+      return `${renderValue(name, "Error")}: ${renderValue(message, "")}`;
     }
     // A plain object shaped like an error reads as its name and message, not
     // as "[object Object]". An example is a revived or cloned error at a
@@ -224,8 +229,22 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     if (typeof name === "string" && typeof message === "string") {
       return `${name}: ${message}`;
     }
-    return String(node);
+    return renderValue(node, UNRENDERABLE_CAUSE_MARKER);
   } catch {
     return UNRENDERABLE_CAUSE_MARKER;
   }
+}
+
+/**
+ * The text of a value that the render did not create. A primitive renders
+ * with `String`. An object renders by its tag, such as `[object Array]`,
+ * and its own conversion never runs: that conversion can be any work, and
+ * the one of an array joins every element up to its `length`. A tag that
+ * cannot be read, such as the tag of a revoked Proxy, renders as
+ * `unreadable`.
+ */
+export function renderValue(value: unknown, unreadable: string): string {
+  return isObjectLike(value)
+    ? (readObjectTag(value as object) ?? unreadable)
+    : String(value);
 }
