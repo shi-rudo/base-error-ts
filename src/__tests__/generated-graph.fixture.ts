@@ -427,6 +427,31 @@ export function rootPolicyWithoutRedactor(plan: GraphPlan): PolicySpec {
   return policy.t === "redactWith" ? { t: "none" } : policy;
 }
 
+const LIBRARY_KINDS: ReadonlySet<NodeKind> = new Set([
+  "structured",
+  "base",
+  "aggregate",
+]);
+
+const KEPT_LIBRARY_KEYS: ReadonlySet<string> = new Set([
+  "code",
+  "category",
+  "retryable",
+  "toJSON",
+]);
+
+/**
+ * Whether a foreign entry goes onto a node. An error of this library keeps
+ * its decision fields and an aggregate its member list, because the
+ * properties compare both with the plan. An error of this library also keeps
+ * its `toJSON`: code that replaces it owns what `JSON.stringify` then does.
+ */
+function keepsForeignEntry(kind: NodeKind, entry: EntrySpec): boolean {
+  if (LIBRARY_KINDS.has(kind) && KEPT_LIBRARY_KEYS.has(entry.key)) return false;
+  const aggregate = kind === "aggregate" || kind === "nativeAggregate";
+  return !(aggregate && entry.key === "errors");
+}
+
 const ownFieldsHooks = new WeakMap<object, () => unknown>();
 
 function ownFieldsOf(error: object): Record<string, unknown> {
@@ -763,7 +788,7 @@ export function buildGraph(
 
   function createNode(spec: NodeSpec, index: number): unknown {
     const kind = index === 0 ? plan.rootKind : spec.kind;
-    const message = `message-${index}`;
+    const message = text(deniedKeys.has("message"));
     const structured = {
       code: spec.code,
       category: spec.category,
@@ -774,7 +799,9 @@ export function buildGraph(
       case "structured":
         return new GeneratedStructuredError(structured);
       case "base":
-        return new GeneratedBaseError(message);
+        return new GeneratedBaseError(message, undefined, {
+          name: text(deniedKeys.has("name")),
+        });
       case "aggregate": {
         const error = new GeneratedAggregateError({
           ...structured,
@@ -799,11 +826,11 @@ export function buildGraph(
       case "lazyCause":
         return lazyCause(message);
       case "longChain": {
-        const tail = new Error(`${message}-tail`);
+        const tail = new Error(message);
         chainTails.set(index, tail);
         let head = tail;
         for (let hop = 1; hop < spec.chainLength; hop++) {
-          const next = new Error(`${message}-${hop}`);
+          const next = new Error(text(deniedKeys.has("message")));
           Object.defineProperty(next, "cause", {
             value: head,
             configurable: true,
@@ -831,18 +858,20 @@ export function buildGraph(
     if (!WIRED_KINDS.has(kind)) return;
     if (typeof node !== "object" || node === null) return;
 
-    if (kind === "nativeError" || kind === "plainObject") {
-      for (const entry of spec.foreign) defineEntry(node, entry, TOP);
-    }
-    if (kind === "nativeAggregate") {
+    if (kind !== "longChain") {
       for (const entry of spec.foreign) {
-        if (entry.key !== "errors") defineEntry(node, entry, TOP);
+        if (keepsForeignEntry(kind, entry)) defineEntry(node, entry, TOP);
       }
     }
     if (kind === "structured" || kind === "aggregate") {
       if (spec.details !== undefined) {
         const placement = { denied: deniedKeys.has("details"), ancestors: [] };
-        (node as { details: unknown }).details = data(spec.details, placement);
+        Object.defineProperty(node, "details", {
+          value: data(spec.details, placement),
+          configurable: true,
+          enumerable: true,
+          writable: true,
+        });
       }
     }
     if (kind === "structured" || kind === "aggregate" || kind === "base") {

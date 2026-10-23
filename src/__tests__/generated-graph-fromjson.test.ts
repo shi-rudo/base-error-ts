@@ -137,7 +137,7 @@ describe("generated payloads: StructuredError.fromJSON", () => {
   );
 
   it(
-    "restores the cause spine, its decision fields and the root timestamp of a logged graph",
+    "restores the cause spine, its decision fields and the root instant of a logged graph",
     { timeout: PROPERTY_TIMEOUT },
     () => {
       fc.assert(
@@ -150,9 +150,9 @@ describe("generated payloads: StructuredError.fromJSON", () => {
           const restored = StructuredError.fromJSON(log);
           const relog: unknown = JSON.parse(JSON.stringify(restored));
 
-          const { timestamp } = log as Log;
-          if (typeof timestamp === "number") {
-            expect((relog as Log).timestamp).toBe(timestamp);
+          const { timestampIso } = log as Log;
+          if (typeof timestampIso === "string") {
+            expect((relog as Log).timestampIso).toBe(timestampIso);
           }
           expectSameCauseSpine(relog, log);
         }),

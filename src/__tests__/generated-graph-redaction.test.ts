@@ -71,15 +71,20 @@ function expectMaskedData(value: unknown, key: string, rule: AllowRule) {
   expect(value, `a data leaf under "${key}"`).toBe(rule.mask);
 }
 
+/** A list on the spine is free: each of its items takes the slot of the list. */
 function expectCauseSlot(value: unknown, rule: AllowRule) {
   if (value === null || value === undefined || isCauseSpineMarker(value)) {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) expectCauseSlot(item, rule);
     return;
   }
   if (isLog(value)) {
     expectNodeShape(value, CAUSE_ENVELOPE, rule);
     return;
   }
-  expectMaskedData(value, "cause", rule);
+  expect(value, "a primitive in a cause slot").toBe(rule.mask);
 }
 
 /**
