@@ -269,4 +269,16 @@ describe("the circular-object marker", () => {
 
     expect((log.registry as Log).self).toBe("[Circular Registry]");
   });
+
+  it("takes the type from a constructor function only, never from data under a constructor key", () => {
+    const data: Log = { constructor: { name: "hunter2" } };
+    data.self = data;
+
+    const log = new DataError({ data }).redact(["name"]).toLogObject();
+
+    expect((log.data as Log).self).toBe(
+      "[Circular Object with keys: [constructor, self]]",
+    );
+    expect(JSON.stringify(log)).not.toContain("hunter2");
+  });
 });
