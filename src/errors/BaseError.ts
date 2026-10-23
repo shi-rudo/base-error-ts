@@ -427,10 +427,14 @@ export class BaseError<T extends string> extends Error {
     );
   }
 
-  /** Nested data errors retain diagnostics without invoking hooks or links. */
+  /**
+   * Nested data errors retain diagnostics without invoking hooks or links.
+   * The view writes no `stack`: header masking covers the cause spine only,
+   * so a stack in data would carry a denied `name` or `message`.
+   */
   #dataErrorEnvelope(): Record<string, unknown> {
     const log: Record<string, unknown> = {};
-    for (const key of [...BaseError.#SAFE_TRIAGE_KEYS, "message", "stack"]) {
+    for (const key of [...BaseError.#SAFE_TRIAGE_KEYS, "message"]) {
       // The ISO form derives from the timestamp that this envelope holds.
       const value =
         key === "timestampIso"

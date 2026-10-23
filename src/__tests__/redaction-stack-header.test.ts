@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { BaseError, StructuredAggregateError, partialMask } from "../index.js";
+import {
+  BaseError,
+  StructuredAggregateError,
+  StructuredError,
+  partialMask,
+} from "../index.js";
 
 class TestError extends BaseError<"TestError"> {}
 
@@ -145,6 +150,21 @@ describe("redact: a deny-listed message is masked in the stack of the log object
     expect(log.message).toBe("[log redaction failed]");
     expect(log).not.toHaveProperty("stack");
     expect(JSON.stringify(err)).not.toContain("hunter2");
+  });
+
+  it("writes no stack for an error stored in data, so no header carries the message", () => {
+    const err = new StructuredError({
+      code: "HOLDER",
+      category: "INTERNAL",
+      retryable: false,
+      message: "holder",
+      details: { inner: new TestError(SECRET) },
+    }).redact(["message"]);
+
+    const log = err.toLogObject();
+
+    expect(nodeOf(nodeOf(log.details).inner)).not.toHaveProperty("stack");
+    expect(JSON.stringify(log)).not.toContain(SECRET);
   });
 
   it("keeps a multi-line message out of the header and the frames", () => {

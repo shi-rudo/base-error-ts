@@ -25,21 +25,16 @@ describe("review regressions", () => {
     });
     const log = new BaseError("root", inner).toLogObject();
     expect(log.cause).toMatchObject({
-      details: {
-        inner: {
-          name: "BaseError",
-          message: "inner message",
-          stack: expect.any(String),
-        },
-      },
+      details: { inner: { name: "BaseError", message: "inner message" } },
     });
+    const details = (log.cause as Log).details as Log;
+    expect(details.inner).not.toHaveProperty("stack");
   });
   it("applies the nested data error's sticky policy", () => {
-    const nested = new BaseError("private").redact(["message", "stack"]);
+    const nested = new BaseError("private").redact(["message"]);
     const log = new Fields({ payload: { nested } }).toLogObject();
-    expect(log.payload).toMatchObject({
-      nested: { message: "[REDACTED]", stack: "[REDACTED]" },
-    });
+    expect(log.payload).toMatchObject({ nested: { message: "[REDACTED]" } });
+    expect(JSON.stringify(log)).not.toContain("private");
   });
   it.each([{}, { foo: undefined }])(
     "keeps the envelope for an empty own-fields contribution %j",
