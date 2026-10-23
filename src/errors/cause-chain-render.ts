@@ -93,12 +93,12 @@ function renderLine(
  * and holes included, so the budget bounds the output.
  *
  * `depth` is the serializer depth of `start`, and `causeDepth` is the depth
- * at which its `cause` and its members land. The two differ only at the
+ * at which its `cause` and its members land. The two are equal only at the
  * root: the log serializer starts the root's `cause` and the root's members
- * at depth 0. Every cause node puts its links one level below itself. Both counters
- * mirror the cause serializer of `BaseError`. So for a chain of error
- * objects, `toString()` shows the same nodes as `toLogObject()` and cuts at
- * the same marker. Near the budget the two differ: the log also
+ * at depth 0. Every other node puts its links one level below itself. Both
+ * counters mirror the cause serializer of `BaseError`. So for a chain of
+ * error objects, `toString()` shows the same nodes as `toLogObject()` and
+ * cuts at the same marker. Near the budget the two differ: the log also
  * spends its allowance on data, and the render spends one unit per line.
  * For a plain-object cause, the serializer also copies its data fields and
  * cuts deep containers without a marker.
