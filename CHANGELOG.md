@@ -1,5 +1,17 @@
 # Changelog
 
+## 9.0.1 - 2026-10-23
+
+Documentation release. The README now says what the library does for a user, and the release workflow publishes to JSR as well. The code is unchanged.
+
+### Documentation
+
+- **The README explains the library from the view of a new user.** It states what the library does in three sentences and names the three problems of a plain `Error` that it removes: handling by message text, errors lost in logs, and leaks to clients. A picture shows the two paths of an error, to the logger and to the HTTP response. The quick start has four steps: define an error, log and handle it, mask personal data, and answer the client. Every code block runs as written. The features are grouped by use, and the README names JSR as a second install source.
+
+### Changed
+
+- **A release also publishes to JSR.** The release workflow publishes a tag to npm and then to JSR, both with OIDC and without a stored token. The JSR job runs after the npm job, so it ships only a tag that passed the gate. A manual run publishes an existing tag to JSR only.
+
 ## 9.0.0 - 2026-10-23
 
 Threat-model release (proposal 0017). An untrusted value is safe for any input, and consumer code runs inside one `try`/`catch`. The log copies every value that it reads, root `details` included. Redaction walks that copy, adds no marker of its own, and takes 33% to 40% less time. `redactAllow` no longer keeps a primitive cause or primitive `details` of the logged error in plaintext. `toString()` renders a foreign object by its tag. The log reads no stack whose header would convert one, so an array-like `name` or `message` costs bounded work. `publicIssues()` leaves the validator message out, and the error stores its time once. A subclass declares its own log fields with `buildOwnLogFields()`, which replaces `buildLogObject()` and survives at every depth of a cause chain. A `null` cause is no cause, and a shared cause is no longer labeled as a cycle. The package requires Node.js 24 or later. CI checks the packed package against TypeScript 5.0 to 7 and every supported module resolution. See `MIGRATION.md`.
