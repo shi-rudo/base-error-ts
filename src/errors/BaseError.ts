@@ -66,6 +66,8 @@ export type OwnLogFields = Readonly<Record<string, JsonSafeValue>>;
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
+let writeLogObjectOf: (value: unknown) => unknown;
+
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
@@ -425,6 +427,21 @@ export class BaseError<T extends string> extends Error {
         ? () => value.#dataErrorEnvelope()
         : undefined,
     );
+  }
+
+  // A static block is the one way for a function outside the class to reach
+  // its private serializer. The empty walk holds no root, so the value
+  // itself is the first node of the walk.
+  static {
+    writeLogObjectOf = (value) =>
+      BaseError.#sameRealm(value)
+        ? value.toLogObject()
+        : BaseError.#serializeCause(
+            value,
+            { seen: new Set(), path: new Set() },
+            0,
+            BaseError.#newLogContext(),
+          );
   }
 
   /**
@@ -1045,4 +1062,28 @@ export class BaseError<T extends string> extends Error {
 
     return filteredLines.join("\n");
   }
+}
+
+/**
+ * The log form of any value, for a logger that receives a thrown value.
+ *
+ * A `BaseError` of this realm returns its {@link BaseError.toLogObject},
+ * with its redaction policy. Any other error returns the node that the log
+ * object of a `BaseError` holds for it as a cause. That node holds the name,
+ * message and stack of the error, its structured fields, its members and its
+ * cause chain. A `BaseError` in that chain keeps its policy. Any other value
+ * returns as a copy of log data.
+ *
+ * Whatever a foreign value holds, the function does not throw, and its work
+ * stays bounded. It writes a foreign error from its fields, so a
+ * `toLogObject` or `toJSON` on that error does not run. As a result, a
+ * `BaseError` from another realm (a worker, a second copy of this package)
+ * or behind a Proxy carries no reachable policy. The function writes it like
+ * a foreign error.
+ *
+ * ⚠️ This is a **log** serialization, like {@link BaseError.toLogObject}.
+ * **Never return it to a client.**
+ */
+export function logObjectOf(value: unknown): unknown {
+  return writeLogObjectOf(value);
 }

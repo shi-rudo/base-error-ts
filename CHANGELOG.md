@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`logObjectOf(value)` returns the log form of any thrown value.** A `catch` block receives `unknown`, and only a `BaseError` had `toLogObject()`. A `BaseError` of this realm now returns its `toLogObject()`, with its redaction policy. Any other error returns the node that a `BaseError` writes for it as its cause. That node holds the name, message and stack of the error, its structured fields, its members and its cause chain. A `BaseError` in that chain keeps its policy. Any other value returns as a copy of log data. The function does not throw, and its work stays bounded. It writes a foreign error from its fields and runs no `toLogObject` or `toJSON` of that error. So a `BaseError` from another realm logs without a policy, as it does in a cause chain.
+
 ## 9.0.1 - 2026-10-23
 
 Documentation release. The README now says what the library does for a user, and the release workflow publishes to JSR as well. The code is unchanged.
