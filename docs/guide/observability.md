@@ -410,14 +410,17 @@ itself, so a redaction policy does not hold there. [Logging with
 pino](./logging-with-pino) shows the setup that writes every value under `err`
 through `logObjectOf()`.
 
-## Sentry / OpenTelemetry
+## Sentry
 
-Pass `toLogObject()` (or the error itself) to your reporter. Because the cause
-chain is serialized, nested root causes survive the trip:
+Sentry reads the error object itself, so a redaction policy does not hold in
+the exceptions of the event. [Reporting to Sentry](./reporting-to-sentry) shows
+the setup that writes the exceptions of every event through `logObjectOf()`.
 
-```ts
-Sentry.captureException(error, { extra: error.toLogObject() });
-```
+## OpenTelemetry
+
+Write `logObjectOf(error)` into the span or the log record, not the error
+itself. A call that reads the error itself bypasses the redaction policy, for
+example `span.recordException(error)`.
 
 ## Reconstructing: `StructuredError.fromJSON`
 
