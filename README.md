@@ -191,6 +191,8 @@ of the request.
 
 - `toLogObject()` writes the complete error as plain JSON data: the message,
   the stack, every cause, the members of an aggregate, and the details.
+- `logObjectOf(value)` writes the log form of any thrown value: an error of
+  this library, a native `Error`, or a value that is not an error.
 - `redact`, `redactAllow`, `partialMask` and `redactWith` mask personal data in
   the log.
 - `StructuredError.fromJSON` rebuilds a typed error from a log or from a worker

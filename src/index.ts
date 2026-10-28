@@ -1,7 +1,7 @@
 // ────────────────────────────────────────────────────────────────
 // Error Classes
 // ────────────────────────────────────────────────────────────────
-export { BaseError } from "./errors/BaseError.js";
+export { BaseError, logObjectOf } from "./errors/BaseError.js";
 export type {
   BaseErrorOptions,
   OwnLogFields,

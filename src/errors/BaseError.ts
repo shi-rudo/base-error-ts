@@ -66,6 +66,8 @@ export type OwnLogFields = Readonly<Record<string, JsonSafeValue>>;
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
+let writeLogObjectOf: (value: unknown) => unknown;
+
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
@@ -344,7 +346,7 @@ export class BaseError<T extends string> extends Error {
     }
     // The cause and the members get a walk each, so a node in both stays in
     // full in the members, where fromJSON rebuilds it.
-    json.cause = this.#serializeCause(
+    json.cause = BaseError.#serializeCause(
       readProperty(this, "cause"),
       rootCauseWalk(this),
       0,
@@ -356,7 +358,7 @@ export class BaseError<T extends string> extends Error {
     // the same bounded, cycle-safe serialization as an aggregate cause.
     const aggregate = readMembers(this, MAX_AGGREGATE_MEMBERS);
     if (aggregate !== undefined && aggregate.total > 0) {
-      json.errors = this.#serializeAggregate(
+      json.errors = BaseError.#serializeAggregate(
         aggregate,
         rootCauseWalk(this),
         0,
@@ -425,6 +427,21 @@ export class BaseError<T extends string> extends Error {
         ? () => value.#dataErrorEnvelope()
         : undefined,
     );
+  }
+
+  // A static block is the one way for a function outside the class to reach
+  // its private serializer. The empty walk holds no root, so the value
+  // itself is the first node of the walk.
+  static {
+    writeLogObjectOf = (value) =>
+      BaseError.#sameRealm(value)
+        ? value.toLogObject()
+        : BaseError.#serializeCause(
+            value,
+            { seen: new Set(), path: new Set() },
+            0,
+            BaseError.#newLogContext(),
+          );
   }
 
   /**
@@ -726,20 +743,20 @@ export class BaseError<T extends string> extends Error {
    * returns it (see {@link BaseError.#redactorOf}). A throwing policy
    * collapses that node to the triage envelope and nothing above it.
    */
-  /*#__PURE__*/ #serializeCause(
+  /*#__PURE__*/ static #serializeCause(
     cause: unknown,
     walk: CauseWalk,
     depth: number,
     context: LogBuildContext,
   ): unknown {
     try {
-      return this.#serializeCauseNode(cause, walk, depth, context);
+      return BaseError.#serializeCauseNode(cause, walk, depth, context);
     } catch {
       return UNSERIALIZABLE_CAUSE_MARKER;
     }
   }
 
-  /*#__PURE__*/ #serializeCauseNode(
+  /*#__PURE__*/ static #serializeCauseNode(
     cause: unknown,
     walk: CauseWalk,
     depth: number,
@@ -769,7 +786,7 @@ export class BaseError<T extends string> extends Error {
       walk.seen.add(cause);
       walk.path.add(cause);
       try {
-        return this.#serializeErrorNode(cause, walk, depth, context);
+        return BaseError.#serializeErrorNode(cause, walk, depth, context);
       } finally {
         walk.path.delete(cause);
       }
@@ -784,7 +801,7 @@ export class BaseError<T extends string> extends Error {
    * holds its envelope, its structured fields, its own fields, its members
    * and its cause. Its own sticky policy masks the node last.
    */
-  /*#__PURE__*/ #serializeErrorNode(
+  /*#__PURE__*/ static #serializeErrorNode(
     cause: Error,
     walk: CauseWalk,
     depth: number,
@@ -835,7 +852,7 @@ export class BaseError<T extends string> extends Error {
     // the error never reach the log at all.
     const aggregate = readMembers(cause, MAX_AGGREGATE_MEMBERS);
     if (aggregate !== undefined && aggregate.total > 0) {
-      serialized.errors = this.#serializeAggregate(
+      serialized.errors = BaseError.#serializeAggregate(
         aggregate,
         walk,
         depth + 1,
@@ -846,7 +863,12 @@ export class BaseError<T extends string> extends Error {
     // Recursively serialize nested causes
     const nested = readProperty(cause, "cause");
     if (nested !== undefined) {
-      serialized.cause = this.#serializeCause(nested, walk, depth + 1, context);
+      serialized.cause = BaseError.#serializeCause(
+        nested,
+        walk,
+        depth + 1,
+        context,
+      );
     }
 
     // The cause's own sticky policy runs last, over the node and the subtree
@@ -892,7 +914,7 @@ export class BaseError<T extends string> extends Error {
    * aggregate ends in the circular marker. `depth` is the cause hop of the
    * aggregate that holds the members.
    */
-  /*#__PURE__*/ #serializeAggregate(
+  /*#__PURE__*/ static #serializeAggregate(
     aggregate: AggregateMembers,
     walk: CauseWalk,
     depth: number,
@@ -904,7 +926,7 @@ export class BaseError<T extends string> extends Error {
         serialized.push(MAX_LOG_SIZE_MARKER);
         return serialized;
       }
-      serialized.push(this.#serializeCause(error, walk, depth, context));
+      serialized.push(BaseError.#serializeCause(error, walk, depth, context));
     }
 
     const dropped = aggregate.total - serialized.length;
@@ -1040,4 +1062,28 @@ export class BaseError<T extends string> extends Error {
 
     return filteredLines.join("\n");
   }
+}
+
+/**
+ * The log form of any value, for a logger that receives a thrown value.
+ *
+ * A `BaseError` of this realm returns its {@link BaseError.toLogObject},
+ * with its redaction policy. Any other error returns the node that the log
+ * object of a `BaseError` holds for it as a cause. That node holds the name,
+ * message and stack of the error, its structured fields, its members and its
+ * cause chain. A `BaseError` in that chain keeps its policy. Any other value
+ * returns as a copy of log data.
+ *
+ * Whatever a foreign value holds, the function does not throw, and its work
+ * stays bounded. It writes a foreign error from its fields, so a
+ * `toLogObject` or `toJSON` on that error does not run. As a result, a
+ * `BaseError` from another realm (a worker, a second copy of this package)
+ * or behind a Proxy carries no reachable policy. The function writes it like
+ * a foreign error.
+ *
+ * ⚠️ This is a **log** serialization, like {@link BaseError.toLogObject}.
+ * **Never return it to a client.**
+ */
+export function logObjectOf(value: unknown): unknown {
+  return writeLogObjectOf(value);
 }
