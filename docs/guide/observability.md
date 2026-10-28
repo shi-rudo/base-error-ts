@@ -115,6 +115,42 @@ like any other leaf. It does not extend
 `AggregateError` (single inheritance is spent on `BaseError`), which costs
 nothing, because the whole library reads aggregates by shape.
 
+## Any thrown value: `logObjectOf()`
+
+A `catch` block receives `unknown`. The value can be an error of this library,
+a native `Error` from a dependency, or a value that is not an error at all.
+`logObjectOf(value)` returns the log form of each of them, so one call covers
+every case:
+
+```ts
+import { logObjectOf } from "@shirudo/base-error";
+
+try {
+  await handleRequest(request);
+} catch (error) {
+  logger.error({ err: logObjectOf(error) }, "request failed");
+}
+```
+
+| Value             | Result                                                                                  |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| a `BaseError`     | its `toLogObject()`, with its redaction policy                                          |
+| any other `Error` | the node that a `BaseError` writes for it as its cause: name, message, stack and causes |
+| any other value   | a copy of log data, or the value itself for a primitive                                 |
+
+A native `Error` keeps its own `name` and `message`. The function does not wrap
+it in a `StructuredError`, so no `UNKNOWN_ERROR` code appears. The node also
+holds the `code`, `category`, `retryable` and `details` of a foreign error that
+carries them, and the members of an aggregate. A `BaseError` in the cause chain
+keeps its redaction policy.
+
+The function does not throw, and its work stays bounded, whatever the value
+holds. It writes a foreign error from its fields, so a `toLogObject` or
+`toJSON` on that error does not run. As a result, a `BaseError` from another
+realm (a worker, a second copy of this package) logs as a foreign error without
+a policy, as it does in a cause chain. If your dependency tree holds two copies
+of this package, deduplicate it.
+
 ## The two paths, side by side
 
 ```ts

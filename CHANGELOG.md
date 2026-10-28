@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- **`logObjectOf(value)` returns the log form of any thrown value.** A `catch` block receives `unknown`, and only a `BaseError` had `toLogObject()`. A `BaseError` of this realm now returns its `toLogObject()`, with its redaction policy. Any other error returns the node that a `BaseError` writes for it as its cause. That node holds the name, message and stack of the error, its structured fields, its members and its cause chain. A `BaseError` in that chain keeps its policy. Any other value returns as a copy of log data. The function does not throw, and its work stays bounded. It writes a foreign error from its fields and runs no `toLogObject` or `toJSON` of that error. So a `BaseError` from another realm logs without a policy, as it does in a cause chain.
+
 ### Documentation
 
 - **A tested recipe for pino.** Pino's standard `err` serializer reads an error itself and never calls `toLogObject()`. So `logger.error(err)` and `logger.error({ err }, "text")` wrote the raw message, the raw `details` and the raw cause, also for an error with a `redact` policy, and pino copied the raw message into `msg`. The new guide page _Logging with pino_ and `examples/pino-logger.ts` give a serializer and a `logMethod` hook that write every error through `toLogObject()`. A test runs the setup against pino 10. Pino is a dev dependency only.
