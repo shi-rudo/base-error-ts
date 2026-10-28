@@ -77,6 +77,7 @@ export default defineConfig({
               link: "/guide/public-error",
             },
             { text: "Observability & logging", link: "/guide/observability" },
+            { text: "Logging with pino", link: "/guide/logging-with-pino" },
           ],
         },
         {

@@ -367,6 +367,13 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
   Payload, stack, and links are omitted. Successful custom output follows the
   [custom redactor contract](#custom-redactor-contract).
 
+## pino
+
+Pino has a standard serializer for the `err` key that reads the error object
+itself, so a redaction policy does not hold there. [Logging with
+pino](./logging-with-pino) shows the setup that writes every error through
+`toLogObject()`.
+
 ## Sentry / OpenTelemetry
 
 Pass `toLogObject()` (or the error itself) to your reporter. Because the cause

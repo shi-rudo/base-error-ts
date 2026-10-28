@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+
+- **A tested recipe for pino.** Pino's standard `err` serializer reads an error itself and never calls `toLogObject()`. So `logger.error(err)` and `logger.error({ err }, "text")` wrote the raw message, the raw `details` and the raw cause, also for an error with a `redact` policy, and pino copied the raw message into `msg`. The new guide page _Logging with pino_ and `examples/pino-logger.ts` give a serializer and a `logMethod` hook that write every error through `toLogObject()`. A test runs the setup against pino 10. Pino is a dev dependency only.
+
 ## 9.0.1 - 2026-10-23
 
 Documentation release. The README now says what the library does for a user, and the release workflow publishes to JSR as well. The code is unchanged.

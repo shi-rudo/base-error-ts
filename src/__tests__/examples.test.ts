@@ -14,6 +14,7 @@ const EXAMPLE_FILES = [
   "structured-errors-example.ts",
   "error-codes-example.ts",
   "domain-errors-example.ts",
+  "pino-logger.ts",
   "automatic-name-example.ts",
   "cause-chain-example.ts",
   "public-error-e2e.ts",
