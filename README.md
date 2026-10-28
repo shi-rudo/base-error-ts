@@ -246,6 +246,7 @@ To read it locally, run `pnpm docs:dev`.
 
 - [Public error pipeline](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/public-error.md)
 - [Observability and logging (with PII redaction and `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
+- [Logging with pino](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/logging-with-pino.md)
 
 **Reference**
 
