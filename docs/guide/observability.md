@@ -407,8 +407,8 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
 
 Pino has a standard serializer for the `err` key that reads the error object
 itself, so a redaction policy does not hold there. [Logging with
-pino](./logging-with-pino) shows the setup that writes every error through
-`toLogObject()`.
+pino](./logging-with-pino) shows the setup that writes every value under `err`
+through `logObjectOf()`.
 
 ## Sentry / OpenTelemetry
 

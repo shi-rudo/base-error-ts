@@ -1,6 +1,6 @@
 /**
- * A pino setup that writes every error through `toLogObject()`, so the
- * redaction policy of an error holds in the log line.
+ * A pino setup that writes every value under `err` through `logObjectOf()`,
+ * so the redaction policy of an error holds in the log line.
  *
  * Without it, pino's standard `err` serializer reads the error itself: it
  * writes the raw message, the raw `details` and the raw cause. Pino also
@@ -8,45 +8,54 @@
  *
  * Run the demo with `npx tsx examples/pino-logger.ts`.
  */
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import pino, { type LogFn, type Logger, type LoggerOptions } from "pino";
 
-import {
-  StructuredError,
-  isBaseError,
-  toStructuredError,
-} from "../src/index.js";
+import { StructuredError, logObjectOf } from "../src/index.js";
 
 /**
- * The value that pino writes under `err`. An error of this library writes
- * its own log object, with its redaction policy. Any other `Error` becomes
- * the log object of a `StructuredError` that holds it as its cause. Every
- * other value stays as it is.
+ * The log objects that the hook wrote. Pino runs the `err` serializer on them
+ * again, and a second `logObjectOf` would copy them as data, which cuts a
+ * cause chain at the data depth bound.
  */
+const written = new WeakSet<object>();
+
+function writeLogObject(value: unknown): unknown {
+  const logObject = logObjectOf(value);
+  if (typeof logObject === "object" && logObject !== null)
+    written.add(logObject);
+  return logObject;
+}
+
+/** The value that pino writes under `err`. */
 export function serializeError(value: unknown): unknown {
-  if (isBaseError(value)) return value.toLogObject();
-  if (value instanceof Error) return toStructuredError(value).toLogObject();
-  return value;
+  if (typeof value === "object" && value !== null && written.has(value))
+    return value;
+  return logObjectOf(value);
 }
 
 /**
- * Hands pino the serialized error before pino reads `err.message` for `msg`.
+ * Hands pino the log object before pino reads `err.message` for `msg`.
  * So `msg` holds the message of the log object, masked if a policy denies it.
+ * Pino copies the message of a first argument only when it passes
+ * `instanceof Error`. The hook uses the same test, so a merge object with a
+ * `name` and a `message` stays a merge object.
  */
 function logMethod(this: Logger, args: Parameters<LogFn>, method: LogFn): void {
   const [first, ...rest] = args as unknown[];
   if (first instanceof Error) {
     method.apply(this, [
-      { err: serializeError(first) },
+      { err: writeLogObject(first) },
       ...rest,
     ] as Parameters<LogFn>);
     return;
   }
   if (typeof first === "object" && first !== null) {
     const fields = first as Record<string, unknown>;
-    if (fields.err instanceof Error) {
-      const serialized = { ...fields, err: serializeError(fields.err) };
+    if (fields.err !== undefined) {
+      const serialized = { ...fields, err: writeLogObject(fields.err) };
       method.apply(this, [serialized, ...rest] as Parameters<LogFn>);
       return;
     }
@@ -75,4 +84,9 @@ function demo(): void {
   logger.error({ err: error, requestId: "r-1" }, "user lookup failed");
 }
 
-if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) demo();
+const entry = process.argv[1];
+if (
+  entry !== undefined &&
+  realpathSync(entry) === fileURLToPath(import.meta.url)
+)
+  demo();

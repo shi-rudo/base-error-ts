@@ -1,7 +1,10 @@
+import { runInNewContext } from "node:vm";
+
 import pino from "pino";
 import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../index.js";
+import { MAX_CAUSE_DEPTH_MARKER } from "../errors/serializer-markers.js";
 import { pinoErrorOptions } from "../../examples/pino-logger.js";
 
 type Line = Record<string, unknown>;
@@ -10,10 +13,10 @@ const SECRET_MESSAGE = "lookup for ada@example.com failed";
 const SECRET_EMAIL = "ada@example.com";
 const SECRET_CAUSE = "db password=hunter2 rejected";
 
-/** A pino logger with the recipe, and the lines that it wrote. */
-function recordingLogger() {
+/** A pino logger with the given options, and the lines that it wrote. */
+function recordingLogger(options: pino.LoggerOptions = pinoErrorOptions) {
   const lines: string[] = [];
-  const logger = pino(pinoErrorOptions, { write: (line) => lines.push(line) });
+  const logger = pino(options, { write: (line) => lines.push(line) });
   return {
     logger,
     lines,
@@ -32,7 +35,12 @@ function redactedLookupError(): StructuredError<"USER_NOT_FOUND", "NOT_FOUND"> {
   }).redact(["message", "email"]);
 }
 
-describe("the pino recipe", () => {
+function withCause(error: Error, cause: unknown): Error {
+  Object.defineProperty(error, "cause", { value: cause, configurable: true });
+  return error;
+}
+
+describe("the pino setup", () => {
   it.each([
     ["logger.error(err)", (log: pino.Logger, err: Error) => log.error(err)],
     [
@@ -85,21 +93,70 @@ describe("the pino recipe", () => {
     expect(parsed()[0]!.msg).toBe("[REDACTED]");
   });
 
-  it("writes a native error through the library, with its cause chain", () => {
+  it("writes a native error with its own name and message, and its cause chain", () => {
     const { logger, parsed } = recordingLogger();
-    const native = new Error("upstream failed");
-    Object.defineProperty(native, "cause", { value: new Error("timeout") });
+    const native = withCause(
+      new Error("upstream failed"),
+      new Error("timeout"),
+    );
 
     logger.error(native);
 
+    const err = parsed()[0]!.err as Line;
+    expect(err).toMatchObject({
+      name: "Error",
+      message: "upstream failed",
+      cause: { name: "Error", message: "timeout" },
+    });
+    expect(err).not.toHaveProperty("code");
+  });
+
+  it("writes a cause chain deeper than the data depth bound up to the cause depth bound", () => {
+    const { logger, lines } = recordingLogger();
+    let chain = new Error("hop 0");
+    for (let hop = 1; hop < 150; hop++) {
+      chain = withCause(new Error(`hop ${hop}`), chain);
+    }
+
+    logger.error(
+      new StructuredError({
+        code: "REQUEST_FAILED",
+        category: "INTERNAL",
+        retryable: false,
+        message: "request failed",
+        cause: chain,
+      }),
+    );
+
+    expect(lines[0]).toContain(MAX_CAUSE_DEPTH_MARKER);
+  });
+
+  it("writes an error from another realm under err through the library", () => {
+    const { logger, parsed } = recordingLogger();
+    const foreign: unknown = runInNewContext('new Error("vm failure")');
+
+    logger.error({ err: foreign }, "vm call");
+
     expect(parsed()[0]!.err).toMatchObject({
-      code: "UNKNOWN_ERROR",
-      cause: { message: "upstream failed", cause: { message: "timeout" } },
+      name: "Error",
+      message: "vm failure",
     });
   });
 
-  it("writes an error under another key through toJSON, without the recipe", () => {
-    const { logger, lines } = recordingLogger();
+  it("keeps a merge object with a name and a message as a merge object", () => {
+    const { logger, parsed } = recordingLogger();
+
+    logger.info({ name: "nightly-import", message: "rows imported" });
+
+    expect(parsed()[0]).toMatchObject({
+      name: "nightly-import",
+      message: "rows imported",
+    });
+    expect(parsed()[0]).not.toHaveProperty("err");
+  });
+
+  it("writes a library error under another key through toJSON, also without the setup", () => {
+    const { logger, lines } = recordingLogger({});
 
     logger.error({ failure: redactedLookupError() }, "lookup");
 

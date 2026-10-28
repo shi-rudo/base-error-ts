@@ -17,9 +17,11 @@ or `redactAllow` does not hold:
 | `logger.error({ err }, "text")` | The raw message, the raw `details` and the raw cause.                                              |
 | `logger.error({ err })`         | The raw message, the raw `details` and the raw cause. Pino also copies the raw message into `msg`. |
 
-An error under any other key is safe without the setup. Pino writes it with
-`JSON.stringify`, which calls `toJSON()`, and `toJSON()` is an alias of
-`toLogObject()`.
+An error of this library under any other key keeps its policy without the
+setup. Pino writes it with `JSON.stringify`, which calls `toJSON()`, an alias of
+`toLogObject()`. A native `Error` under any other key comes out as `{}`, because
+its fields are not enumerable. To keep it, log it under `err`, or write
+`logObjectOf(error)` under the other key.
 
 ## The setup
 
@@ -28,27 +30,36 @@ application, not of this library.
 
 ```ts
 import pino, { type LogFn, type Logger, type LoggerOptions } from "pino";
-import { isBaseError, toStructuredError } from "@shirudo/base-error";
+import { logObjectOf } from "@shirudo/base-error";
+
+const written = new WeakSet<object>();
+
+function writeLogObject(value: unknown): unknown {
+  const logObject = logObjectOf(value);
+  if (typeof logObject === "object" && logObject !== null)
+    written.add(logObject);
+  return logObject;
+}
 
 export function serializeError(value: unknown): unknown {
-  if (isBaseError(value)) return value.toLogObject();
-  if (value instanceof Error) return toStructuredError(value).toLogObject();
-  return value;
+  if (typeof value === "object" && value !== null && written.has(value))
+    return value;
+  return logObjectOf(value);
 }
 
 function logMethod(this: Logger, args: Parameters<LogFn>, method: LogFn): void {
   const [first, ...rest] = args as unknown[];
   if (first instanceof Error) {
     method.apply(this, [
-      { err: serializeError(first) },
+      { err: writeLogObject(first) },
       ...rest,
     ] as Parameters<LogFn>);
     return;
   }
   if (typeof first === "object" && first !== null) {
     const fields = first as Record<string, unknown>;
-    if (fields.err instanceof Error) {
-      const serialized = { ...fields, err: serializeError(fields.err) };
+    if (fields.err !== undefined) {
+      const serialized = { ...fields, err: writeLogObject(fields.err) };
       method.apply(this, [serialized, ...rest] as Parameters<LogFn>);
       return;
     }
@@ -79,14 +90,17 @@ If your logger has serializers or hooks of its own, merge them with
 
 The setup has two parts:
 
-- **The serializer for `err`.** An error of this library writes its own log
-  object, with its policy. Any other `Error` becomes the log object of a
-  `StructuredError` with the code `UNKNOWN_ERROR`, which holds the error and
-  its cause chain as its cause. Any other value stays as it is.
 - **The `logMethod` hook.** Pino reads `err.message` for `msg` before any
-  serializer runs. The hook gives pino the serialized error first, so `msg`
-  holds the message of the log object. If the policy denies `message`, `msg`
-  is masked too.
+  serializer runs. The hook gives pino the log object of the value first, so
+  `msg` holds the message of the log object. If the policy denies `message`,
+  `msg` is masked too.
+- **The serializer for `err`.** It writes every value with
+  [`logObjectOf()`](./observability#any-thrown-value-logobjectof). An error of
+  this library writes its own log object, with its policy. A native `Error`
+  keeps its own name and message, and its cause chain. Any other value becomes
+  a copy of log data. The serializer passes a log object that the hook wrote
+  through unchanged. A second pass would copy it as data and cut a deep cause
+  chain at the data depth bound.
 
 For an error that denies `message` and `email`, the line looks like this
 (shortened):
@@ -125,9 +139,14 @@ logger[level]({ err: error }, "request failed");
 
 - The setup expects the default `errorKey` of pino, `err`. If you change
   `errorKey`, change the key that the hook reads too.
-- The setup recognizes an error with `instanceof Error`. An error from a
-  worker or another realm fails that test. Convert such an error with
-  `toStructuredError` before you log it.
+- Pino and the setup recognize an error in the first argument with
+  `instanceof Error`. An error from a `node:vm` context fails this test, and
+  pino writes it as a merge object without its message. Log such an error under
+  `err`: `logger.error({ err: error })`. An error that a worker posts arrives as
+  a copy in the receiving realm and passes the test.
+- If your dependency tree holds two copies of this package, an error from the
+  other copy logs without its policy. `logObjectOf` writes it like a foreign
+  error. Deduplicate the package.
 - The `redact` option of pino is a separate mechanism. It masks paths in the
   whole line, for example `req.headers.authorization`. The policy of an error
   travels with the error, also when the error is the cause of another error.
