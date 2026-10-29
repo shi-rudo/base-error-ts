@@ -69,6 +69,20 @@ export const retryable: boolean = matchError(failure, {
 // @ts-expect-error matchError rejects a code that the union does not contain
 matchError(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
 
+export function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
+  return matchError(error, {
+    RATE_LIMITED: (rateLimited) => (rateLimited.retryable ? 429 : 503),
+    _: () => 500,
+  });
+}
+
+export function misspelledStatusOf<E extends EmailTaken | RateLimited>(
+  error: E,
+): number {
+  // @ts-expect-error matchError rejects an unknown code also for a generic error
+  return matchError(error, { EMAIL_TAKN: () => 409, _: () => 500 });
+}
+
 const AuthzErrors = defineErrors(
   {
     not_a_member: { category: "FORBIDDEN", retryable: false },

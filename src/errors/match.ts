@@ -45,29 +45,46 @@ export function ownCase<H>(
 type CatchAllCodeRule =
   "matchError is unavailable: the code _ is also the catch-all; rename the code";
 
-/** A wide `string` code contains `_` too, but it names no code `_`. */
-type HasCatchAllCode<E extends StructuredError<string, string>> =
-  string extends E["code"] ? false : "_" extends E["code"] ? true : false;
+/** A numeric object key such as `404` names the code `"404"`. */
+type HandlerNames<C> = `${Extract<keyof C, string | number>}`;
 
 /**
- * Rejects a code that `E` does not contain, also next to a `_` catch-all.
- * Without a `_` catch-all, every `code` must have a handler. Missing codes are
- * added as required, so an incomplete object fails to type-check.
+ * The names in a handler table that are neither one of `Names` nor `_`. A
+ * table typed `Record<string, …>` names every string, so it has unknown names
+ * for any closed set of names.
  */
-type Exhaustive<E extends StructuredError<string, string>, C> =
-  HasCatchAllCode<E> extends true
-    ? CatchAllCodeRule
-    : [Exclude<keyof C, E["code"] | "_">] extends [never]
-      ? "_" extends keyof C
+export type UnknownHandlerNames<C, Names extends string> = Exclude<
+  HandlerNames<C>,
+  Names | "_"
+>;
+
+/**
+ * Rejects a union with the code `_`, and a handler for a code outside `Code`,
+ * also next to a `_` catch-all. Without a `_` catch-all, every code must have
+ * a handler. Missing codes are added as required, so an incomplete object
+ * fails to type-check.
+ *
+ * `Code` is the code union of the error, inferred from its apparent type. For
+ * an error typed by a type parameter, `E["code"]` would defer every check,
+ * and the call would accept no table.
+ */
+type Exhaustive<
+  E extends StructuredError<string, string>,
+  Code extends string,
+  C,
+> = [Extract<Code, "_">] extends [never]
+  ? [UnknownHandlerNames<C, Code>] extends [never]
+    ? "_" extends keyof C
+      ? C
+      : [Exclude<Code, HandlerNames<C>>] extends [never]
         ? C
-        : [Exclude<E["code"], keyof C>] extends [never]
-          ? C
-          : C & {
-              [K in Exclude<E["code"], keyof C>]: (
-                error: CaseArg<E, K>,
-              ) => unknown;
-            }
-      : C & Record<Exclude<keyof C, E["code"] | "_">, never>;
+        : C & {
+            [K in Exclude<Code, HandlerNames<C>>]: (
+              error: CaseArg<E, K>,
+            ) => unknown;
+          }
+    : C & Record<UnknownHandlerNames<C, Code>, never>
+  : CatchAllCodeRule;
 
 /**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
@@ -77,9 +94,8 @@ type Exhaustive<E extends StructuredError<string, string>, C> =
  * a `_` catch-all). A handler for a code that the union does not contain is a
  * compile error too, also next to `_`. A union with the code `_` cannot use
  * `matchError`, because `_` is the catch-all. Each handler receives the error
- * narrowed to its case, so
- * `details` is the precise per-code type. The return type is the union of the
- * handler return types.
+ * narrowed to its case, so `details` is the precise per-code type. The return
+ * type is the union of the handler return types.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive
@@ -112,7 +128,11 @@ type Exhaustive<E extends StructuredError<string, string>, C> =
 export function matchError<
   E extends StructuredError<string, string>,
   const C extends Cases<E>,
->(error: E, cases: Exhaustive<E, C>): HandlerResult<C> {
+  Code extends string = E["code"],
+>(
+  error: E & { readonly code: Code },
+  cases: Exhaustive<E, Code, C>,
+): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;
 

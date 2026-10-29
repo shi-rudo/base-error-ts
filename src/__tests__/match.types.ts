@@ -55,7 +55,74 @@ declare const catchAllCodeError: CatalogError<typeof CatchAllCodeErrors>;
 // @ts-expect-error a union with the code _ cannot use matchError, because _ is the catch-all
 matchError(catchAllCodeError, { _: () => 1 });
 
+declare const underscorePrefixed: StructuredError<`_${string}`, string>;
+
+const underscorePrefixedCode: number = matchError(underscorePrefixed, {
+  _internal: () => 1,
+  _: () => 2,
+});
+
+function statusWithCatchAll<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  return matchError(error, { USER_NOT_FOUND: () => 404, _: () => 500 });
+}
+
+function statusOfEveryCode<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  return matchError(error, {
+    USER_NOT_FOUND: () => 404,
+    RATE_LIMITED: () => 429,
+  });
+}
+
+function statusOfAnyError<E extends StructuredError<string, string>>(
+  error: E,
+): number {
+  return matchError(error, { _: () => 500 });
+}
+
+function misspelledInGeneric<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  // @ts-expect-error a code that the union does not contain is rejected in a generic caller
+  return matchError(error, { USER_NOT_FUND: () => 404, _: () => 500 });
+}
+
+const HttpErrors = defineErrors({
+  "404": { category: "NOT_FOUND", retryable: false },
+  "500": { category: "INTERNAL", retryable: false },
+});
+declare const httpError: CatalogError<typeof HttpErrors>;
+
+const numericKeyWithCatchAll: number = matchError(httpError, {
+  404: () => 1,
+  _: () => 2,
+});
+
+const numericKeysComplete: number = matchError(httpError, {
+  404: () => 1,
+  500: () => 2,
+});
+
+// @ts-expect-error a numeric key that names no code of the union is rejected
+matchError(httpError, { 403: () => 1, _: () => 2 });
+
+declare const dynamicTable: Record<string, () => number>;
+
+// @ts-expect-error a table typed Record<string, …> names no code, so the compiler cannot check it against a closed union
+matchError(userError, dynamicTable);
+
 void UserErrors;
+void HttpErrors;
+void statusWithCatchAll;
+void statusOfEveryCode;
+void statusOfAnyError;
+void misspelledInGeneric;
+void underscorePrefixedCode;
+void numericKeyWithCatchAll;
+void numericKeysComplete;
 void CatchAllCodeErrors;
 void withCatchAll;
 void complete;
