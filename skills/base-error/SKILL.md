@@ -34,7 +34,8 @@ It needs Node.js 24 or later (or an edge runtime or browser). It ships one ES
 module build, and `require()` loads it on Node.js 24. An ES module project
 needs TypeScript 5.0 or later. A TypeScript project that compiles to CommonJS
 needs `module: nodenext` with TypeScript 5.8 or later, `module: node20` with
-TypeScript 5.9 or later, or `module: commonjs`; `module: node16` fails with
+TypeScript 5.9 or later, or `module: commonjs` with TypeScript 5 or 6;
+TypeScript 7 removed its resolution `node10`. `module: node16` fails with
 TS1479. It has no runtime dependencies.
 
 ## Two output paths
@@ -133,5 +134,7 @@ log object.
 | `references/public-error.md` | `definePublicErrors`, descriptors, `project`, `localize`, `toProblem`, typed public codes, server functions |
 | `references/migration.md` | code written against an older major, or an API this skill does not name |
 
-The guide in `docs/guide/` and `MIGRATION.md` are the source of truth. When
-this skill and the library disagree, the library wins; compile against it.
+The guide in `docs/guide/` and `MIGRATION.md` of the repository
+(https://github.com/shi-rudo/base-error-ts) are the source of truth. When this
+skill and the library disagree, the library wins; compile against the installed
+package.

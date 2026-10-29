@@ -4,7 +4,7 @@
 
 ### Documentation
 
-- **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`. Every code example in it compiles against the source of this release.
+- **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`.
 
 ## 10.0.0 - 2026-10-29
 

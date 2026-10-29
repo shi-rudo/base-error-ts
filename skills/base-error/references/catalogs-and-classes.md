@@ -46,7 +46,7 @@ the key is the code. For dotted codes, see *Dotted codes: a prefix*.
 | `codes` | the frozen list of codes |
 
 - `detailsType<T>()` is a compile-time marker. Validate untrusted input before
-  you pass it as `details` (see `ValidationError` below).
+  you pass it as `details` (see the section `ValidationError`).
 - `metadata` must be JSON-safe. HTTP, gRPC or CLI mappings stay the
   consumer's choice; `metadata.httpStatus` is a convention, not a field the
   library reads.
