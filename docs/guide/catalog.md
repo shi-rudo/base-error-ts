@@ -220,8 +220,10 @@ function describe(error: AuthzError): string {
 }
 ```
 
-`match` rules are the same as the rules of `matchError`. The compiler also
-rejects a key that the catalog does not define. `match` checks no provenance,
+`match` follows the exhaustiveness rules of `matchError`. It rejects a key that
+the catalog does not define. A key of the catalog that a narrowed error cannot
+have still compiles, because `match` checks the keys of the catalog, not the
+codes of the error. `match` checks no provenance,
 so narrow a caught value with `AuthzErrors.is(value)` first. Every catalog has
 `match`. Without a prefix, it dispatches as `matchError` does. A catalog with
 the key `_` cannot use `match`, because `_` is the catch-all. The compiler

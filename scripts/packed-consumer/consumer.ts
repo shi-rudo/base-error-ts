@@ -61,6 +61,40 @@ export const status: number = matchError(failure, {
 // @ts-expect-error matchError needs a case for every code of the union
 matchError(failure, { EMAIL_TAKEN: () => 409 });
 
+export const retryable: boolean = matchError(failure, {
+  RATE_LIMITED: (error) => error.retryable,
+  _: () => false,
+});
+
+// @ts-expect-error matchError rejects a code that the union does not contain
+matchError(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
+
+export function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
+  return matchError(error, { RATE_LIMITED: () => 429, _: () => 500 });
+}
+
+export function statusOfAnyCode<Code extends string>(
+  error: StructuredError<Code, string>,
+): number {
+  return matchError(error, { _: () => 500 });
+}
+
+declare const brandedFailure: StructuredError<
+  string & { readonly __brand: "ErrorCode" },
+  string
+>;
+export const brandedStatus: number = matchError(brandedFailure, {
+  SOME_CODE: () => 409,
+  _: () => 500,
+});
+
+export function misspelledStatusOf<E extends EmailTaken | RateLimited>(
+  error: E,
+): number {
+  // @ts-expect-error matchError rejects an unknown code also for a generic error
+  return matchError(error, { EMAIL_TAKN: () => 409, _: () => 500 });
+}
+
 const AuthzErrors = defineErrors(
   {
     not_a_member: { category: "FORBIDDEN", retryable: false },

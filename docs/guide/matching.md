@@ -177,6 +177,29 @@ When a new error code is added to the union, every `matchError` without a `_`
 stops compiling until you handle it. That is the point: the compiler maintains
 your error-handling completeness.
 
+The compiler also rejects a handler for a code that the union does not
+contain, with or without `_`. So a misspelled code fails to compile and does
+not fall through to `_`:
+
+```ts
+matchError(err, {
+  USER_NOT_FUND: () => render404(), // compile error: no such code
+  _: (e) => renderGeneric(e.code),
+});
+```
+
+The compiler checks names only against known codes:
+
+- A table typed `Record<string, …>` does not pass for a closed union, because
+  it names every string. Write the table as an object literal.
+- An error whose code type is a bare type parameter names no code. An example
+  is `StructuredError<Code>` in a generic function. For such an error,
+  `matchError` takes only a table with a single `_` handler. To name other
+  handlers, assign the error to a variable typed with its codes, or with
+  `StructuredError<string>`.
+- A union with the code `_` cannot name a handler next to `_`, because `_` is
+  the catch-all. Rename the code.
+
 ### Per-case narrowing
 
 Each handler receives the error narrowed to its case, so `details` is the
