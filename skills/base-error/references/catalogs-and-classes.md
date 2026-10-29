@@ -87,7 +87,8 @@ error.code; // "restaurant.authz.not_a_member", a literal type
 - `codes`, `CatalogError` and `CatalogErrorOf` keep the full code as a literal
   type.
 - The prefix must be a string literal without a leading, trailing or doubled
-  `.`; the compiler and the runtime reject anything else.
+  `.`, and a key under a prefix must not contain a `.`: the prefix holds every
+  segment before the key. The compiler and the runtime reject anything else.
 - The prefix belongs to the catalog. Definitions of one area compose with
   spread before `defineErrors`; two areas are two catalogs.
 

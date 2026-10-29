@@ -62,9 +62,11 @@ throw e;
 - Without `_`, every key needs a handler; a key the catalog does not define is
   a compile error, also next to `_`.
 - `match` checks no provenance. Narrow a caught value with `Errors.is` first.
-- For a union of several catalogs, narrow with each catalog's `is` and match
-  each one, or use `matchError` with quoted codes; a quoted code needs no
-  brackets:
+- A catalog with the key `_` cannot use `match`: `_` is the catch-all.
+- Match a union of several catalogs with `matchError` on the codes; a quoted
+  code needs no brackets. Never split the union with `is`: `is` checks
+  provenance, so an error rebuilt with `fromJSON` lands in the other branch,
+  and that catalog's `match` throws.
 
 ```ts
 matchError(accessError, {
