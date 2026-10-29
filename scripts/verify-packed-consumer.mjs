@@ -11,7 +11,8 @@
  *   It does not compile when a declared value export is missing at runtime,
  *   or when a runtime export has no declaration.
  * - `runtime.mjs` and `runtime.cjs` load every entry point through the
- *   exports map.
+ *   exports map. `runtime.cjs` loads the ES module build through require()
+ *   and checks that require() and import() load the same classes.
  * - The fixtures install neither pino nor a Sentry SDK, so the declarations
  *   of the pino and sentry subpaths must resolve without them.
  *
@@ -35,8 +36,12 @@ import { fileURLToPath } from "node:url";
 const repo = fileURLToPath(new URL("..", import.meta.url));
 const templates = fileURLToPath(new URL("packed-consumer/", import.meta.url));
 
-/** The documented minimum, the latest 6.x, and the latest release. */
-const COMPILERS = ["5.0.4", "6", "latest"];
+/**
+ * The documented minimum for an ES module consumer, the minimum for a
+ * CommonJS consumer (require of an ES module), the latest 6.x, and the
+ * latest release.
+ */
+const COMPILERS = ["5.0.4", "5.8", "6", "latest"];
 
 const ENTRIES = {
   root: "@shirudo/base-error",
@@ -54,10 +59,21 @@ const COMMON_OPTIONS = {
   skipLibCheck: false,
 };
 
-/** `legacy` marks node10, which TypeScript 6 deprecates and 7 removes. */
+/**
+ * `legacy` marks node10, which TypeScript 6 deprecates and 7 removes. The
+ * package ships one ES module build. A CommonJS file requires it through
+ * require(esm), which `module: nodenext` allows from TypeScript 5.8, and
+ * `module: node16` refuses in every version (TS1479).
+ */
 const MODES = [
   { name: "node16-esm", dir: "esm", module: "node16", resolution: "node16" },
-  { name: "node16-cjs", dir: "cjs", module: "node16", resolution: "node16" },
+  {
+    name: "node16-cjs",
+    dir: "cjs",
+    module: "node16",
+    resolution: "node16",
+    unsupported: "module node16 refuses require of an ES module (TS1479)",
+  },
   {
     name: "nodenext-esm",
     dir: "esm",
@@ -69,6 +85,7 @@ const MODES = [
     dir: "cjs",
     module: "nodenext",
     resolution: "nodenext",
+    requireEsmFrom: [5, 8],
   },
   { name: "bundler", dir: "esm", module: "esnext", resolution: "bundler" },
   {
@@ -169,9 +186,16 @@ function createFixture(work, tarball, compiler) {
 }
 
 function compile({ fixture, version }, mode) {
-  const major = Number(version.split(".")[0]);
+  const [major, minor] = version.split(".").map(Number);
   if (mode.legacy && major >= 7) {
     return "unsupported: TypeScript 7 removed moduleResolution node10";
+  }
+  if (mode.unsupported !== undefined) return `unsupported: ${mode.unsupported}`;
+  if (mode.requireEsmFrom !== undefined) {
+    const [fromMajor, fromMinor] = mode.requireEsmFrom;
+    if (major < fromMajor || (major === fromMajor && minor < fromMinor)) {
+      return `unsupported: require of an ES module needs TypeScript ${fromMajor}.${fromMinor}`;
+    }
   }
   writeJson(join(fixture, `tsconfig.${mode.name}.json`), {
     compilerOptions: {
