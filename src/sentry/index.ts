@@ -12,6 +12,9 @@
  * that builds on `@sentry/core`.
  */
 import { logObjectOf } from "../index.js";
+import { readOwnEnumerableKeys, readProperty } from "../errors/guarded-read.js";
+import { isNativeError } from "../errors/native-error.js";
+import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
 /** The parts of a Sentry exception that the setup reads and writes. */
 type SentryException = {
@@ -30,6 +33,31 @@ type SentryEvent = {
 type SentryHint = { originalException?: unknown };
 
 type LogNode = Record<string, unknown>;
+
+/** `isNativeError` reads the prototype first, and a Proxy can throw there. */
+function isErrorValue(value: unknown): value is Error {
+  try {
+    return isNativeError(value);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The error that Sentry builds the exception of an event from. For an error,
+ * that is the error itself. For an object, Sentry takes its first own
+ * enumerable property that holds an error. Any other value gets a synthetic
+ * exception from Sentry, and the value carries no policy.
+ */
+function reportedError(original: unknown): Error | undefined {
+  if (isErrorValue(original)) return original;
+  if (typeof original !== "object" || original === null) return undefined;
+  for (const key of readOwnEnumerableKeys(original, MAX_LOG_NODES)) {
+    const value = readProperty(original, key);
+    if (isErrorValue(value)) return value;
+  }
+  return undefined;
+}
 
 function isLogNode(value: unknown): value is LogNode {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -86,7 +114,7 @@ function logNodesById(
  * Replaces the name and the message of each exception with the ones of its
  * log node. An exception without a log node keeps no name and no message. A
  * marker of the log object, such as `[Shared cause]`, becomes the message.
- * An event without an original error has no policy to keep and stays as it
+ * An event without an error to report has no policy to keep and stays as it
  * is. Sentry calls `beforeSend` after all its integrations, so no integration
  * can add a raw message afterwards. Pass this function to `Sentry.init` as
  * the `beforeSend` option.
@@ -96,8 +124,9 @@ export function beforeSend<E extends SentryEvent>(
   hint: SentryHint,
 ): E {
   const exceptions = event.exception?.values;
-  if (exceptions === undefined) return event;
-  const logObject = logObjectOf(hint.originalException);
+  const error = reportedError(hint.originalException);
+  if (exceptions === undefined || error === undefined) return event;
+  const logObject = logObjectOf(error);
   if (!isLogNode(logObject)) return event;
   const nodes = logNodesById(exceptions, logObject);
   for (const exception of exceptions) {
@@ -110,7 +139,8 @@ export function beforeSend<E extends SentryEvent>(
 }
 
 /**
- * Adds the log object of the error as the `error` context of the event.
+ * Adds the log object of the reported error as the `error` context of the
+ * event.
  * Sentry runs `processEvent` before it normalizes the event, so
  * `normalizeDepth` bounds the context. An `error` context that the
  * application sets wins. Add it to the `integrations` of `Sentry.init`.
@@ -122,7 +152,9 @@ export function logObjectContextIntegration(): {
   return {
     name: "LogObjectContext",
     processEvent(event, hint) {
-      const logObject = logObjectOf(hint.originalException);
+      const error = reportedError(hint.originalException);
+      if (error === undefined) return event;
+      const logObject = logObjectOf(error);
       if (!isLogNode(logObject)) return event;
       const target: SentryEvent = event;
       target.contexts = { error: logObject, ...target.contexts };

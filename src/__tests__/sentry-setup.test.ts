@@ -12,6 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../index.js";
 import { CIRCULAR_CAUSE_CHAIN_MARKER } from "../errors/serializer-markers.js";
+import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 import { beforeSend, logObjectContextIntegration } from "../sentry/index.js";
 
 const SECRET_MESSAGE = "lookup for ada@example.com failed";
@@ -283,6 +284,51 @@ describe("the Sentry setup", () => {
 
     expect(body).not.toContain(SECRET_CAUSE);
     expect(body).not.toContain(SECRET_MESSAGE);
+  });
+
+  it("keeps the event of a captured value that holds no error, and adds no context", async () => {
+    const { event } = await sentCapture((scope) =>
+      scope.captureException({ status: 500, region: "eu" }),
+    );
+
+    expect(exceptionsOf(event)[0]?.value).toBe(
+      "Object captured as exception with keys: region, status",
+    );
+    expect(event.contexts?.error).toBeUndefined();
+  });
+
+  it("writes the masked message of an error that a captured object holds", async () => {
+    const { body, event } = await sentCapture((scope) =>
+      scope.captureException({
+        error: redactedLookupError(),
+        requestId: "r-1",
+      }),
+    );
+
+    expect(body).not.toContain(SECRET_EMAIL);
+    expect(exceptionsOf(event)).toMatchObject([
+      { type: "USER_NOT_FOUND", value: "[REDACTED]" },
+    ]);
+    expect(event.contexts?.error).toMatchObject({
+      code: "USER_NOT_FOUND",
+      message: "[REDACTED]",
+    });
+  });
+
+  it.each([
+    ["a Proxy whose traps throw", () => hostileProxy()],
+    ["a revoked Proxy", () => revokedProxy()],
+  ])("keeps the event of %s without a throw", (_kind, original) => {
+    const event = {
+      exception: { values: [{ type: "Error", value: "raw" }] },
+    };
+    const hint = { originalException: original() };
+
+    const sent = beforeSend(event, hint);
+    const processed = logObjectContextIntegration().processEvent(event, hint);
+
+    expect(sent.exception.values).toEqual([{ type: "Error", value: "raw" }]);
+    expect(processed).not.toHaveProperty("contexts");
   });
 
   it("keeps an event whose exceptions do not come from an error unchanged", async () => {
