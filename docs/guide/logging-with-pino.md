@@ -25,27 +25,20 @@ its fields are not enumerable. To keep it, log it under `err`, or write
 
 ## The setup
 
-Copy these imports and the module that follows them into your application.
-Pino stays a dependency of your application, not of this library.
+The subpath `@shirudo/base-error/pino` holds the setup. It imports nothing from
+pino, so it adds no dependency. Pino stays a dependency of your application.
+Spread its options into the options of your logger:
 
 ```ts
-import pino, { type LogFn, type Logger, type LoggerOptions } from "pino";
-import { logObjectOf } from "@shirudo/base-error";
+import pino from "pino";
+import { pinoErrorOptions } from "@shirudo/base-error/pino";
 ```
 
-<<< @/../examples/pino-logger.ts#module{ts}
+<<< @/../examples/pino-logger.ts#usage{ts}
 
-Then create your logger with these options:
-
-```ts
-const logger = pino({ ...pinoErrorOptions, level: "info" });
-
-logger.error(error);
-logger.error({ err: error, requestId }, "user lookup failed");
-```
-
-If your logger has serializers or hooks of its own, merge them with
-`pinoErrorOptions`. The repository has the module, with a demo, in
+If your logger has serializers or hooks of its own, read
+`pinoErrorOptions.serializers.err` and `pinoErrorOptions.hooks.logMethod` and
+combine them with yours. The repository runs this code as a demo in
 [`examples/pino-logger.ts`](https://github.com/shi-rudo/base-error-ts/blob/main/examples/pino-logger.ts).
 
 ## What the setup does
@@ -55,7 +48,8 @@ The setup has two parts:
 - **The `logMethod` hook.** Pino reads `err.message` for `msg` before any
   serializer runs. The hook gives pino the log object of the value first, so
   `msg` holds the message of the log object. If the policy denies `message`,
-  `msg` is masked too.
+  `msg` is masked too. The first argument is often a thrown value, so the hook
+  reads it only through guarded reads and does not throw for a hostile value.
 - **The serializer for `err`.** It writes every value with
   [`logObjectOf()`](./observability#any-thrown-value-logobjectof). An error of
   this library writes its own log object, with its policy. A native `Error`
@@ -99,8 +93,8 @@ logger[level]({ err: error }, "request failed");
 
 ## Limits
 
-- The setup expects the default `errorKey` of pino, `err`. If you change
-  `errorKey`, change the key that the hook reads too.
+- The setup works with the default `errorKey` of pino, `err`. A logger with
+  another `errorKey` writes the error under that key without the setup.
 - Pino and the setup recognize an error in the first argument with
   `instanceof Error`. An error from a `node:vm` context fails this test, and
   pino writes it as a merge object without its message. Log such an error under

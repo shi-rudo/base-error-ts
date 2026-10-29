@@ -18,20 +18,16 @@ still reaches Sentry, and Sentry is a third party that stores the event.
 
 ## The setup
 
-Copy these imports and the module that follows them into your application.
-The Sentry SDK stays a dependency of your application, not of this library.
-
-```ts
-import type { ErrorEvent, Event, EventHint, Exception } from "@sentry/node";
-import { logObjectOf } from "@shirudo/base-error";
-```
-
-<<< @/../examples/sentry-reporter.ts#module{ts}
-
-Then pass both parts to `Sentry.init`:
+The subpath `@shirudo/base-error/sentry` holds the setup. It imports nothing
+from Sentry, so it adds no dependency. The Sentry SDK stays a dependency of
+your application. Pass both parts to `Sentry.init`:
 
 ```ts
 import * as Sentry from "@sentry/node";
+import {
+  beforeSend,
+  logObjectContextIntegration,
+} from "@shirudo/base-error/sentry";
 
 Sentry.init({
   dsn: process.env.SENTRY_DSN,
@@ -43,9 +39,7 @@ Sentry.captureException(error);
 ```
 
 Sentry adds the integration to its default integrations. If you have a
-`beforeSend` of your own, call this function in it first. The repository has
-the module in
-[`examples/sentry-reporter.ts`](https://github.com/shi-rudo/base-error-ts/blob/main/examples/sentry-reporter.ts).
+`beforeSend` of your own, call this function in it first.
 
 ## What the setup does
 
@@ -130,4 +124,5 @@ For an error that denies `message` and `email`, the event holds this (shortened)
   other copy reaches Sentry without its policy. `logObjectOf` writes it like a
   foreign error. Deduplicate the package.
 - A test of this repository runs the setup against the event builder of
-  `@sentry/core` 11. `@sentry/node` builds its events with the same code.
+  `@sentry/core` 11. `@sentry/node` builds its events with the same code, and
+  its options extend the options of `@sentry/core`.

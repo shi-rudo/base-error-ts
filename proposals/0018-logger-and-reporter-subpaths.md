@@ -1,6 +1,6 @@
 # The pino and Sentry setups as subpaths
 
-Status: proposed; release: 9.1.0.
+Status: implemented; release: 9.1.0.
 Tracking: `base-error-ts-fiq`.
 
 ## Decision

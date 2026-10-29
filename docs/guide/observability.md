@@ -406,15 +406,16 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
 ## pino
 
 Pino has a standard serializer for the `err` key that reads the error object
-itself, so a redaction policy does not hold there. [Logging with
-pino](./logging-with-pino) shows the setup that writes every value under `err`
-through `logObjectOf()`.
+itself, so a redaction policy does not hold there. The subpath
+`@shirudo/base-error/pino` writes every value under `err` through
+`logObjectOf()`. [Logging with pino](./logging-with-pino) shows the setup.
 
 ## Sentry
 
 Sentry reads the error object itself, so a redaction policy does not hold in
-the exceptions of the event. [Reporting to Sentry](./reporting-to-sentry) shows
-the setup that writes the exceptions of every event through `logObjectOf()`.
+the exceptions of the event. The subpath `@shirudo/base-error/sentry` writes
+the exceptions of every event through `logObjectOf()`.
+[Reporting to Sentry](./reporting-to-sentry) shows the setup.
 
 ## Other reporters
 
