@@ -12,7 +12,9 @@ This directory contains examples of how to use the `BaseError` and `StructuredEr
 6. **Automatic Name** - Automatic name inference feature
 7. **Cause Chain** - Preserving and walking the cause chain
 8. **Public Error E2E** - Hono `onError` → TanStack server fn → React `useQuery`, showing the project/localize/toProblem stages across a real wire (client- and backend-localized)
-9. **Voucher Service** (`voucher-service/`) - One small HTTP service that composes the whole feature set: catalog, validation, aggregate fan-out, retry decision, redacted logging, queue round-trip, and localized RFC 9457 responses
+9. **pino Logger** (`pino-logger.ts`) - Logs a masked error through the subpath `@shirudo/base-error/pino`
+10. **Sentry Reporter** (`sentry-reporter.ts`) - Reports a masked error through the subpath `@shirudo/base-error/sentry`, without a DSN and without a network call
+11. **Voucher Service** (`voucher-service/`) - One small HTTP service that composes the whole feature set: catalog, validation, aggregate fan-out, retry decision, redacted logging, queue round-trip, and localized RFC 9457 responses
 
 ## Running the Examples
 
