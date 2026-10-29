@@ -416,11 +416,10 @@ Sentry reads the error object itself, so a redaction policy does not hold in
 the exceptions of the event. [Reporting to Sentry](./reporting-to-sentry) shows
 the setup that writes the exceptions of every event through `logObjectOf()`.
 
-## OpenTelemetry
+## Other reporters
 
-Write `logObjectOf(error)` into the span or the log record, not the error
-itself. A call that reads the error itself bypasses the redaction policy, for
-example `span.recordException(error)`.
+A reporter that reads the error object itself bypasses the redaction policy.
+Give it the log object from `logObjectOf(error)` instead of the error.
 
 ## Reconstructing: `StructuredError.fromJSON`
 

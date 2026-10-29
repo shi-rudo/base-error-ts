@@ -1,12 +1,13 @@
 /**
- * A Sentry setup that writes the error of every event through
+ * A Sentry setup that writes the exceptions of every event through
  * `logObjectOf()`, so the redaction policy of an error holds in the event.
+ * It also adds the log object of the error as the `error` context.
  *
  * Without it, Sentry reads the error itself: it writes the raw name and the
  * raw message of the error, of each cause and of each member of an aggregate
  * into the event.
  */
-import type { ErrorEvent, EventHint, Exception } from "@sentry/core";
+import type { ErrorEvent, Event, EventHint, Exception } from "@sentry/core";
 
 import { logObjectOf } from "../src/index.js";
 
@@ -20,48 +21,84 @@ function textOf(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function childOf(node: unknown, source: string | undefined): unknown {
+  if (!isLogNode(node)) return undefined;
+  if (source === "cause") return node.cause;
+  const member = /^errors\[(\d+)\]$/.exec(source ?? "");
+  if (member === null || !Array.isArray(node.errors)) return undefined;
+  return node.errors[Number(member[1])];
+}
+
 /**
- * The node of the log object at the position of one exception of the event.
- * Sentry links a cause and a member of an aggregate as an exception whose
- * `mechanism` names its parent (`parent_id`) and its link (`source`, `cause`
- * or `errors[i]`). The error itself has no parent.
+ * The log node of each linked exception, by its `exception_id`. Sentry links
+ * a cause and a member of an aggregate as an exception whose `mechanism`
+ * names its parent (`parent_id`) and its link (`source`, `cause` or
+ * `errors[i]`). A parent has a lower id than its children, so one pass in id
+ * order meets each parent first. A link to a missing or later id finds no
+ * node.
  */
-function logNodeOf(
-  exception: Exception,
+function logNodesById(
   exceptions: readonly Exception[],
-  logObject: unknown,
-): unknown {
-  const mechanism = exception.mechanism;
-  if (mechanism?.parent_id === undefined) return logObject;
-  const parent = exceptions.find(
-    (candidate) => candidate.mechanism?.exception_id === mechanism.parent_id,
-  );
-  const parentNode =
-    parent === undefined ? undefined : logNodeOf(parent, exceptions, logObject);
-  if (!isLogNode(parentNode)) return undefined;
-  if (mechanism.source === "cause") return parentNode.cause;
-  const member = /^errors\[(\d+)\]$/.exec(mechanism.source ?? "");
-  if (member === null || !Array.isArray(parentNode.errors)) return undefined;
-  return parentNode.errors[Number(member[1])];
+  logObject: LogNode,
+): Map<number, unknown> {
+  const links: { id: number; parentId?: number; source?: string }[] = [];
+  for (const { mechanism } of exceptions) {
+    if (mechanism?.exception_id === undefined) continue;
+    links.push({
+      id: mechanism.exception_id,
+      parentId: mechanism.parent_id,
+      source: mechanism.source,
+    });
+  }
+  links.sort((first, second) => first.id - second.id);
+  const nodes = new Map<number, unknown>();
+  for (const { id, parentId, source } of links) {
+    const node =
+      parentId === undefined ? logObject : childOf(nodes.get(parentId), source);
+    nodes.set(id, node);
+  }
+  return nodes;
 }
 
 /**
  * Replaces the name and the message of each exception with the ones of its
- * log node, and attaches the log object as the `error` context. An exception
- * without a log node keeps no name and no message. A marker of the log
- * object, such as `[Shared cause]`, becomes the message. Pass this function
- * to `Sentry.init` as the `beforeSend` option.
+ * log node. An exception without a log node keeps no name and no message. A
+ * marker of the log object, such as `[Shared cause]`, becomes the message.
+ * An event without an original error has no policy to keep and stays as it
+ * is. Pass this function to `Sentry.init` as the `beforeSend` option.
  */
 export function beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent {
   const exceptions = event.exception?.values;
   if (exceptions === undefined) return event;
   const logObject = logObjectOf(hint.originalException);
+  if (!isLogNode(logObject)) return event;
+  const nodes = logNodesById(exceptions, logObject);
   for (const exception of exceptions) {
-    const node = logNodeOf(exception, exceptions, logObject);
+    const id = exception.mechanism?.exception_id;
+    const node = id === undefined ? logObject : nodes.get(id);
     exception.type = isLogNode(node) ? textOf(node.name) : undefined;
     exception.value = isLogNode(node) ? textOf(node.message) : textOf(node);
   }
-  if (isLogNode(logObject))
-    event.contexts = { ...event.contexts, error: logObject };
   return event;
+}
+
+/**
+ * Adds the log object of the error as the `error` context of the event.
+ * Sentry runs `processEvent` before it normalizes the event, so
+ * `normalizeDepth` bounds the context. An `error` context that the
+ * application sets wins. Add it to the `integrations` of `Sentry.init`.
+ */
+export function logObjectContextIntegration(): {
+  name: string;
+  processEvent(event: Event, hint: EventHint): Event;
+} {
+  return {
+    name: "LogObjectContext",
+    processEvent(event, hint) {
+      const logObject = logObjectOf(hint.originalException);
+      if (!isLogNode(logObject)) return event;
+      event.contexts = { error: logObject, ...event.contexts };
+      return event;
+    },
+  };
 }
