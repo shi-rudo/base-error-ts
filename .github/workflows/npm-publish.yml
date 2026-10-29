@@ -7,7 +7,8 @@ name: Publish
 # package settings on jsr.io.
 #
 # Release flow:
-#   1. commit the version bump (package.json, jsr.json, CHANGELOG.md) to main
+#   1. commit the version bump (package.json, jsr.json, the library_version
+#      of skills/base-error/SKILL.md, CHANGELOG.md) to main
 #   2. git tag v8.2.0 && git push --tags
 #
 # Tags only, never a branch push: otherwise every documentation commit on main
@@ -59,15 +60,18 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       # A tag that disagrees with the manifest publishes a version nobody
-      # tagged. Fail here rather than on the registry.
-      - name: Check the tag against the manifests
+      # tagged. Fail here rather than on the registry. The skill ships in
+      # both packages and names the version that it teaches, so it is a
+      # third copy of the version.
+      - name: Check the tag against the manifests and the skill
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           PKG="$(node -p "require('./package.json').version")"
           JSR="$(node -p "require('./jsr.json').version")"
-          echo "tag=$TAG package.json=$PKG jsr.json=$JSR"
-          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$JSR" ]; then
-            echo "::error::tag $TAG does not match package.json ($PKG) / jsr.json ($JSR)"
+          SKILL="$(node -p "(require('fs').readFileSync('skills/base-error/SKILL.md', 'utf8').match(/^  library_version: \"([^\"]+)\"$/m) ?? [])[1] ?? ''")"
+          echo "tag=$TAG package.json=$PKG jsr.json=$JSR skill=$SKILL"
+          if [ "$TAG" != "$PKG" ] || [ "$TAG" != "$JSR" ] || [ "$TAG" != "$SKILL" ]; then
+            echo "::error::tag $TAG does not match package.json ($PKG) / jsr.json ($JSR) / library_version of skills/base-error/SKILL.md ($SKILL)"
             exit 1
           fi
 

@@ -1,0 +1,187 @@
+# Handling caught errors
+
+A `catch` gives you `unknown`. Narrow it, dispatch on it, or wrap it; never
+assume its shape.
+
+## Guards
+
+| Guard | Narrows to | Trust |
+| --- | --- | --- |
+| `Errors.is(v)`, `Errors.is(v, "KEY")` | that catalog's union, or one member | strongest: only instances this catalog created |
+| `isErrorOf(Class, predicate?)(v)` | the class instance | local `instanceof`, not across realms |
+| `isAnyErrorOf(v, [A, B] as const)` | `A \| B` | local `instanceof` |
+| `isBaseError(v)` | `BaseError` | `instanceof` |
+| `isStructuredError(v)` | `StructuredError` | `instanceof`, then shape (`code`, `category`, `retryable`) |
+| `isError(v)` | error-like | shape only |
+| `hasErrorCode("ENOENT")(v)` | error-like with that literal `code` | shape only; for Node.js and third-party codes |
+| `isRetryable(v)` | `{ retryable: true }` | shape only |
+| `isAllOf(v, [g1, g2] as const)` | intersection of the guards | as its guards |
+
+Shape guards recognize errors that crossed a worker, iframe or wire boundary,
+and they can be forged. Use them for classification, not to decide what to
+disclose or which domain behavior to run. All guards fail closed: a throwing
+getter or proxy reads as "no match".
+
+## Closed dispatch: `matchError`
+
+Exhaustive over a closed union of literal codes, with per-case narrowing of
+`details`. A missing code is a compile error unless a `_` case catches the
+rest:
+
+```ts
+import { matchError } from "@shirudo/base-error";
+
+if (OrderErrors.is(e)) {
+  return matchError(e, {
+    ORDER_NOT_FOUND: (x) => notFound(x.details?.orderId),
+    STOCK_RESERVATION_FAILED: () => retryLater(),
+  });
+}
+throw e;
+```
+
+Narrow from `unknown` first; exhaustiveness needs the union type. Per-case
+`details` narrowing needs a union of distinct error types, which a catalog
+gives; a single `StructuredError<"A" | "B">` narrows only the code.
+
+- A handler for a code that the union does not contain is a compile error,
+  also next to `_`. A misspelled code does not fall through to `_`.
+- A union with the code `_` cannot name a handler next to `_`: `_` is the
+  catch-all. A table with only `_` compiles.
+- A table typed `Record<string, …>` does not pass for a closed union. Write
+  the table as an object literal.
+- In a generic function, an error typed `StructuredError<Code>` with `Code` a
+  type parameter names no code. `matchError` takes only a `_`-only table for
+  it. To name handlers, assign the error to a variable typed with its codes
+  or with `StructuredError<string>`, and match that variable.
+
+## Closed dispatch by key: `Errors.match`
+
+Every catalog has `match`: `matchError` with handlers named by key. Use it for
+a catalog with a prefix, where the code is dotted and the key is not:
+
+```ts
+if (AuthzErrors.is(e)) {
+  return AuthzErrors.match(e, {
+    not_a_member: () => forbidden("join the organization first"),
+    missing_role: (x) => forbidden(`ask an owner for the role ${x.details?.role}`),
+  });
+}
+throw e;
+```
+
+- Without `_`, every key needs a handler; a key the catalog does not define is
+  a compile error, also next to `_`.
+- `match` checks no provenance. Narrow a caught value with `Errors.is` first.
+- A catalog with the key `_` cannot use `match`: `_` is the catch-all.
+- Match a union of several catalogs with `matchError` on the codes; a quoted
+  code needs no brackets. Never split the union with `is`: `is` checks
+  provenance, so an error rebuilt with `fromJSON` lands in the other branch,
+  and that catalog's `match` throws.
+
+```ts
+matchError(accessError, {
+  "restaurant.authz.not_a_member": () => 403,
+  "restaurant.authz.missing_role": () => 403,
+  "restaurant.storage.not_found": () => 404,
+});
+```
+
+## Closed classes: `defineErrorClassSet`
+
+For a group of local Error classes the application owns:
+
+```ts
+import { defineErrorClassSet } from "@shirudo/base-error";
+
+const NetworkErrors = defineErrorClassSet({ timeout: TimeoutError, refused: ConnectionRefusedError });
+
+const action = NetworkErrors.match(e, {
+  timeout: () => "retry" as const,
+  refused: () => "reconnect" as const,
+});
+```
+
+Every key needs exactly one handler. `match` throws when the value is none of
+the classes; list subclasses before their base classes.
+
+## Open world: `matchThrown`
+
+For values the application does not own (native errors, third-party classes,
+Node.js codes, anything thrown):
+
+```ts
+import { hasErrorCode, matchThrown } from "@shirudo/base-error";
+
+return matchThrown(e)
+  .with(SyntaxError, () => defaults)
+  .when(hasErrorCode("ENOENT"), () => defaults)
+  .withAny([TimeoutError, ConnectionRefusedError] as const, (x) => retry(x))
+  .otherwise((other) => {
+    throw other;
+  });
+```
+
+`.otherwise` is mandatory; cases run in order, the first match wins, and
+handler exceptions propagate. There is no `.exhaustive()`.
+
+## Wrapping: `toStructuredError`
+
+Turns any caught value into a `StructuredError` so it can be logged and
+projected:
+
+```ts
+import { toStructuredError } from "@shirudo/base-error";
+
+try {
+  await store.save(order);
+} catch (e) {
+  if (e instanceof TypeError || e instanceof RangeError) throw e; // a bug: surface it
+  const wrapped = toStructuredError(e, {
+    code: "ORDER_PERSIST_FAILED",
+    category: "INFRASTRUCTURE",
+    retryable: true,
+  });
+  logger.error({ err: wrapped });
+  return project(publicErrors, wrapped);
+}
+```
+
+- A real `StructuredError` passes through unchanged and ignores the options.
+- Another error is wrapped with its message kept and the original as `cause`.
+- A string becomes the message; anything else gets a fallback message and is
+  kept as `cause`.
+- Without options the defaults are `UNKNOWN_ERROR`, `INTERNAL`, `retryable:
+  false`. It invents no domain meaning; model expected failures with a catalog.
+- Its optional second parameter lets it serve as the error mapper of a
+  `Result` constructor, such as `Result.fromThrowable(fn, toStructuredError)`.
+
+## Invariants: `guard`
+
+```ts
+import { guard } from "@shirudo/base-error";
+
+guard(order, () => OrderErrors.create.ORDER_NOT_FOUND("order missing", { details: { orderId } }));
+order.lines; // narrowed to the non-null type
+```
+
+Pass a factory when the error is costly to build; it runs only on failure.
+
+## Cause chains and retryability
+
+| Helper | Returns |
+| --- | --- |
+| `getRootCause(e, maxDepth?)` | the deepest cause, cycle- and depth-safe |
+| `findInCauseChain(e, predicate)` | the first matching link |
+| `filterCauseChain`, `someCauseChain`, `everyCauseChain` | all matches, any, every |
+| `isChainRetryable(e)` | a full `StructuredError` in the chain is retryable |
+| `someChainRetryable(e)` | any link has `retryable === true` |
+| `getRootCauseRetryable(e)`, `getFirstRetryableCause(e)` | the root is a full `StructuredError` with `retryable: true`; the first such link |
+
+`isChainRetryable`, `getRootCauseRetryable` and `getFirstRetryableCause` need
+the full `code`, `category` and `retryable` shape. A `BaseError` subclass with
+only `retryable = true` counts for `someChainRetryable` alone.
+
+A nullish `cause` ends the chain. The helpers follow `cause` only; pass
+`{ aggregates: true }` to also visit the members of an `AggregateError` or
+`StructuredAggregateError`.
