@@ -1,8 +1,8 @@
 # Pitfalls
 
-A short list of the surprising-the-first-time behaviors. None are bugs; they
-follow from the [safe-by-default](./safe-by-default) design, but they are worth
-knowing.
+A short list of the surprising-the-first-time behaviors. None are bugs. Most
+follow from the [safe-by-default](./safe-by-default) design, and all of them are
+worth knowing.
 
 ## 1. `JSON.stringify(error)` and `res.json(error)` expose everything
 
@@ -30,7 +30,44 @@ Rule of thumb: `toLogObject()` / `toJSON()` go to your logger; the pipeline's
 `PublicError` (or the `ProblemDetails` body from `toProblem`) goes to the
 response.
 
-## 2. `StructuredError.name` is the `code`, not `"StructuredError"`
+## 2. The default error handler of a framework sends the `message`
+
+A framework answers a thrown error with its default error handler. That handler
+does not call the pipeline. It reads the fields of the error itself:
+
+- Fastify 5 without `setErrorHandler` sends the internal `code` and the
+  technical `message`:
+
+  ```json
+  {
+    "statusCode": 500,
+    "code": "USER_NOT_FOUND",
+    "error": "Internal Server Error",
+    "message": "No user 42 in the primary database"
+  }
+  ```
+
+- Express 5 sends the stack when `NODE_ENV` is not `production`. The stack
+  header holds the message. Express reads `NODE_ENV` when it creates the app,
+  and a missing value means `development`. With `NODE_ENV=production`, Express
+  sends only `Internal Server Error`.
+
+Other frameworks behave differently. Do not rely on a default handler. Install
+your own error handler, and send only the result of the pipeline from it. In
+Fastify:
+
+```ts
+app.setErrorHandler((error, request, reply) => {
+  const { status, headers, body } = toProblem(catalog, project(catalog, error));
+  return reply.status(status).headers(headers).send(body);
+});
+```
+
+In Express, register an error middleware with four parameters after the routes,
+and send the same result from it. Log the error in the same handler, see
+[Logging with pino](./logging-with-pino).
+
+## 3. `StructuredError.name` is the `code`, not `"StructuredError"`
 
 A `StructuredError` sets its `name` (and stack header) to its `code`:
 
@@ -42,7 +79,7 @@ e.name; // "USER_NOT_FOUND", not "StructuredError"
 So `err.name === "StructuredError"` is always false. Use `instanceof`,
 `isStructuredError(err)`, or switch on `err.code`.
 
-## 3. `project` is total: an unmapped error becomes the generic fallback
+## 4. `project` is total: an unmapped error becomes the generic fallback
 
 `project` never throws and never leaks. If an error matches no catalog entry, it
 degrades to the generic fallback, **silently** from the caller's point of view:
@@ -56,7 +93,7 @@ That is the safety guarantee, but it can hide a missing registration. Use the
 `onProject` hook to surface `kind: "fallback"` outcomes to your telemetry so an
 unmapped error class shows up as a metric rather than a generic 500.
 
-## 4. Class-name minification and the `_tag` discriminant
+## 5. Class-name minification and the `_tag` discriminant
 
 `_tag` (and an inferred `name`) fall back to `this.constructor.name`, which most
 production minifiers mangle by default (esbuild `keepNames: false`, terser/swc
@@ -75,7 +112,7 @@ class PaymentDeclinedError extends BaseError<"PaymentDeclinedError"> {
 }
 ```
 
-## 5. Redaction covers the log object, not `err.stack` or string interpolation
+## 6. Redaction covers the log object, not `err.stack` or string interpolation
 
 `redact` / `redactAllow` / `redactWith` rewrite `toLogObject()` / `toJSON()`.
 A deny-listed `"name"` or `"message"` is also masked in log stack headers on
@@ -96,7 +133,7 @@ When redaction matters, route errors through a structured serializer that hits
 `toJSON` (`logger.error({ err })`) instead of interpolating them into log
 strings. See [Observability](./observability#redacting-pii-from-logs).
 
-## 6. `publicIssues({ messages: true })` passes the validator's `message` through
+## 7. `publicIssues({ messages: true })` passes the validator's `message` through
 
 `publicIssues()` leaves the `message` of an issue out. With `messages: true` it
 crosses unchanged. The default messages of Valibot and ArkType embed the rejected

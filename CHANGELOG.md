@@ -2,7 +2,7 @@
 
 ## 10.0.0 - 2026-10-29
 
-Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. A redaction policy in a catalog definition is now a floor: a policy on a single error adds to it and no longer replaces it. `matchError` rejects a handler for a code that the union does not contain. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
+Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. A redaction policy in a catalog definition is now a floor: a policy on a single error adds to it and no longer replaces it. `matchError` rejects a handler for a code that the union does not contain. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error, and the README no longer says that a client never sees the `message`. See `MIGRATION.md`.
 
 ### Breaking Changes
 
@@ -39,6 +39,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 - **The guide pages _Logging with pino_ and _Reporting to Sentry_ show the subpaths.** They name the tested versions and the limits. Both pages load their usage from `examples/pino-logger.ts` and `examples/sentry-reporter.ts`, which CI compiles and runs against pino and `@sentry/node`. `scripts/verify-doc-snippets.mjs` fails the docs build when a snippet drifts from its example.
 
 - **The observability guide no longer gives the Sentry advice that leaked.** It recommended `Sentry.captureException(error, { extra: error.toLogObject() })`, which sent the raw message of the error to Sentry. It now points to the Sentry subpath. A new section says to give any other reporter `logObjectOf(error)` instead of the error.
+
+- **The README no longer says that a client never sees the `message`.** The library sends no error to a client, but the default error handler of a framework reads the error itself. Fastify 5 without `setErrorHandler` sends the internal `code` and the technical `message`. Express 5 sends the stack, and with it the message, when `NODE_ENV` is not `production`. Pitfall 2, _The default error handler of a framework sends the `message`_, shows both and an error handler that sends only the result of the pipeline. The pitfalls after it move down by one.
 
 ## 9.0.1 - 2026-10-23
 

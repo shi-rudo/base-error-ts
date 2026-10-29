@@ -91,7 +91,10 @@ export class UserNotFoundError extends StructuredError<
 }
 ```
 
-The `message` is technical text for the log. A client never sees it.
+The `message` is technical text for the log. The library never sends it to a
+client, but the default error handler of a framework can. Fastify 5 sends it,
+and Express 5 sends it when `NODE_ENV` is not `production`. Install your own
+error handler, as step 4 shows.
 
 ### 2. Log and handle it
 
