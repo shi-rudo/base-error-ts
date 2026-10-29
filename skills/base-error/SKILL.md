@@ -15,21 +15,12 @@ description: >
   reporting to pino or Sentry, mapping errors to an HTTP response, a server
   function result or an RFC 9457 problem body, localizing error messages, or
   upgrading from an older major version.
-type: core
-library: base-error
-library_version: "10.0.0"
-sources:
-  - "shi-rudo/base-error-ts:src/index.ts"
-  - "shi-rudo/base-error-ts:src/public-error/index.ts"
-  - "shi-rudo/base-error-ts:src/errors/catalog.ts"
-  - "shi-rudo/base-error-ts:src/errors/StructuredError.ts"
-  - "shi-rudo/base-error-ts:src/errors/BaseError.ts"
-  - "shi-rudo/base-error-ts:src/public-error/PublicErrorCatalog.ts"
-  - "shi-rudo/base-error-ts:src/public-error/types.ts"
-  - "shi-rudo/base-error-ts:src/pino/index.ts"
-  - "shi-rudo/base-error-ts:src/sentry/index.ts"
-  - "shi-rudo/base-error-ts:docs/guide"
-  - "shi-rudo/base-error-ts:MIGRATION.md"
+metadata:
+  type: "core"
+  library: "base-error"
+  library_version: "10.0.0"
+  repository: "shi-rudo/base-error-ts"
+  sources: "src/index.ts, src/public-error/index.ts, src/errors/catalog.ts, src/errors/StructuredError.ts, src/errors/BaseError.ts, src/public-error/PublicErrorCatalog.ts, src/public-error/types.ts, src/pino/index.ts, src/sentry/index.ts, docs/guide, MIGRATION.md"
 ---
 
 # base-error: typed errors and safe client output
