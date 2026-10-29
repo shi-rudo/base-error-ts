@@ -32,14 +32,17 @@ export type OrderError = CatalogError<typeof OrderErrors>;
 export type OrderNotFound = CatalogErrorOf<typeof OrderErrors, "ORDER_NOT_FOUND">;
 ```
 
-Use the error codes your codebase prescribes as keys. The library accepts any
-non-empty string; it imposes no casing or format.
+Use the error codes your codebase prescribes. The library accepts any
+non-empty string as a key and imposes no casing or format. Without a prefix,
+the key is the code. For dotted codes, see *Dotted codes: a prefix*.
 
 | Member | Purpose |
 | --- | --- |
-| `create.CODE(message, { details?, cause? })` | builds a `StructuredError` with that literal `code`; `details` is required only when the definition declares `detailsType<T>()` |
-| `is(value)`, `is(value, "CODE")` | true only for instances this exact catalog created |
-| `meta("CODE")` | frozen `{ category, retryable, metadata? }` |
+| `create.KEY(message, { details?, cause? })` | builds a `StructuredError` with that literal `code`; `details` is required only when the definition declares `detailsType<T>()` |
+| `is(value)`, `is(value, "KEY")` | true only for instances this exact catalog created |
+| `match(error, { KEY: handler, _? })` | dispatches on the key; exhaustive without `_` |
+| `meta(code)` | frozen `{ category, retryable, metadata? }`; takes the code, so `meta(error.code)` works |
+| `code.KEY` | the code of a key |
 | `codes` | the frozen list of codes |
 
 - `detailsType<T>()` is a compile-time marker. Validate untrusted input before
@@ -50,9 +53,75 @@ non-empty string; it imposes no casing or format.
 - `redaction: { mode: "deny" | "allow", keys: […] }` on a definition applies a
   sticky log redaction policy to every instance of that code.
 
+### Dotted codes: a prefix
+
+A code such as `restaurant.authz.not_a_member` is no identifier. Do not key the
+catalog by it, and do not write a separate object of code constants. Pass the
+namespace as `prefix` and use the last segment as the key:
+
+```ts
+import { defineErrors, detailsType, type CatalogError } from "@shirudo/base-error";
+
+export const AuthzErrors = defineErrors(
+  {
+    not_a_member: { category: "FORBIDDEN", retryable: false },
+    missing_role: {
+      category: "FORBIDDEN",
+      retryable: false,
+      details: detailsType<{ role: string }>(),
+    },
+  },
+  { prefix: "restaurant.authz" },
+);
+
+export type AuthzError = CatalogError<typeof AuthzErrors>;
+
+const error = AuthzErrors.create.not_a_member("actor 42 is not a member of org 7");
+error.code; // "restaurant.authz.not_a_member", a literal type
+```
+
+- The catalog derives each code as `${prefix}.${key}`. The separator is
+  always `.`.
+- `create`, `code`, `match`, `is` and `CatalogErrorOf` take the key.
+  `meta` takes the code, because its caller holds an error.
+- `codes`, `CatalogError` and `CatalogErrorOf` keep the full code as a literal
+  type.
+- The prefix must be a string literal without a leading, trailing or doubled
+  `.`; the compiler and the runtime reject anything else.
+- The prefix belongs to the catalog. Definitions of one area compose with
+  spread before `defineErrors`; two areas are two catalogs.
+
+Connect the public-error catalog through `code` and `codes`, never through a
+copied string:
+
+```ts
+import { definePublicErrors } from "@shirudo/base-error/public-error";
+
+const forbidden = { publicCode: "forbidden", status: 403, retryable: false };
+
+const publicErrors = definePublicErrors({
+  fallback: { publicCode: "internal_error", status: 500, retryable: false },
+})
+  .registerByCode(AuthzErrors.code.not_a_member, forbidden)
+  .registerByCode(AuthzErrors.code.missing_role, forbidden);
+
+publicErrors.assertCoverage(AuthzErrors.codes);
+```
+
+The full code is not in the source, and a key rename changes it. Pin the codes
+of each catalog in a test, so a search for a code from a log finds it and a
+rename fails the test:
+
+```ts
+expect(AuthzErrors.codes).toEqual([
+  "restaurant.authz.not_a_member",
+  "restaurant.authz.missing_role",
+]);
+```
+
 ### Factories return; they do not throw
 
-`create.CODE(…)` returns the error. Return it in a `Result` for an expected
+`create.KEY(…)` returns the error. Return it in a `Result` for an expected
 failure, or `throw` it where your codebase throws:
 
 ```ts

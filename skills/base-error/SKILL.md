@@ -2,8 +2,9 @@
 name: base-error
 description: >
   Use @shirudo/base-error to model errors as typed values and to turn them into
-  safe client output. Covers BaseError, StructuredError, defineErrors,
-  detailsType, CatalogError, CatalogErrorOf, matchError, matchThrown,
+  safe client output. Covers BaseError, StructuredError, defineErrors (also
+  with a prefix for dotted codes), detailsType, CatalogError, CatalogErrorOf,
+  Catalog.match, matchError, matchThrown,
   defineErrorClassSet, guard, isError, hasErrorCode, isErrorOf, isAnyErrorOf,
   isStructuredError, isRetryable, toStructuredError, ValidationError,
   publicIssues, StructuredAggregateError, getRootCause, findInCauseChain,
@@ -11,7 +12,8 @@ description: >
   redactWith, buildOwnLogFields, StructuredError.fromJSON, and the
   public-error subpath: definePublicErrors, PublicErrorCatalog, project,
   localize, toProblem, LocalizedMessageSet, PublicCodeOf, onProject.
-  Activate when defining error classes or catalogs, handling a caught value,
+  Activate when defining error classes or catalogs (also with dotted codes
+  such as context.area.reason), handling a caught value,
   logging or redacting errors, mapping errors to an HTTP response, a server
   function result or an RFC 9457 problem body, localizing error messages, or
   upgrading from an older major version.
@@ -54,16 +56,19 @@ log object.
 ## Core workflow
 
 1. **Define** the errors a component owns in a catalog with `defineErrors`:
-   per code a `category`, `retryable`, a compile-time `details` type
+   per key a `category`, `retryable`, a compile-time `details` type
    (`detailsType<T>()`), optional `metadata` and an optional log redaction
-   policy. Keep one catalog per ownership boundary.
+   policy. Keep one catalog per ownership boundary. A flat code such as
+   `ORDER_NOT_FOUND` is the key itself. For a dotted code such as
+   `restaurant.authz.not_a_member`, pass `{ prefix: "restaurant.authz" }` and
+   use the last segment as the key; the catalog derives `${prefix}.${key}`.
 2. **Create** an error through the catalog's factory,
-   `Errors.create.CODE(message, { details, cause })`. The message is technical,
+   `Errors.create.KEY(message, { details, cause })`. The message is technical,
    for logs only.
 3. **Handle** a caught value: narrow it with `Errors.is(e)` or
-   `Errors.is(e, "CODE")`, then dispatch with `matchError`, which fails to
-   compile when a code is missing. For values the application does not own,
-   use `matchThrown(e)…otherwise(…)`.
+   `Errors.is(e, "KEY")`, then dispatch with `Errors.match(e, { KEY: … })` or
+   `matchError`, which fail to compile when a case is missing. For values the
+   application does not own, use `matchThrown(e)…otherwise(…)`.
 4. **Log** with `logger.error({ err })` or `err.toLogObject()`. Redaction set
    with `redact`, `redactAllow` or the catalog's policy applies there.
 5. **Publish** at the boundary: register technical codes in a
@@ -76,6 +81,7 @@ log object.
 | Need | Use |
 | --- | --- |
 | A closed set of errors a component owns | `defineErrors` catalog, `CatalogError<typeof Errors>` for the union |
+| Dotted codes such as `restaurant.authz.not_a_member` | `defineErrors({ not_a_member: … }, { prefix: "restaurant.authz" })`; `Errors.code.not_a_member` for the full code |
 | One bespoke error with its own fields | a `StructuredError` subclass, own log fields via `buildOwnLogFields()` |
 | Several field-level input failures | `ValidationError` with `addIssue`, `publicIssues()` for the client |
 | Several branch failures at once | `StructuredAggregateError({ …, errors })` |
@@ -105,6 +111,11 @@ log object.
   membership in your own catalog.
 - `detailsType<T>()` checks nothing at runtime. Validate untrusted data before
   it reaches a factory.
+- In a catalog with a prefix, `create`, `code`, `match`, `is` and
+  `CatalogErrorOf` take the key; `meta` takes the code (`Errors.meta(e.code)`).
+  Never write a separate object of code constants next to the catalog.
+- A key rename changes the code, which logs and dashboards read. Pin the codes
+  of each catalog in a test: `expect(Errors.codes).toEqual([…])`.
 - Redaction rewrites the log object. `err.stack` and `console.log(err)` still
   show the raw message; log through a structured logger.
 - `publicIssues({ messages: true })` passes validator messages through
@@ -117,8 +128,8 @@ log object.
 
 | Reference | Read when |
 | --- | --- |
-| `references/catalogs-and-classes.md` | defining catalogs, composing them, subclassing `StructuredError`, `ValidationError`, aggregates |
-| `references/handling-caught-errors.md` | guards, `matchError`, `matchThrown`, class sets, `toStructuredError`, cause chains, retryability |
+| `references/catalogs-and-classes.md` | defining catalogs, dotted codes with a prefix, composing catalogs, subclassing `StructuredError`, `ValidationError`, aggregates |
+| `references/handling-caught-errors.md` | guards, `Catalog.match`, `matchError`, `matchThrown`, class sets, `toStructuredError`, cause chains, retryability |
 | `references/logging-and-redaction.md` | `toLogObject`, `logObjectOf`, redaction, own log fields, `fromJSON` |
 | `references/public-error.md` | `definePublicErrors`, descriptors, `project`, `localize`, `toProblem`, typed public codes, server functions |
 | `references/migration.md` | code written against an older major, or an API this skill does not name |

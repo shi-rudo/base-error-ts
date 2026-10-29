@@ -7,7 +7,7 @@ assume its shape.
 
 | Guard | Narrows to | Trust |
 | --- | --- | --- |
-| `Errors.is(v)`, `Errors.is(v, "CODE")` | that catalog's union, or one member | strongest: only instances this catalog created |
+| `Errors.is(v)`, `Errors.is(v, "KEY")` | that catalog's union, or one member | strongest: only instances this catalog created |
 | `isErrorOf(Class, predicate?)(v)` | the class instance | local `instanceof`, not across realms |
 | `isAnyErrorOf(v, [A, B] as const)` | `A \| B` | local `instanceof` |
 | `isBaseError(v)` | `BaseError` | `instanceof` |
@@ -43,6 +43,36 @@ throw e;
 Narrow from `unknown` first; exhaustiveness needs the union type. Per-case
 `details` narrowing needs a union of distinct error types, which a catalog
 gives; a single `StructuredError<"A" | "B">` narrows only the code.
+
+## Closed dispatch by key: `Errors.match`
+
+Every catalog has `match`: `matchError` with handlers named by key. Use it for
+a catalog with a prefix, where the code is dotted and the key is not:
+
+```ts
+if (AuthzErrors.is(e)) {
+  return AuthzErrors.match(e, {
+    not_a_member: () => forbidden("join the organization first"),
+    missing_role: (x) => forbidden(`ask an owner for the role ${x.details?.role}`),
+  });
+}
+throw e;
+```
+
+- Without `_`, every key needs a handler; a key the catalog does not define is
+  a compile error, also next to `_`.
+- `match` checks no provenance. Narrow a caught value with `Errors.is` first.
+- For a union of several catalogs, narrow with each catalog's `is` and match
+  each one, or use `matchError` with quoted codes; a quoted code needs no
+  brackets:
+
+```ts
+matchError(accessError, {
+  "restaurant.authz.not_a_member": () => 403,
+  "restaurant.authz.missing_role": () => 403,
+  "restaurant.storage.not_found": () => 404,
+});
+```
 
 ## Closed classes: `defineErrorClassSet`
 
