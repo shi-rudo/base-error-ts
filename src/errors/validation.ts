@@ -45,7 +45,7 @@ export type ValidationErrorOptions<
   TCode extends string,
   TCategory extends string,
 > = {
-  issues?: ValidationIssue[];
+  issues?: readonly ValidationIssue[];
   cause?: unknown;
   /** Override the code (default `"VALIDATION_FAILED"`). */
   code?: TCode;
@@ -109,7 +109,7 @@ export class ValidationError<
     return this;
   }
 
-  public addIssues(issues: ValidationIssue[]): this {
+  public addIssues(issues: readonly ValidationIssue[]): this {
     this.#issues.push(...issues);
     return this;
   }

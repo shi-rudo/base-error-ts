@@ -25,6 +25,19 @@ error.publicIssues({ mapIssue: (source) => source.message, messages: true });
 const declaredReturn: ReturnType<ValidationError["publicIssues"]> = byDefault;
 const projectedIssues: PublicIssue[] = declaredReturn;
 
+/** The issues of a Standard Schema `FailureResult` (standardschema.dev, v1). */
+type StandardSchemaIssues = ReadonlyArray<{
+  readonly message: string;
+  readonly path?:
+    ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined;
+}>;
+declare const standardSchemaIssues: StandardSchemaIssues;
+
+const fromStandardSchema = new ValidationError("order input is invalid", {
+  issues: standardSchemaIssues,
+});
+fromStandardSchema.addIssues(standardSchemaIssues);
+
 void withMessages;
 void optionalMessage;
 void requiredMessage;

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`ValidationError` takes the readonly issues of a Standard Schema result.** `ValidationErrorOptions.issues` and `addIssues` declared a mutable `ValidationIssue[]`, and Standard Schema types the issues of a failure result as a `ReadonlyArray`. So `new ValidationError(message, { issues: result.issues })` failed with TS4104 for Zod, Valibot or ArkType, as the guide shows it. Both now accept `readonly ValidationIssue[]`. A readonly parameter accepts every array that the old one accepted.
+
 ## 10.0.0 - 2026-10-29
 
 Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. A redaction policy in a catalog definition is now a floor: a policy on a single error adds to it and no longer replaces it. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
