@@ -22,6 +22,7 @@ type PinoLogMethod = (
 
 /** The parts of the pino options that the setup fills. */
 type PinoErrorOptions = {
+  readonly errorKey: "err";
   readonly serializers: { readonly err: (value: unknown) => unknown };
   readonly hooks: { readonly logMethod: PinoLogMethod };
 };
@@ -86,9 +87,12 @@ const logMethod: PinoLogMethod = function (args, method) {
 /**
  * Spread these options into the options of your pino logger. If your logger
  * has serializers or hooks of its own, read `serializers.err` and
- * `hooks.logMethod` from here and combine them with yours.
+ * `hooks.logMethod` from here and combine them with yours. The options set
+ * `errorKey` to `err`, the key that the hook reads. With another `errorKey`,
+ * pino copies the raw message of an error under that key into `msg`.
  */
 export const pinoErrorOptions: PinoErrorOptions = {
+  errorKey: "err",
   serializers: { err: serializeError },
   hooks: { logMethod },
 };

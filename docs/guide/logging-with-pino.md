@@ -48,8 +48,8 @@ The setup has two parts:
 - **The `logMethod` hook.** Pino reads `err.message` for `msg` before any
   serializer runs. The hook gives pino the log object of the value first, so
   `msg` holds the message of the log object. If the policy denies `message`,
-  `msg` is masked too. The first argument is often a thrown value, so the hook
-  reads it only through guarded reads and does not throw for a hostile value.
+  `msg` is masked too. The hook reads the first argument only through guarded
+  reads, so it adds no throw of its own.
 - **The serializer for `err`.** It writes every value with
   [`logObjectOf()`](./observability#any-thrown-value-logobjectof). An error of
   this library writes its own log object, with its policy. A native `Error`
@@ -81,6 +81,24 @@ For an error that denies `message` and `email`, the line looks like this
 Your log store can filter, count and alert on `err.code`, `err.category` and
 `err.retryable`. These fields are part of the contract of the log object.
 
+## In a catch block
+
+A `catch` block receives any value. Pino itself reads an object in the first
+argument, so a hostile value there, such as a revoked Proxy, can make
+`logger.error(caught)` throw. Then the original error is lost. Log the caught
+value under `err`:
+
+```ts
+try {
+  await lookUpUser(id);
+} catch (caught) {
+  logger.error({ err: caught }, "user lookup failed");
+}
+```
+
+The hook replaces `err` with its log object before pino reads the call. So
+pino meets only plain data, and the call does not throw for any value.
+
 ## Log levels
 
 The library does not choose a log level. That is a policy of your
@@ -93,8 +111,9 @@ logger[level]({ err: error }, "request failed");
 
 ## Limits
 
-- The setup works with the default `errorKey` of pino, `err`. A logger with
-  another `errorKey` writes the error under that key without the setup.
+- The options set `errorKey` to `err`, the key that the hook reads. If you set
+  another `errorKey` after you spread the options, pino copies the raw message
+  of an error under that key into `msg`.
 - Pino and the setup recognize an error in the first argument with
   `instanceof Error`. An error from a `node:vm` context fails this test, and
   pino writes it as a merge object without its message. Log such an error under

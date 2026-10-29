@@ -204,6 +204,29 @@ describe("the pino setup", () => {
     });
   });
 
+  it("sets errorKey to err, so pino copies no raw message from another key", () => {
+    const applicationOptions: pino.LoggerOptions = { errorKey: "error" };
+    const { logger, lines } = recordingLogger({
+      ...applicationOptions,
+      ...pinoErrorOptions,
+    });
+
+    logger.error({ error: redactedLookupError() });
+
+    expect(lines[0]).not.toContain(SECRET_EMAIL);
+  });
+
+  it.each([
+    ["a Proxy whose traps throw", () => hostileProxy()],
+    ["a revoked Proxy", () => revokedProxy()],
+  ])("logs %s under err without a throw", (_kind, value) => {
+    const { logger, parsed } = recordingLogger();
+
+    logger.error({ err: value() }, "request failed");
+
+    expect(parsed()[0]).toMatchObject({ msg: "request failed" });
+  });
+
   it("writes a library error under another key through toJSON, also without the setup", () => {
     const { logger, lines } = recordingLogger({});
 
