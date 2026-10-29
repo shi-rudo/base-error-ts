@@ -1,5 +1,6 @@
 import { StructuredError } from "./StructuredError.js";
-import type { RedactMask } from "./BaseError.js";
+import { createRedactionFloor, setRedactionFloor } from "./BaseError.js";
+import type { BuiltInRedactionPolicy, RedactionFloor } from "./BaseError.js";
 import { isInstanceOf } from "./guarded-read.js";
 import { cloneJsonSafe } from "./json-safe.js";
 import type { JsonSafeValue } from "./json-safe.js";
@@ -26,18 +27,12 @@ export function detailsType<
   return Object.freeze({}) as unknown as DetailsType<T>;
 }
 
-/** Declarative log-redaction policy applied by every generated factory. */
-export type CatalogRedactionPolicy =
-  | {
-      readonly mode: "deny";
-      readonly keys: readonly string[];
-      readonly mask?: RedactMask;
-    }
-  | {
-      readonly mode: "allow";
-      readonly keys: readonly string[];
-      readonly mask?: RedactMask;
-    };
+/**
+ * Declarative log-redaction policy of a definition. It is the redaction floor
+ * of every generated error: a per-instance policy adds to it and never
+ * replaces it.
+ */
+export type CatalogRedactionPolicy = BuiltInRedactionPolicy;
 
 /**
  * Declarative spec for a single error code in a catalog.
@@ -53,7 +48,7 @@ export type ErrorSpec = {
   metadata?: CatalogMetadata;
   /** Type marker for this code's structured details. */
   details?: DetailsType<Record<string, unknown>>;
-  /** Sticky log-redaction policy applied to generated instances. */
+  /** The redaction floor of generated instances. */
   redaction?: CatalogRedactionPolicy;
 };
 
@@ -301,7 +296,7 @@ type RuntimeSpec = {
   readonly category: string;
   readonly retryable: boolean;
   readonly metadata?: CatalogMetadata;
-  readonly redaction?: CatalogRedactionPolicy;
+  readonly floor?: RedactionFloor;
 };
 
 function snapshotRedaction(value: unknown): CatalogRedactionPolicy | undefined {
@@ -510,7 +505,9 @@ export function defineErrors(
       category: spec.category,
       retryable: spec.retryable,
       ...(metadata !== undefined && { metadata }),
-      ...(redaction !== undefined && { redaction }),
+      ...(redaction !== undefined && {
+        floor: createRedactionFloor(redaction),
+      }),
     });
     metaSnapshot[key] = Object.freeze({
       category: spec.category,
@@ -534,12 +531,8 @@ export function defineErrors(
         ...(options?.details !== undefined && { details: options.details }),
         ...(options?.cause !== undefined && { cause: options.cause }),
       });
-      if (spec.redaction?.mode === "deny") {
-        error.redact([...spec.redaction.keys], { mask: spec.redaction.mask });
-      } else if (spec.redaction?.mode === "allow") {
-        error.redactAllow([...spec.redaction.keys], {
-          mask: spec.redaction.mask,
-        });
+      if (spec.floor !== undefined) {
+        setRedactionFloor(error, spec.floor);
       }
       provenance.set(error, key);
       return error;
