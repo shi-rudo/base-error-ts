@@ -11,7 +11,9 @@ description: >
   someChainRetryable, toLogObject, logObjectOf, redact, redactAllow,
   redactWith, buildOwnLogFields, StructuredError.fromJSON, and the
   public-error subpath: definePublicErrors, PublicErrorCatalog, project,
-  localize, toProblem, LocalizedMessageSet, PublicCodeOf, onProject.
+  localize, toProblem, LocalizedMessageSet, PublicCodeOf, onProject, the pino
+  subpath (pinoErrorOptions) and the Sentry subpath (beforeSend,
+  logObjectContextIntegration).
   Activate when defining error classes or catalogs (also with dotted codes
   such as context.area.reason), handling a caught value,
   logging or redacting errors, mapping errors to an HTTP response, a server
@@ -28,6 +30,8 @@ sources:
   - "shi-rudo/base-error-ts:src/errors/BaseError.ts"
   - "shi-rudo/base-error-ts:src/public-error/PublicErrorCatalog.ts"
   - "shi-rudo/base-error-ts:src/public-error/types.ts"
+  - "shi-rudo/base-error-ts:src/pino/index.ts"
+  - "shi-rudo/base-error-ts:src/sentry/index.ts"
   - "shi-rudo/base-error-ts:docs/guide"
   - "shi-rudo/base-error-ts:MIGRATION.md"
 ---
@@ -69,8 +73,12 @@ log object.
    `Errors.is(e, "KEY")`, then dispatch with `Errors.match(e, { KEY: … })` or
    `matchError`, which fail to compile when a case is missing. For values the
    application does not own, use `matchThrown(e)…otherwise(…)`.
-4. **Log** with `logger.error({ err })` or `err.toLogObject()`. Redaction set
-   with `redact`, `redactAllow` or the catalog's policy applies there.
+4. **Log** through the setup of the sink: `pinoErrorOptions` from
+   `@shirudo/base-error/pino`, `beforeSend` and
+   `logObjectContextIntegration()` from `@shirudo/base-error/sentry`, and
+   `logObjectOf(e)` for any other logger or reporter. Redaction set with
+   `redact`, `redactAllow` or the catalog's policy applies there. A sink that
+   reads the error object itself bypasses it.
 5. **Publish** at the boundary: register technical codes in a
    `definePublicErrors` catalog, call `project(catalog, error)` for a
    message-free view, `localize` it if the backend renders text, and
@@ -130,7 +138,7 @@ log object.
 | --- | --- |
 | `references/catalogs-and-classes.md` | defining catalogs, dotted codes with a prefix, composing catalogs, subclassing `StructuredError`, `ValidationError`, aggregates |
 | `references/handling-caught-errors.md` | guards, `Catalog.match`, `matchError`, `matchThrown`, class sets, `toStructuredError`, cause chains, retryability |
-| `references/logging-and-redaction.md` | `toLogObject`, `logObjectOf`, redaction, own log fields, `fromJSON` |
+| `references/logging-and-redaction.md` | `toLogObject`, `logObjectOf`, the pino and Sentry setups, redaction, own log fields, `fromJSON` |
 | `references/public-error.md` | `definePublicErrors`, descriptors, `project`, `localize`, `toProblem`, typed public codes, server functions |
 | `references/migration.md` | code written against an older major, or an API this skill does not name |
 

@@ -24,12 +24,50 @@ try {
 
 `logObjectOf` does not throw and stays bounded, keeps a native error's own
 `name` and `message`, and keeps each library error's redaction policy along the
-chain. A logger whose standard serializer reads the error object itself (pino's
-`err` serializer, for one) bypasses the policy; route the value through
-`logObjectOf` in the serializer instead.
+chain. For pino and Sentry, use their setups in *Loggers and reporters*
+instead.
 
-For Sentry or OpenTelemetry, pass the error and its log object, for example
-`Sentry.captureException(error, { extra: error.toLogObject() })`.
+## Loggers and reporters
+
+A logger or reporter that reads the error object itself bypasses the redaction
+policy. Use the setup for the sink:
+
+| Sink | Setup |
+| --- | --- |
+| pino | `@shirudo/base-error/pino`: spread `pinoErrorOptions` into the logger options |
+| Sentry | `@shirudo/base-error/sentry`: `beforeSend` and `logObjectContextIntegration()` in `Sentry.init` |
+| any other reporter, OpenTelemetry included | give it `logObjectOf(error)`, never the error |
+
+```ts
+import pino from "pino";
+import { pinoErrorOptions } from "@shirudo/base-error/pino";
+
+const logger = pino({ ...pinoErrorOptions, level: "info" });
+
+logger.error({ err: caught, requestId }, "request failed");
+```
+
+```ts
+import * as Sentry from "@sentry/node";
+import { beforeSend, logObjectContextIntegration } from "@shirudo/base-error/sentry";
+
+Sentry.init({ dsn, beforeSend, integrations: [logObjectContextIntegration()] });
+
+Sentry.captureException(error);
+```
+
+- With pino, put the error itself under `err`. The setup writes it through
+  `logObjectOf`; a log object that you build yourself is copied again as data.
+- Never send `Sentry.captureException(error, { extra: error.toLogObject() })`
+  without the setup. Sentry still writes the raw name and message of the error
+  and of each cause as the exceptions of the event, and Sentry stores them.
+- With serializers or hooks of your own, combine yours with
+  `pinoErrorOptions.serializers.err` and `pinoErrorOptions.hooks.logMethod`.
+  With a `beforeSend` of your own, call this `beforeSend` in it first.
+- Neither subpath imports pino or Sentry; the SDK stays a dependency of the
+  application. The repository tests the setups against pino 10 and the event
+  builder of `@sentry/core`. Do not add Sentry's `extraErrorDataIntegration`:
+  it copies the own fields of the error without the policy.
 
 ## Redaction
 
