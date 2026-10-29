@@ -1,4 +1,5 @@
 import { StructuredError } from "./StructuredError.js";
+import { setRedactionFloor } from "./BaseError.js";
 import type { RedactMask } from "./BaseError.js";
 import { isInstanceOf } from "./guarded-read.js";
 import { cloneJsonSafe } from "./json-safe.js";
@@ -26,7 +27,11 @@ export function detailsType<
   return Object.freeze({}) as unknown as DetailsType<T>;
 }
 
-/** Declarative log-redaction policy applied by every generated factory. */
+/**
+ * Declarative log-redaction policy of a definition. It is the redaction floor
+ * of every generated error: a per-instance policy adds to it and never
+ * replaces it.
+ */
 export type CatalogRedactionPolicy =
   | {
       readonly mode: "deny";
@@ -53,7 +58,7 @@ export type ErrorSpec = {
   metadata?: CatalogMetadata;
   /** Type marker for this code's structured details. */
   details?: DetailsType<Record<string, unknown>>;
-  /** Sticky log-redaction policy applied to generated instances. */
+  /** The redaction floor of generated instances. */
   redaction?: CatalogRedactionPolicy;
 };
 
@@ -534,12 +539,8 @@ export function defineErrors(
         ...(options?.details !== undefined && { details: options.details }),
         ...(options?.cause !== undefined && { cause: options.cause }),
       });
-      if (spec.redaction?.mode === "deny") {
-        error.redact([...spec.redaction.keys], { mask: spec.redaction.mask });
-      } else if (spec.redaction?.mode === "allow") {
-        error.redactAllow([...spec.redaction.keys], {
-          mask: spec.redaction.mask,
-        });
+      if (spec.redaction !== undefined) {
+        setRedactionFloor(error, spec.redaction);
       }
       provenance.set(error, key);
       return error;
