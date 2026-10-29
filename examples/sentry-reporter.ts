@@ -11,6 +11,7 @@ import type { ErrorEvent, Event, EventHint, Exception } from "@sentry/core";
 
 import { logObjectOf } from "../src/index.js";
 
+// #region module
 type LogNode = Record<string, unknown>;
 
 function isLogNode(value: unknown): value is LogNode {
@@ -21,6 +22,10 @@ function textOf(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+/**
+ * The node under the key that `source` names on its parent: `cause`, or a
+ * member `errors[i]` of an aggregate. Any other key finds no node.
+ */
 function childOf(node: unknown, source: string | undefined): unknown {
   if (!isLogNode(node)) return undefined;
   if (source === "cause") return node.cause;
@@ -65,7 +70,9 @@ function logNodesById(
  * log node. An exception without a log node keeps no name and no message. A
  * marker of the log object, such as `[Shared cause]`, becomes the message.
  * An event without an original error has no policy to keep and stays as it
- * is. Pass this function to `Sentry.init` as the `beforeSend` option.
+ * is. Sentry calls `beforeSend` after all its integrations, so no integration
+ * can add a raw message afterwards. Pass this function to `Sentry.init` as
+ * the `beforeSend` option.
  */
 export function beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent {
   const exceptions = event.exception?.values;
@@ -102,3 +109,4 @@ export function logObjectContextIntegration(): {
     },
   };
 }
+// #endregion module

@@ -18,84 +18,15 @@ still reaches Sentry, and Sentry is a third party that stores the event.
 
 ## The setup
 
-Copy this module into your application. The Sentry SDK stays a dependency of
-your application, not of this library.
+Copy these imports and the module that follows them into your application.
+The Sentry SDK stays a dependency of your application, not of this library.
 
 ```ts
 import type { ErrorEvent, Event, EventHint, Exception } from "@sentry/node";
 import { logObjectOf } from "@shirudo/base-error";
-
-type LogNode = Record<string, unknown>;
-
-function isLogNode(value: unknown): value is LogNode {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function textOf(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function childOf(node: unknown, source: string | undefined): unknown {
-  if (!isLogNode(node)) return undefined;
-  if (source === "cause") return node.cause;
-  const member = /^errors\[(\d+)\]$/.exec(source ?? "");
-  if (member === null || !Array.isArray(node.errors)) return undefined;
-  return node.errors[Number(member[1])];
-}
-
-function logNodesById(
-  exceptions: readonly Exception[],
-  logObject: LogNode,
-): Map<number, unknown> {
-  const links: { id: number; parentId?: number; source?: string }[] = [];
-  for (const { mechanism } of exceptions) {
-    if (mechanism?.exception_id === undefined) continue;
-    links.push({
-      id: mechanism.exception_id,
-      parentId: mechanism.parent_id,
-      source: mechanism.source,
-    });
-  }
-  links.sort((first, second) => first.id - second.id);
-  const nodes = new Map<number, unknown>();
-  for (const { id, parentId, source } of links) {
-    const node =
-      parentId === undefined ? logObject : childOf(nodes.get(parentId), source);
-    nodes.set(id, node);
-  }
-  return nodes;
-}
-
-export function beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent {
-  const exceptions = event.exception?.values;
-  if (exceptions === undefined) return event;
-  const logObject = logObjectOf(hint.originalException);
-  if (!isLogNode(logObject)) return event;
-  const nodes = logNodesById(exceptions, logObject);
-  for (const exception of exceptions) {
-    const id = exception.mechanism?.exception_id;
-    const node = id === undefined ? logObject : nodes.get(id);
-    exception.type = isLogNode(node) ? textOf(node.name) : undefined;
-    exception.value = isLogNode(node) ? textOf(node.message) : textOf(node);
-  }
-  return event;
-}
-
-export function logObjectContextIntegration(): {
-  name: string;
-  processEvent(event: Event, hint: EventHint): Event;
-} {
-  return {
-    name: "LogObjectContext",
-    processEvent(event, hint) {
-      const logObject = logObjectOf(hint.originalException);
-      if (!isLogNode(logObject)) return event;
-      event.contexts = { error: logObject, ...event.contexts };
-      return event;
-    },
-  };
-}
 ```
+
+<<< @/../examples/sentry-reporter.ts#module{ts}
 
 Then pass both parts to `Sentry.init`:
 
@@ -190,6 +121,9 @@ For an error that denies `message` and `email`, the event holds this (shortened)
   the fields of the log object.
 - Sentry cuts a message to `maxValueLength` before the hook runs. The hook
   writes the message of the log object, so it does not apply that limit.
+- The hook knows the links `cause` and `errors[i]`. If you pass another `key`
+  to `linkedErrorsIntegration`, the exceptions that Sentry links through that
+  key keep no name and no message.
 - The context keeps the log object to `normalizeDepth`. Deeper values become
   `[Object]`. If you need them, set a higher `normalizeDepth`.
 - If your dependency tree holds two copies of this package, an error from the

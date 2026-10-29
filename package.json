@@ -96,7 +96,7 @@
     "format": "prettier --write .",
     "build": "pnpm typecheck && pnpm test:run && pnpm lint && tsup && node scripts/verify-doc-links.mjs",
     "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
+    "docs:build": "node scripts/verify-doc-snippets.mjs && vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "prepublishOnly": "pnpm build"
   },
