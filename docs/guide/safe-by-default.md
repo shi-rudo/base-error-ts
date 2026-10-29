@@ -22,8 +22,10 @@ serializer** on a `BaseError` or `StructuredError`. That is the guarantee:
   code, a resolved localized message, and any fields you deliberately project.
 
 Because the core exposes nothing client-facing, there is no override flag to
-audit and no accidental-leak call site to find. To send anything to a client you
-must reach for the pipeline, and it only emits what you registered.
+audit. The pipeline emits only what you registered. Two paths still reach a
+client without the pipeline: code that sends the error object, and the default
+error handler of a framework. [Pitfalls](./pitfalls), items 1 and 2, show both
+and how to close them.
 
 ```ts
 const err = new StructuredError({
