@@ -106,8 +106,24 @@ const SecurityErrors = defineErrors({
 });
 ```
 
-Per-instance `redact`, `redactAllow`, and `redactWith` remain available when a
-single occurrence needs a stricter policy.
+The catalog policy is a floor. A per-instance `redact`, `redactAllow` or
+`redactWith` adds to it and never replaces it: the log applies the per-instance
+policy first and the catalog policy after it.
+
+```ts
+SecurityErrors.create
+  .LOGIN_FAILED("login failed", {
+    details: { userId, password },
+  })
+  .redact(["userId"]); // userId and password masked
+```
+
+The floor holds at a cause position, in `logObjectOf()` and at the pino and
+Sentry setups. A catalog deny-list that holds `"message"` also masks the
+message in `toString()`. Per-instance calls keep last-wins among themselves. On
+an error with a catalog policy, the log copies the output of `redactWith`, and
+the catalog policy masks the copy. To log a field that the catalog masks,
+change the definition.
 
 ## Catalog types and codes
 
