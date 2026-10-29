@@ -109,6 +109,14 @@ For an error that denies `message` and `email`, the event holds this (shortened)
   as they are. A field that the log object does not hold reaches Sentry
   without the policy. Do not add this integration. The `error` context holds
   the fields of the log object.
+- For a foreign error, the `error` context holds the fixed fields of the log
+  object, not the own fields of the error, such as `errno` or `statusCode`. A
+  foreign error can carry secrets in any field, and no policy covers it. To
+  keep a field, put it into the `details` of a `StructuredError` that wraps the
+  error.
+- An error that a worker posts with `postMessage` arrives as a plain `Error`,
+  without its class and its policy. Post `error.toJSON()` instead, and rebuild
+  the error with `StructuredError.fromJSON` before you capture it.
 - Sentry cuts a message to `maxValueLength` before the hook runs. The hook
   writes the message of the log object, so it does not apply that limit.
 - The hook knows the links `cause` and `errors[i]`. If you pass another `key`

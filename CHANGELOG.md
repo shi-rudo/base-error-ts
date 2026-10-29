@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 10.0.0 - 2026-10-29
+
+Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
 
 ### Breaking Changes
 
@@ -25,6 +27,8 @@
 - **The definition errors of `defineErrors` name the key.** With a prefix, a key is no longer always the code. The messages now read `keys must be strings`, `keys must not be empty`, `invalid definition for key "…"` and `unknown definition field "…" for key "…"`. A second argument that is not a plain object now throws. Before, `defineErrors` ignored it.
 
 ### Documentation
+
+- **The pino and Sentry guides name what the setups write for a foreign error.** They write the fixed fields of the log object and leave the own fields of the error out, such as `errno` or `statusCode`, because a foreign error can carry secrets in any field. A field that matters goes into the `details` of a wrapping `StructuredError`. The guides also state that an error posted by a worker loses its class and its policy, and that `error.toJSON()` with `StructuredError.fromJSON` keeps the masked fields masked.
 
 - **The guide pages _Logging with pino_ and _Reporting to Sentry_ show the subpaths.** They name the tested versions and the limits. Both pages load their usage from `examples/pino-logger.ts` and `examples/sentry-reporter.ts`, which CI compiles and runs against pino and `@sentry/node`. `scripts/verify-doc-snippets.mjs` fails the docs build when a snippet drifts from its example.
 
