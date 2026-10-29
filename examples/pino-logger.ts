@@ -15,6 +15,7 @@ import pino, { type LogFn, type Logger, type LoggerOptions } from "pino";
 
 import { StructuredError, logObjectOf } from "../src/index.js";
 
+// #region module
 /**
  * The log objects that the hook wrote. Pino runs the `err` serializer on them
  * again, and a second `logObjectOf` would copy them as data, which cuts a
@@ -68,6 +69,8 @@ export const pinoErrorOptions: LoggerOptions = {
   serializers: { err: serializeError },
   hooks: { logMethod },
 };
+
+// #endregion module
 
 function demo(): void {
   const logger = pino(pinoErrorOptions);

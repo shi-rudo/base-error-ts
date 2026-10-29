@@ -25,53 +25,15 @@ its fields are not enumerable. To keep it, log it under `err`, or write
 
 ## The setup
 
-Copy this module into your application. Pino stays a dependency of your
-application, not of this library.
+Copy these imports and the module that follows them into your application.
+Pino stays a dependency of your application, not of this library.
 
 ```ts
 import pino, { type LogFn, type Logger, type LoggerOptions } from "pino";
 import { logObjectOf } from "@shirudo/base-error";
-
-const written = new WeakSet<object>();
-
-function writeLogObject(value: unknown): unknown {
-  const logObject = logObjectOf(value);
-  if (typeof logObject === "object" && logObject !== null)
-    written.add(logObject);
-  return logObject;
-}
-
-export function serializeError(value: unknown): unknown {
-  if (typeof value === "object" && value !== null && written.has(value))
-    return value;
-  return logObjectOf(value);
-}
-
-function logMethod(this: Logger, args: Parameters<LogFn>, method: LogFn): void {
-  const [first, ...rest] = args as unknown[];
-  if (first instanceof Error) {
-    method.apply(this, [
-      { err: writeLogObject(first) },
-      ...rest,
-    ] as Parameters<LogFn>);
-    return;
-  }
-  if (typeof first === "object" && first !== null) {
-    const fields = first as Record<string, unknown>;
-    if (fields.err !== undefined) {
-      const serialized = { ...fields, err: writeLogObject(fields.err) };
-      method.apply(this, [serialized, ...rest] as Parameters<LogFn>);
-      return;
-    }
-  }
-  method.apply(this, args);
-}
-
-export const pinoErrorOptions: LoggerOptions = {
-  serializers: { err: serializeError },
-  hooks: { logMethod },
-};
 ```
+
+<<< @/../examples/pino-logger.ts#module{ts}
 
 Then create your logger with these options:
 
