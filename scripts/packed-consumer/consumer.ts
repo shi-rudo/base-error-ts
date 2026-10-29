@@ -22,6 +22,11 @@ import {
 } from "@shirudo/base-error/public-error";
 // @ts-expect-error the public-error subpath does not export the core classes
 import { BaseError as NotPublic } from "@shirudo/base-error/public-error";
+import { pinoErrorOptions } from "@shirudo/base-error/pino";
+import {
+  beforeSend,
+  logObjectContextIntegration,
+} from "@shirudo/base-error/sentry";
 
 class EmailTaken extends StructuredError<"EMAIL_TAKEN", "CONFLICT"> {
   constructor(cause?: unknown) {
@@ -134,3 +139,13 @@ export const body: ProblemDetails = toProblem(
 ).body;
 
 void NotPublic;
+
+export const serializeErr: (value: unknown) => unknown =
+  pinoErrorOptions.serializers.err;
+
+export const reported = beforeSend(
+  { exception: { values: [{ type: "Error", value: "email taken" }] } },
+  { originalException: new EmailTaken() },
+);
+
+export const integrationName: string = logObjectContextIntegration().name;

@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../index.js";
 import { MAX_CAUSE_DEPTH_MARKER } from "../errors/serializer-markers.js";
-import { pinoErrorOptions } from "../../examples/pino-logger.js";
+import { pinoErrorOptions } from "../pino/index.js";
+import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 
 type Line = Record<string, unknown>;
 
@@ -93,6 +94,15 @@ describe("the pino setup", () => {
     expect(parsed()[0]!.msg).toBe("[REDACTED]");
   });
 
+  it("keeps the redaction policy of an error in the bindings of a child logger", () => {
+    const { logger, lines, parsed } = recordingLogger();
+
+    logger.child({ err: redactedLookupError() }).info("request");
+
+    expect(lines[0]).not.toContain(SECRET_EMAIL);
+    expect(parsed()[0]!.err).toMatchObject({ code: "USER_NOT_FOUND" });
+  });
+
   it("writes a native error with its own name and message, and its cause chain", () => {
     const { logger, parsed } = recordingLogger();
     const native = withCause(
@@ -153,6 +163,68 @@ describe("the pino setup", () => {
       message: "rows imported",
     });
     expect(parsed()[0]).not.toHaveProperty("err");
+  });
+
+  it.each([
+    ["a Proxy whose traps throw", () => hostileProxy()],
+    ["a revoked Proxy", () => revokedProxy()],
+    [
+      "a merge object whose err getter throws",
+      () => ({
+        get err(): never {
+          throw new Error("err getter");
+        },
+      }),
+    ],
+  ])("passes %s on to pino without a throw of its own", (_kind, value) => {
+    const calls: unknown[][] = [];
+    const method = (...args: unknown[]): void => void calls.push(args);
+
+    pinoErrorOptions.hooks.logMethod.call(undefined, [value()], method);
+
+    expect(calls).toHaveLength(1);
+  });
+
+  it("keeps err when a merge object fails to copy", () => {
+    const calls: unknown[][] = [];
+    const method = (...args: unknown[]): void => void calls.push(args);
+    const fields = new Proxy(
+      { err: new Error("upstream failed"), requestId: "r-1" },
+      {
+        ownKeys() {
+          throw new Error("ownKeys trap");
+        },
+      },
+    );
+
+    pinoErrorOptions.hooks.logMethod.call(undefined, [fields], method);
+
+    expect(calls[0]?.[0]).toEqual({
+      err: expect.objectContaining({ message: "upstream failed" }) as unknown,
+    });
+  });
+
+  it("sets errorKey to err, so pino copies no raw message from another key", () => {
+    const applicationOptions: pino.LoggerOptions = { errorKey: "error" };
+    const { logger, lines } = recordingLogger({
+      ...applicationOptions,
+      ...pinoErrorOptions,
+    });
+
+    logger.error({ error: redactedLookupError() });
+
+    expect(lines[0]).not.toContain(SECRET_EMAIL);
+  });
+
+  it.each([
+    ["a Proxy whose traps throw", () => hostileProxy()],
+    ["a revoked Proxy", () => revokedProxy()],
+  ])("logs %s under err without a throw", (_kind, value) => {
+    const { logger, parsed } = recordingLogger();
+
+    logger.error({ err: value() }, "request failed");
+
+    expect(parsed()[0]).toMatchObject({ msg: "request failed" });
   });
 
   it("writes a library error under another key through toJSON, also without the setup", () => {
