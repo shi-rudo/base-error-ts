@@ -2,11 +2,12 @@
 
 ## v9 to v10
 
-v10 has two breaking changes. It ships one ES module build (proposal 0019):
+v10 has three breaking changes. It ships one ES module build (proposal 0019):
 the CommonJS build is gone, and `require()` loads the ES module build on
 Node.js 24, so `import` and `require` load the same classes. A redaction policy
 in a catalog definition is a floor (proposal 0021): a policy on a single error
-adds to it and no longer replaces it. The other changes of v10 add features
+adds to it and no longer replaces it. `matchError` rejects a handler for a code
+that the union does not contain. The other changes of v10 add features
 and keep the behavior of v9: `logObjectOf`, the subpaths
 `@shirudo/base-error/pino` and `@shirudo/base-error/sentry`, and the `prefix`
 and `match` of a catalog.
@@ -49,6 +50,20 @@ applies the per-instance policy first and the catalog policy after it.
   key, and the floor then judges that key.
 - Per-instance calls keep last-wins among themselves. An error without a
   catalog policy behaves as before.
+
+### `matchError` rejects a code outside the union
+
+Before v10, a handler table with a `_` catch-all accepted any extra handler,
+and so did a table with a handler for every code. A misspelled code compiled,
+and its errors reached `_`.
+
+- A handler for a code that the union does not contain is a compile error now.
+  Correct the code, or delete the dead handler.
+- A union with the code `_` cannot use `matchError`, because `_` is the
+  catch-all. The handler of that code was the catch-all, and the compiler
+  stopped checking the other codes. Rename the code.
+- The runtime is unchanged. A wide `StructuredError<string>` still takes a
+  handler for any code.
 
 ## v8 to v9
 

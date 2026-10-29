@@ -74,7 +74,10 @@ type Exhaustive<E extends StructuredError<string, string>, C> =
  *
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
  * error types, an omitted handler is a **compile error** (unless you provide
- * a `_` catch-all). Each handler receives the error narrowed to its case, so
+ * a `_` catch-all). A handler for a code that the union does not contain is a
+ * compile error too, also next to `_`. A union with the code `_` cannot use
+ * `matchError`, because `_` is the catch-all. Each handler receives the error
+ * narrowed to its case, so
  * `details` is the precise per-code type. The return type is the union of the
  * handler return types.
  *

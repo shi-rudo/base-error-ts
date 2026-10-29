@@ -177,6 +177,20 @@ When a new error code is added to the union, every `matchError` without a `_`
 stops compiling until you handle it. That is the point: the compiler maintains
 your error-handling completeness.
 
+The compiler also rejects a handler for a code that the union does not
+contain, with or without `_`. So a misspelled code fails to compile and does
+not fall through to `_`:
+
+```ts
+matchError(err, {
+  USER_NOT_FUND: () => render404(), // compile error: no such code
+  _: (e) => renderGeneric(e.code),
+});
+```
+
+A union with the code `_` cannot use `matchError`, because `_` is the
+catch-all. Rename the code.
+
 ### Per-case narrowing
 
 Each handler receives the error narrowed to its case, so `details` is the
