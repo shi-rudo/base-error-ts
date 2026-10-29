@@ -12,10 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import { StructuredError } from "../index.js";
 import { CIRCULAR_CAUSE_CHAIN_MARKER } from "../errors/serializer-markers.js";
-import {
-  beforeSend,
-  logObjectContextIntegration,
-} from "../../examples/sentry-reporter.js";
+import { beforeSend, logObjectContextIntegration } from "../sentry/index.js";
 
 const SECRET_MESSAGE = "lookup for ada@example.com failed";
 const SECRET_EMAIL = "ada@example.com";
@@ -251,6 +248,41 @@ describe("the Sentry setup", () => {
       { type: "USER_NOT_FOUND", value: "[REDACTED]" },
     ]);
     expect(exceptionsOf(event)[0]).not.toHaveProperty("value");
+  });
+
+  it("writes no name and no message for an exception linked through another key", async () => {
+    const linked: Exception = {
+      type: "Error",
+      value: SECRET_CAUSE,
+      mechanism: {
+        type: "chained",
+        source: "originalError",
+        exception_id: 1,
+        parent_id: 0,
+      },
+    };
+    const root: Exception = {
+      type: "USER_NOT_FOUND",
+      value: SECRET_MESSAGE,
+      mechanism: { type: "generic", exception_id: 0 },
+    };
+
+    const { body } = await sentCapture((scope) =>
+      scope.captureEvent(
+        { exception: { values: [linked, root] } },
+        {
+          originalException: new StructuredError({
+            code: "USER_NOT_FOUND",
+            category: "NOT_FOUND",
+            retryable: false,
+            message: SECRET_MESSAGE,
+          }).redact(["message"]),
+        },
+      ),
+    );
+
+    expect(body).not.toContain(SECRET_CAUSE);
+    expect(body).not.toContain(SECRET_MESSAGE);
   });
 
   it("keeps an event whose exceptions do not come from an error unchanged", async () => {

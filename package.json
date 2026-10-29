@@ -74,12 +74,38 @@
         "types": "./dist/public-error/index.d.cts",
         "default": "./dist/public-error/index.cjs"
       }
+    },
+    "./pino": {
+      "import": {
+        "types": "./dist/pino/index.d.ts",
+        "default": "./dist/pino/index.js"
+      },
+      "require": {
+        "types": "./dist/pino/index.d.cts",
+        "default": "./dist/pino/index.cjs"
+      }
+    },
+    "./sentry": {
+      "import": {
+        "types": "./dist/sentry/index.d.ts",
+        "default": "./dist/sentry/index.js"
+      },
+      "require": {
+        "types": "./dist/sentry/index.d.cts",
+        "default": "./dist/sentry/index.cjs"
+      }
     }
   },
   "typesVersions": {
     "*": {
       "public-error": [
         "./dist/public-error/index.d.ts"
+      ],
+      "pino": [
+        "./dist/pino/index.d.ts"
+      ],
+      "sentry": [
+        "./dist/sentry/index.d.ts"
       ]
     }
   },

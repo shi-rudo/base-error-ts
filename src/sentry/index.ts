@@ -1,17 +1,34 @@
 /**
- * A Sentry setup that writes the exceptions of every event through
- * `logObjectOf()`, so the redaction policy of an error holds in the event.
- * It also adds the log object of the error as the `error` context.
+ * The Sentry setup: it writes the exceptions of every event through
+ * {@link logObjectOf}, so the redaction policy of an error holds in the
+ * event. It also adds the log object of the error as the `error` context.
  *
  * Without it, Sentry reads the error itself: it writes the raw name and the
  * raw message of the error, of each cause and of each member of an aggregate
  * into the event.
+ *
+ * The module imports nothing from Sentry. Its types describe the parts of an
+ * event that it reads and writes, so they fit the options of every Sentry SDK
+ * that builds on `@sentry/core`.
  */
-import type { ErrorEvent, Event, EventHint, Exception } from "@sentry/core";
+import { logObjectOf } from "../index.js";
 
-import { logObjectOf } from "../src/index.js";
+/** The parts of a Sentry exception that the setup reads and writes. */
+type SentryException = {
+  type?: string;
+  value?: string;
+  mechanism?: { exception_id?: number; parent_id?: number; source?: string };
+};
 
-// #region module
+/** The parts of a Sentry event that the setup reads and writes. */
+type SentryEvent = {
+  exception?: { values?: SentryException[] };
+  contexts?: Record<string, Record<string, unknown> | undefined>;
+};
+
+/** The part of a Sentry event hint that the setup reads. */
+type SentryHint = { originalException?: unknown };
+
 type LogNode = Record<string, unknown>;
 
 function isLogNode(value: unknown): value is LogNode {
@@ -43,7 +60,7 @@ function childOf(node: unknown, source: string | undefined): unknown {
  * node.
  */
 function logNodesById(
-  exceptions: readonly Exception[],
+  exceptions: readonly SentryException[],
   logObject: LogNode,
 ): Map<number, unknown> {
   const links: { id: number; parentId?: number; source?: string }[] = [];
@@ -74,7 +91,10 @@ function logNodesById(
  * can add a raw message afterwards. Pass this function to `Sentry.init` as
  * the `beforeSend` option.
  */
-export function beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent {
+export function beforeSend<E extends SentryEvent>(
+  event: E,
+  hint: SentryHint,
+): E {
   const exceptions = event.exception?.values;
   if (exceptions === undefined) return event;
   const logObject = logObjectOf(hint.originalException);
@@ -97,16 +117,16 @@ export function beforeSend(event: ErrorEvent, hint: EventHint): ErrorEvent {
  */
 export function logObjectContextIntegration(): {
   name: string;
-  processEvent(event: Event, hint: EventHint): Event;
+  processEvent<E extends SentryEvent>(event: E, hint: SentryHint): E;
 } {
   return {
     name: "LogObjectContext",
     processEvent(event, hint) {
       const logObject = logObjectOf(hint.originalException);
       if (!isLogNode(logObject)) return event;
-      event.contexts = { error: logObject, ...event.contexts };
+      const target: SentryEvent = event;
+      target.contexts = { error: logObject, ...target.contexts };
       return event;
     },
   };
 }
-// #endregion module
