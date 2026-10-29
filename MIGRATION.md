@@ -59,20 +59,22 @@ and its errors reached `_`.
 
 - A handler for a code that the union does not contain is a compile error now.
   Correct the code, or delete the dead handler.
-- A union with the code `_` cannot use `matchError`, because `_` is the
-  catch-all. The handler of that code was the catch-all, and the compiler
-  stopped checking the other codes. Rename the code.
+- A union with the code `_` cannot name a handler next to `_`, because `_` is
+  the catch-all. The handler of that code was the catch-all, and the compiler
+  stopped checking the other codes. Rename the code. A table with only `_`
+  still compiles.
 - A handler table typed `Record<string, …>` no longer passes for a closed
   union. It names every string, so the compiler cannot check its names, and
   before v10 it also passed as if it had a `_` catch-all. Write the table as an
   object literal, or type it with the codes of the union.
-- An error whose code type is a bare type parameter, such as
-  `StructuredError<Code>` in a generic function, names no code, so
-  `matchError` accepts no table for it. Assign the error to a variable typed
-  with the union of its codes, or with `StructuredError<string>`, and match
-  that variable.
-- The runtime is unchanged. A wide `StructuredError<string>` still takes a
-  handler for any code.
+- An error whose code type is a bare type parameter names no code. An example
+  is `StructuredError<Code>` in a generic function. For such an error,
+  `matchError` takes only a table with a single `_` handler. To name other
+  handlers, assign the error to a variable typed with the union of its codes,
+  or with `StructuredError<string>`, and match that variable.
+- The runtime is unchanged. A wide `StructuredError<string>`, a branded code
+  such as `string & { __brand }` and an `any` error still take a handler for
+  any code.
 
 ## v8 to v9
 

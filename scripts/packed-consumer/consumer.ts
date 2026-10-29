@@ -73,6 +73,21 @@ export function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
   return matchError(error, { RATE_LIMITED: () => 429, _: () => 500 });
 }
 
+export function statusOfAnyCode<Code extends string>(
+  error: StructuredError<Code, string>,
+): number {
+  return matchError(error, { _: () => 500 });
+}
+
+declare const brandedFailure: StructuredError<
+  string & { readonly __brand: "ErrorCode" },
+  string
+>;
+export const brandedStatus: number = matchError(brandedFailure, {
+  SOME_CODE: () => 409,
+  _: () => 500,
+});
+
 export function misspelledStatusOf<E extends EmailTaken | RateLimited>(
   error: E,
 ): number {

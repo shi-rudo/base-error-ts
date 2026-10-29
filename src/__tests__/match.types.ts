@@ -52,8 +52,13 @@ const CatchAllCodeErrors = defineErrors({
 });
 declare const catchAllCodeError: CatalogError<typeof CatchAllCodeErrors>;
 
-// @ts-expect-error a union with the code _ cannot use matchError, because _ is the catch-all
-matchError(catchAllCodeError, { _: () => 1 });
+// @ts-expect-error a union with the code _ cannot name a handler next to _, because _ is the catch-all
+matchError(catchAllCodeError, { RATE_LIMITED: () => 1, _: () => 2 });
+
+// @ts-expect-error a union with the code _ cannot name a handler without _ either
+matchError(catchAllCodeError, { RATE_LIMITED: () => 1 });
+
+const catchAllOnly: number = matchError(catchAllCodeError, { _: () => 1 });
 
 declare const underscorePrefixed: StructuredError<`_${string}`, string>;
 
@@ -93,16 +98,39 @@ function misspelledInGeneric<E extends CatalogError<typeof UserErrors>>(
 function statusOfBareCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
-  // @ts-expect-error a code typed by a bare type parameter names no code, so the compiler cannot check the table
   return matchError(error, { _: () => 500 });
+}
+
+function namedHandlerOfBareCode<Code extends string>(
+  error: StructuredError<Code, string>,
+): number {
+  // @ts-expect-error a code typed by a bare type parameter names no code, so a named handler cannot be checked
+  return matchError(error, { USER_NOT_FOUND: () => 404, _: () => 500 });
 }
 
 function statusOfAnnotatedCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
   const wide: StructuredError<string, string> = error;
-  return matchError(wide, { _: () => 500 });
+  return matchError(wide, { USER_NOT_FOUND: () => 404, _: () => 500 });
 }
+
+declare const brandedCodeError: StructuredError<
+  string & { readonly __brand: "ErrorCode" },
+  string
+>;
+
+const brandedCodeWithCatchAll: number = matchError(brandedCodeError, {
+  SOME_CODE: () => 1,
+  _: () => 2,
+});
+
+declare const openCodeError: StructuredError<"KNOWN" | (string & {}), string>;
+
+const openCodeWithCatchAll: number = matchError(openCodeError, {
+  OTHER_CODE: () => 1,
+  _: () => 2,
+});
 
 const HttpErrors = defineErrors({
   "404": { category: "NOT_FOUND", retryable: false },
@@ -169,7 +197,10 @@ void statusOfEveryCode;
 void statusOfAnyError;
 void misspelledInGeneric;
 void statusOfBareCode;
+void namedHandlerOfBareCode;
 void statusOfAnnotatedCode;
+void brandedCodeWithCatchAll;
+void openCodeWithCatchAll;
 void underscorePrefixedCode;
 void numericKeyWithCatchAll;
 void numericKeysComplete;
@@ -178,6 +209,7 @@ void enumCodeWithCatchAll;
 void untypedWithCatchAll;
 void anyCodeWithCatchAll;
 void CatchAllCodeErrors;
+void catchAllOnly;
 void withCatchAll;
 void complete;
 void anyCode;
