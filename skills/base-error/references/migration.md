@@ -1,7 +1,7 @@
 # Migrating from an older major
 
 `MIGRATION.md` in the repository is the full guide. This table maps the APIs
-that older code, older docs and older skills still name onto version 9.
+that older code, older docs and older skills still name onto version 10.
 
 | Found in old code | Since | Use instead |
 | --- | --- | --- |
@@ -20,6 +20,12 @@ that older code, older docs and older skills still name onto version 9.
 | `publicIssues()` including messages | changed in 9 | `publicIssues({ messages: true })`, only for messages you wrote |
 | a `null` cause walked as a link | changed in 9 | a nullish cause ends the chain |
 | `[Circular cause chain]` for a shared cause | changed in 9 | `[Shared cause]` |
+| the CommonJS build of the package | removed in 10 | the one ES module build; `require()` loads it on Node.js 24, and `import` and `require` load the same classes |
+| TypeScript CommonJS output with `module: node16`, or `module: nodenext` before TypeScript 5.8 (TS1479) | changed in 10 | `module: nodenext` with TypeScript 5.8 or later, `module: node20` with 5.9 or later, or ES module output; `module: commonjs` keeps compiling |
+| a hand-written pino `err` serializer or `logMethod` hook around `logObjectOf` | replaced in 10 | `pinoErrorOptions` from `@shirudo/base-error/pino` |
+| `Sentry.captureException(error, { extra: error.toLogObject() })` | a leak; replaced in 10 | `beforeSend` and `logObjectContextIntegration()` from `@shirudo/base-error/sentry` |
+| a catalog keyed by a dotted code, with a separate object of code constants | new in 10 | `defineErrors({ key: … }, { prefix })`, see `catalogs-and-classes.md` |
 
 When code names an API that is in neither this skill nor the table, check
-`src/index.ts` and `src/public-error/index.ts` before using it.
+`src/index.ts`, `src/public-error/index.ts`, `src/pino/index.ts` and
+`src/sentry/index.ts` before using it.

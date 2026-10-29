@@ -21,7 +21,7 @@ description: >
   upgrading from an older major version.
 type: core
 library: base-error
-library_version: "9.0.1"
+library_version: "10.0.0"
 sources:
   - "shi-rudo/base-error-ts:src/index.ts"
   - "shi-rudo/base-error-ts:src/public-error/index.ts"
@@ -43,8 +43,12 @@ sources:
 core has no client serializer. Anything a client sees goes through the
 separate public-error pipeline at `@shirudo/base-error/public-error`.
 
-It needs Node.js 24 or later (or an edge runtime or browser) and TypeScript 5.0
-or later. It has no runtime dependencies.
+It needs Node.js 24 or later (or an edge runtime or browser). It ships one ES
+module build, and `require()` loads it on Node.js 24. An ES module project
+needs TypeScript 5.0 or later. A TypeScript project that compiles to CommonJS
+needs `module: nodenext` with TypeScript 5.8 or later, `module: node20` with
+TypeScript 5.9 or later, or `module: commonjs`; `module: node16` fails with
+TS1479. It has no runtime dependencies.
 
 ## Two output paths
 
