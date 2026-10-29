@@ -22,6 +22,7 @@ The subpaths add no dependency:
 - The source imports no runtime value of pino or Sentry. Neither SDK is a dependency or a peer dependency.
 - The declarations use own structural types and name no type of an SDK. A consumer needs no SDK to resolve them.
 - Type tests (`.types.ts`) assert that `pinoErrorOptions` fits `LoggerOptions` of pino, and that `beforeSend` and the integration fit `Options` of `@sentry/core`. `NodeOptions` of `@sentry/node` extends that type and does not declare the two fields again. The SDKs stay dev dependencies for these tests and for the runtime tests.
+- The guides load their usage code from `examples/pino-logger.ts` and `examples/sentry-reporter.ts`. CI compiles and runs both examples against pino and `@sentry/node`, and `scripts/verify-doc-snippets.mjs` checks that the snippets match them.
 
 ## Problem
 
@@ -51,7 +52,7 @@ Both modules are edge-clean: they read no `process` and import no `node:*` modul
 
 ## Supported versions
 
-The tests run against the versions in the lockfile: pino 10 and `@sentry/core` 11. The guides name these versions. A new major version of an SDK gets a test run before a release states support for it.
+The tests run against the versions in the lockfile: pino 10, `@sentry/core` 11 and `@sentry/node` 11. The guides name these versions. A new major version of an SDK gets a test run before a release states support for it.
 
 The Sentry setup relies on two parts of the event protocol: `hint.originalException`, and the `exception_id`, `parent_id` and `source` of an exception mechanism. The pino setup relies on `hooks.logMethod` and the default `errorKey`.
 

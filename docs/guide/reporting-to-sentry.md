@@ -28,18 +28,14 @@ import {
   beforeSend,
   logObjectContextIntegration,
 } from "@shirudo/base-error/sentry";
-
-Sentry.init({
-  dsn: process.env.SENTRY_DSN,
-  beforeSend,
-  integrations: [logObjectContextIntegration()],
-});
-
-Sentry.captureException(error);
 ```
 
+<<< @/../examples/sentry-reporter.ts#usage{ts}
+
 Sentry adds the integration to its default integrations. If you have a
-`beforeSend` of your own, call this function in it first.
+`beforeSend` of your own, call this function in it first. The repository
+compiles and runs this code against `@sentry/node` in
+[`examples/sentry-reporter.ts`](https://github.com/shi-rudo/base-error-ts/blob/main/examples/sentry-reporter.ts).
 
 ## What the setup does
 
@@ -123,6 +119,6 @@ For an error that denies `message` and `email`, the event holds this (shortened)
 - If your dependency tree holds two copies of this package, an error from the
   other copy reaches Sentry without its policy. `logObjectOf` writes it like a
   foreign error. Deduplicate the package.
-- A test of this repository runs the setup against the event builder of
-  `@sentry/core` 11. `@sentry/node` builds its events with the same code, and
-  its options extend the options of `@sentry/core`.
+- The tests of this repository run the setup against the event builder of
+  `@sentry/core` 11, which `@sentry/node` uses. The example of this page
+  compiles and runs against `@sentry/node` 11.
