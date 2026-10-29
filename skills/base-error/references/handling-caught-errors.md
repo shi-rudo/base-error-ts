@@ -44,6 +44,16 @@ Narrow from `unknown` first; exhaustiveness needs the union type. Per-case
 `details` narrowing needs a union of distinct error types, which a catalog
 gives; a single `StructuredError<"A" | "B">` narrows only the code.
 
+- A handler for a code that the union does not contain is a compile error,
+  also next to `_`. A misspelled code does not fall through to `_`.
+- A union with the code `_` cannot use `matchError`: `_` is the catch-all.
+- A table typed `Record<string, …>` does not pass for a closed union. Write
+  the table as an object literal.
+- In a generic function, an error typed `StructuredError<Code>` with `Code` a
+  type parameter names no code, and `matchError` accepts no table for it.
+  Assign the error to a variable typed with its codes or with
+  `StructuredError<string>`, and match that variable.
+
 ## Closed dispatch by key: `Errors.match`
 
 Every catalog has `match`: `matchError` with handlers named by key. Use it for
