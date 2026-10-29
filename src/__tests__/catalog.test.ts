@@ -292,6 +292,29 @@ describe("defineErrors", () => {
     });
   });
 
+  it("lets a per-instance redact replace the catalog policy instead of adding to it", () => {
+    const SecureErrors = defineErrors({
+      PROFILE_FAILED: {
+        category: "PROFILE",
+        retryable: false,
+        details: detailsType<{ userId: string; email: string; iban: string }>(),
+        redaction: { mode: "allow", keys: ["userId"] },
+      },
+    });
+
+    const error = SecureErrors.create
+      .PROFILE_FAILED("profile failed", {
+        details: { userId: "u1", email: "private@example.com", iban: "DE89" },
+      })
+      .redact(["email"]);
+
+    expect(error.toLogObject().details).toEqual({
+      userId: "u1",
+      email: "[REDACTED]",
+      iban: "DE89",
+    });
+  });
+
   it("rejects non-JSON catalog metadata at runtime", () => {
     expect(() =>
       // @ts-expect-error runtime defense for JavaScript and unsafe casts

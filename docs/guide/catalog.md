@@ -106,8 +106,28 @@ const SecurityErrors = defineErrors({
 });
 ```
 
-Per-instance `redact`, `redactAllow`, and `redactWith` remain available when a
-single occurrence needs a stricter policy.
+A per-instance `redact`, `redactAllow` or `redactWith` replaces the catalog
+policy of that instance: the last redactor wins. It does not add to the catalog
+policy. A `redact(["email"])` on a `PROFILE_FAILED` error drops the allow-list,
+so every field except `email` reaches the log, also a field that the catalog
+masked.
+
+To make one occurrence stricter, keep the mode of the catalog policy and state
+every key in one call:
+
+```ts
+SecurityErrors.create
+  .LOGIN_FAILED("login failed", {
+    details: { userId, password },
+  })
+  .redact(["password", "userId"]); // the catalog keys, plus userId
+
+SecurityErrors.create
+  .PROFILE_FAILED("profile failed", {
+    details: { userId, email },
+  })
+  .redactAllow([]); // the catalog allow-list, minus userId
+```
 
 ## Catalog types and codes
 
