@@ -187,8 +187,103 @@ describe("a catalog redaction policy as a floor", () => {
       cause: error,
     });
 
-    expect(error.toLogObject()).toEqual({ message: "[log redaction failed]" });
-    expect(outer.toLogObject().cause).toBe("[log redaction failed]");
+    const log = error.toLogObject();
+    const causeNode = outer.toLogObject().cause as Record<string, unknown>;
+
+    expect(log).toMatchObject({
+      message: "[log redaction failed]",
+      code: "LOGIN_FAILED",
+      category: "AUTH",
+      retryable: false,
+    });
+    expect(JSON.stringify(log)).not.toContain("hunter2");
+    expect(causeNode).toMatchObject({
+      message: "[log redaction failed]",
+      code: "LOGIN_FAILED",
+    });
+  });
+
+  it("writes the size marker as the message of the triage record when the custom output is that marker", () => {
+    const error = loginFailed().redactWith(
+      () => "[Max log size exceeded]" as unknown as Record<string, unknown>,
+    );
+
+    expect(error.toLogObject()).toMatchObject({
+      message: "[Max log size exceeded]",
+      code: "LOGIN_FAILED",
+    });
+  });
+
+  it("keeps the size marker at a cause position when the copy of the custom output exceeds the budget", () => {
+    const blob = Array.from({ length: 99_990 }, (_, index) => index);
+    const cause = AccountErrors.create
+      .LOGIN_FAILED("login for u1 failed", {
+        details: { ...loginDetails, blob } as typeof loginDetails,
+      })
+      .redactWith((log) => log);
+    const outer = new StructuredError({
+      code: "CHECKOUT_FAILED",
+      category: "CHECKOUT",
+      retryable: false,
+      message: "checkout failed",
+      cause,
+    });
+
+    expect(outer.toLogObject().cause).toBe("[Max log size exceeded]");
+  });
+
+  it("keeps a floor deny-list on the message in toString under an instance message mask", () => {
+    const error = AccountErrors.create
+      .SESSION_FAILED("session for ada@example.com expired")
+      .redact(["message"], { mask: (value) => value });
+
+    expect(error.toString()).not.toContain("ada@example.com");
+  });
+
+  it("logs a large detail in full under redactWith and a floor", () => {
+    const blob = Array.from({ length: 60_000 }, (_, index) => index);
+    const error = AccountErrors.create
+      .LOGIN_FAILED("login for u1 failed", {
+        details: { ...loginDetails, blob } as typeof loginDetails,
+      })
+      .redactWith((log) => log);
+
+    const log = error.toLogObject();
+    const details = log.details as Record<string, unknown>;
+
+    expect(log.code).toBe("LOGIN_FAILED");
+    expect(details.password).toBe("[REDACTED]");
+    expect((details.blob as unknown[]).length).toBe(60_000);
+  });
+
+  it("copies the output of redactWith for errors inside details on the budget of the enclosing log", () => {
+    let indexReads = 0;
+    const big = new Proxy(
+      Array.from({ length: 60_000 }, (_, index) => index),
+      {
+        get(target, key, receiver) {
+          if (typeof key === "string" && /^\d+$/.test(key)) indexReads += 1;
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    const inners = [1, 2, 3].map(() =>
+      AccountErrors.create
+        .SESSION_FAILED("session expired")
+        .redactWith((log) => ({ ...log, big })),
+    );
+    const outer = new StructuredError({
+      code: "AUDIT_FAILED",
+      category: "AUDIT",
+      retryable: false,
+      message: "audit failed",
+      details: { inners },
+    });
+
+    const serialized = JSON.stringify(outer.toLogObject());
+
+    expect(serialized).toContain("[Max log size exceeded]");
+    expect(indexReads).toBeLessThan(120_000);
   });
 
   it("leaves an error without a catalog policy on last-wins", () => {

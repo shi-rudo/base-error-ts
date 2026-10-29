@@ -70,12 +70,26 @@ export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
 let writeLogObjectOf: (value: unknown) => unknown;
 
-/** A built-in policy that {@link setRedactionFloor} installs as a floor. */
-export type RedactionFloor = {
+/** A built-in policy: a deny-list or an allow-list of keys, with a mask. */
+export type BuiltInRedactionPolicy = {
   readonly mode: "deny" | "allow";
   readonly keys: readonly string[];
   readonly mask?: RedactMask;
 };
+
+/**
+ * A built-in policy, prepared once by {@link createRedactionFloor} and shared
+ * by every error that {@link setRedactionFloor} gives it.
+ */
+export type RedactionFloor = {
+  readonly redactor: (log: Record<string, unknown>) => Record<string, unknown>;
+  /** The keys of a deny-list, which the triage record leaves out. */
+  readonly denied: ReadonlySet<string> | undefined;
+  /** The mask of a deny-list that covers `"message"`, for `toString`. */
+  readonly messageMask: RedactMask | undefined;
+};
+
+let buildRedactionFloor: (policy: BuiltInRedactionPolicy) => RedactionFloor;
 
 let installRedactionFloor: (
   error: BaseError<string>,
@@ -158,10 +172,7 @@ export class BaseError<T extends string> extends Error {
    * of this instance, so a per-instance call can add masking but never remove
    * the floor. No public method sets, reads or clears it.
    */
-  #floor?: (log: Record<string, unknown>) => Record<string, unknown>;
-
-  /** The message mask of a floor deny-list that covers `"message"`. */
-  #floorMessageMask?: RedactMask;
+  #floor?: RedactionFloor;
 
   /**
    * Creates a new BaseError instance with automatic name inference.
@@ -301,8 +312,9 @@ export class BaseError<T extends string> extends Error {
    *
    * ⚠️ Scope: rewrites the **log object** only. The technical `message` is part
    * of the kept structural envelope. So `toString`, `err.stack`, and Node's
-   * `console.log(err)` inspection carry it unchanged. To mask the message
-   * itself, see {@link redact}.
+   * `console.log(err)` inspection carry it unchanged, unless a redaction floor
+   * denies `"message"`: then `toString` masks it. To mask the message itself,
+   * see {@link redact}.
    *
    * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
@@ -359,7 +371,8 @@ export class BaseError<T extends string> extends Error {
    * custom redactor onto the one-line {@link toString} render. So `toString`,
    * `err.stack`, and `console.log(err)` inspection keep the raw technical
    * message. This holds even when the redactor scrubs the message from the
-   * log.
+   * log. Only a redaction floor that denies `"message"` masks it in
+   * `toString`.
    * Changing the log's `message` does not automatically scrub its `stack`.
    */
   public redactWith(
@@ -467,28 +480,29 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * The policies of this error over one of its own records, as a record.
-   * When a floor turns the output of a custom policy into a marker, the
-   * record keeps the marker as its message and no data.
+   * The policies of this error over one of its own records. Under a floor,
+   * the result is the floor output or the triage record, so always a record.
    */
   #policyRecord(
     record: Record<string, unknown>,
     context: LogBuildContext,
     region: LogRegion,
   ): Record<string, unknown> {
-    const result = BaseError.#applyPolicies(this, record, context, region, 0);
-    return this.#floor === undefined || BaseError.#isLogRecord(result)
-      ? (result as Record<string, unknown>)
-      : { message: result };
+    return BaseError.#applyPolicies(this, record, context, region, 0) as Record<
+      string,
+      unknown
+    >;
   }
 
   /**
    * The per-instance policy of `error`, then its floor. The output of a
    * custom policy is consumer data. So the copier turns it into plain log
    * data before the floor walks it, and at a cause position also before the
-   * policy of an outer error walks it. Under a floor, a copy that is no
-   * record passes only as a marker of the serializer: anything else would
-   * bypass the floor, so it becomes the redaction-failure marker.
+   * policy of an outer error walks it. At the root, the copy has a budget of
+   * its own, because the raw build has spent the budget of `context`.
+   * Under a floor, a copy that is no record keeps only the triage fields,
+   * which the function reads before the custom policy runs. At a cause
+   * position, a marker of the serializer passes as it is.
    */
   /*#__PURE__*/ static #applyPolicies(
     error: BaseError<string>,
@@ -497,14 +511,30 @@ export class BaseError<T extends string> extends Error {
     region: LogRegion,
     spine: number,
   ): unknown {
-    const own = error.#redactor ? error.#redactor(node) : node;
-    const plain =
-      error.#customPolicy && (region === "cause" || error.#floor !== undefined)
+    const floor = error.#floor;
+    if (floor === undefined) {
+      const own = error.#redactor ? error.#redactor(node) : node;
+      return error.#customPolicy && region === "cause"
         ? serializeLogData(own, context, region, spine)
         : own;
-    if (error.#floor === undefined) return plain;
-    if (BaseError.#isLogRecord(plain)) return error.#floor(plain);
-    return isCauseSpineMarker(plain) ? plain : LOG_REDACTION_FAILED_MARKER;
+    }
+    if (!error.#customPolicy) {
+      return floor.redactor(error.#redactor ? error.#redactor(node) : node);
+    }
+    const triage = BaseError.#triageRecord(node, floor.denied);
+    const own = error.#redactor ? error.#redactor(node) : node;
+    const plain = serializeLogData(
+      own,
+      region === "root" ? BaseError.#newLogContext() : context,
+      region,
+      spine,
+    );
+    if (BaseError.#isLogRecord(plain)) return floor.redactor(plain);
+    if (region === "cause" && isCauseSpineMarker(plain)) return plain;
+    triage.message = isCauseSpineMarker(plain)
+      ? plain
+      : LOG_REDACTION_FAILED_MARKER;
+    return triage;
   }
 
   /*#__PURE__*/ static #isLogRecord(
@@ -514,11 +544,12 @@ export class BaseError<T extends string> extends Error {
   }
 
   static #newLogContext(): LogBuildContext {
-    return createLogBuildContext((value) =>
+    const context = createLogBuildContext((value) =>
       BaseError.#sameRealm(value)
-        ? () => value.#dataErrorEnvelope()
+        ? () => value.#dataErrorEnvelope(context)
         : undefined,
     );
+    return context;
   }
 
   // A static block is the one way for a function outside the class to reach
@@ -534,16 +565,20 @@ export class BaseError<T extends string> extends Error {
             0,
             BaseError.#newLogContext(),
           );
+    buildRedactionFloor = (policy) => {
+      const mask = policy.mask ?? "[REDACTED]";
+      const denied = policy.mode === "deny" ? new Set(policy.keys) : undefined;
+      return Object.freeze({
+        redactor:
+          policy.mode === "deny"
+            ? BaseError.#denyListRedactor(policy.keys, mask)
+            : BaseError.#allowListRedactor(policy.keys, mask),
+        denied,
+        messageMask: denied?.has("message") ? mask : undefined,
+      });
+    };
     installRedactionFloor = (error, floor) => {
-      const mask = floor.mask ?? "[REDACTED]";
-      error.#floor =
-        floor.mode === "deny"
-          ? BaseError.#denyListRedactor(floor.keys, mask)
-          : BaseError.#allowListRedactor(floor.keys, mask);
-      error.#floorMessageMask =
-        floor.mode === "deny" && floor.keys.includes("message")
-          ? mask
-          : undefined;
+      error.#floor = floor;
     };
   }
 
@@ -552,7 +587,7 @@ export class BaseError<T extends string> extends Error {
    * The view writes no `stack`: header masking covers the cause spine only,
    * so a stack in data would carry a denied `name` or `message`.
    */
-  #dataErrorEnvelope(): Record<string, unknown> {
+  #dataErrorEnvelope(context: LogBuildContext): Record<string, unknown> {
     const log: Record<string, unknown> = {};
     for (const key of [...BaseError.#SAFE_TRIAGE_KEYS, "message"]) {
       // The ISO form derives from the timestamp that this envelope holds.
@@ -568,7 +603,7 @@ export class BaseError<T extends string> extends Error {
       )
         log[key] = value;
     }
-    return this.#policyRecord(log, BaseError.#newLogContext(), "data");
+    return this.#policyRecord(log, context, "data");
   }
 
   /**
@@ -692,32 +727,44 @@ export class BaseError<T extends string> extends Error {
     denied?: ReadonlySet<string>,
   ): (raw: Record<string, unknown>) => Record<string, unknown> {
     return (raw) => {
-      const safe: Record<string, unknown> = {
-        message: LOG_REDACTION_FAILED_MARKER,
-      };
-      for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
-        if (denied?.has(key)) continue;
-        const value = readOwnProperty(raw, key);
-        const type =
-          key === "retryable"
-            ? "boolean"
-            : key === "timestamp"
-              ? "number"
-              : "string";
-        if (
-          typeof value !== type &&
-          !(key === "code" && typeof value === "number")
-        )
-          continue;
-        if (typeof value === "number" && !Number.isFinite(value)) continue;
-        safe[key] = value;
-      }
+      const safe = BaseError.#triageRecord(raw, denied);
       try {
         return redactor(raw);
       } catch {
         return safe;
       }
     };
+  }
+
+  /**
+   * The own, correctly typed triage fields of `raw`, without the keys of a
+   * deny-list, and the redaction-failure marker as the message.
+   */
+  /*#__PURE__*/ static #triageRecord(
+    raw: Record<string, unknown>,
+    denied: ReadonlySet<string> | undefined,
+  ): Record<string, unknown> {
+    const safe: Record<string, unknown> = {
+      message: LOG_REDACTION_FAILED_MARKER,
+    };
+    for (const key of BaseError.#SAFE_TRIAGE_KEYS) {
+      if (denied?.has(key)) continue;
+      const value = readOwnProperty(raw, key);
+      const type =
+        key === "retryable"
+          ? "boolean"
+          : key === "timestamp"
+            ? "number"
+            : "string";
+      if (
+        typeof value !== type &&
+        !(key === "code" && typeof value === "number")
+      )
+        continue;
+      if (typeof value === "number" && !Number.isFinite(value)) continue;
+      safe[key] = value;
+    }
+    return safe;
   }
 
   /**
@@ -756,9 +803,10 @@ export class BaseError<T extends string> extends Error {
    * renders the same cause nodes, and past the cap the chain ends with the
    * same depth marker.
    * A plain-object cause carries its data fields in the log object. This
-   * render follows its `cause` links and ends them at the cap. Honors a deny-listed
-   * `"message"` (see {@link redact}) per BaseError in the chain; other
-   * redaction shapes rewrite only the log object. The render writes at most
+   * render follows its `cause` links and ends them at the cap. Honors a
+   * deny-listed `"message"` of the instance and of a redaction floor (see
+   * {@link redact}) per BaseError in the chain; other redaction shapes
+   * rewrite only the log object. The render writes at most
    * 100,000 lines, and the next line is the size marker of the log object.
    */
   public override toString(): string {
@@ -774,21 +822,26 @@ export class BaseError<T extends string> extends Error {
   // ----------------------------------------------------------------
 
   /**
-   * The message as {@link toString} renders it: masked when a deny-list of
-   * the instance or of the floor covers `"message"`, verbatim otherwise.
-   * Fail-closed: a throwing function mask yields the default marker, never
-   * the raw message.
+   * The message as {@link toString} renders it: masked by a deny-list of the
+   * instance and then by a deny-list of the floor that covers `"message"`,
+   * verbatim without either. Fail-closed: a throwing function mask yields the
+   * default marker, never the raw message.
    */
   /*#__PURE__*/ #renderMessage(): string {
-    const mask = this.#messageMask ?? this.#floorMessageMask;
-    if (mask === undefined) {
+    const instanceMask = this.#messageMask;
+    const floorMask = this.#floor?.messageMask;
+    if (instanceMask === undefined && floorMask === undefined) {
       return renderValue(this.message, "");
     }
     try {
-      return renderValue(
-        BaseError.#applyMask(mask, this.message, "message"),
-        "[REDACTED]",
-      );
+      let value: unknown = this.message;
+      if (instanceMask !== undefined) {
+        value = BaseError.#applyMask(instanceMask, value, "message");
+      }
+      if (floorMask !== undefined) {
+        value = BaseError.#applyMask(floorMask, value, "message");
+      }
+      return renderValue(value, "[REDACTED]");
     } catch {
       return "[REDACTED]";
     }
@@ -1178,10 +1231,20 @@ export function logObjectOf(value: unknown): unknown {
 }
 
 /**
- * Installs the redaction floor of `error` (proposal 0021). The log applies
- * the floor after every per-instance policy. `defineErrors` calls this once
- * for each error whose definition declares `redaction`. No entry point
- * exports it.
+ * Prepares a built-in policy as a redaction floor (proposal 0021).
+ * `defineErrors` calls this once per definition that declares `redaction`.
+ * No entry point exports it.
+ */
+export function createRedactionFloor(
+  policy: BuiltInRedactionPolicy,
+): RedactionFloor {
+  return buildRedactionFloor(policy);
+}
+
+/**
+ * Installs the redaction floor of `error`. The log applies the floor after
+ * every per-instance policy. `defineErrors` calls this for each error of a
+ * definition that declares `redaction`. No entry point exports it.
  */
 export function setRedactionFloor(
   error: BaseError<string>,
