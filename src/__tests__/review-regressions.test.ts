@@ -31,10 +31,10 @@ describe("review regressions", () => {
     expect(details.inner).not.toHaveProperty("stack");
   });
   it("applies the nested data error's sticky policy", () => {
-    const nested = new BaseError("private").redact(["message"]);
+    const nested = new BaseError("hunter2").redact(["message"]);
     const log = new Fields({ payload: { nested } }).toLogObject();
     expect(log.payload).toMatchObject({ nested: { message: "[REDACTED]" } });
-    expect(JSON.stringify(log)).not.toContain("private");
+    expect(JSON.stringify(log)).not.toContain("hunter2");
   });
   it.each([{}, { foo: undefined }])(
     "keeps the envelope for an empty own-fields contribution %j",
