@@ -114,6 +114,40 @@ declare const dynamicTable: Record<string, () => number>;
 // @ts-expect-error a table typed Record<string, …> names no code, so the compiler cannot check it against a closed union
 matchError(userError, dynamicTable);
 
+enum PaymentCode {
+  Declined = "PAYMENT_DECLINED",
+  Expired = "CARD_EXPIRED",
+}
+declare const paymentError: StructuredError<PaymentCode, "PAYMENT">;
+
+const enumCodesComplete: number = matchError(paymentError, {
+  PAYMENT_DECLINED: () => 1,
+  CARD_EXPIRED: () => 2,
+});
+
+const enumCodeWithCatchAll: number = matchError(paymentError, {
+  [PaymentCode.Declined]: () => 1,
+  _: () => 2,
+});
+
+// @ts-expect-error a key that names no member of the enum is rejected
+matchError(paymentError, { PAYMENT_DECLIND: () => 1, _: () => 2 });
+
+type Untyped = ReturnType<typeof JSON.parse>;
+declare const untypedError: Untyped;
+
+const untypedWithCatchAll: number = matchError(untypedError, {
+  ANY_CODE: () => 1,
+  _: () => 2,
+});
+
+declare const anyCodeError: StructuredError<Untyped, Untyped>;
+
+const anyCodeWithCatchAll: number = matchError(anyCodeError, {
+  ANY_CODE: () => 1,
+  _: () => 2,
+});
+
 void UserErrors;
 void HttpErrors;
 void statusWithCatchAll;
@@ -123,6 +157,10 @@ void misspelledInGeneric;
 void underscorePrefixedCode;
 void numericKeyWithCatchAll;
 void numericKeysComplete;
+void enumCodesComplete;
+void enumCodeWithCatchAll;
+void untypedWithCatchAll;
+void anyCodeWithCatchAll;
 void CatchAllCodeErrors;
 void withCatchAll;
 void complete;

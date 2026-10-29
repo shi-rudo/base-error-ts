@@ -5,7 +5,11 @@ import { isInstanceOf } from "./guarded-read.js";
 import { cloneJsonSafe } from "./json-safe.js";
 import type { JsonSafeValue } from "./json-safe.js";
 import { ownCase } from "./match.js";
-import type { HandlerResult, UnknownHandlerNames } from "./match.js";
+import type {
+  HandlerNames,
+  HandlerResult,
+  UnknownHandlerNames,
+} from "./match.js";
 
 /** JSON-safe static metadata supported by catalog definitions. Alias of `JsonSafeValue`, whose module owns the JSON-safety rules. */
 export type CatalogJsonValue = JsonSafeValue;
@@ -220,10 +224,10 @@ type KeyExhaustive<
   : [UnknownHandlerNames<C, keyof T & string>] extends [never]
     ? "_" extends keyof C
       ? C
-      : [Exclude<KeyIn<T, P, E>, keyof C>] extends [never]
+      : [Exclude<KeyIn<T, P, E>, HandlerNames<C>>] extends [never]
         ? C
         : C & {
-            [K in Exclude<KeyIn<T, P, E>, keyof C>]: (
+            [K in Exclude<KeyIn<T, P, E>, HandlerNames<C>>]: (
               error: KeyCaseArg<P, E, K>,
             ) => unknown;
           }

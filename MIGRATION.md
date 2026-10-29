@@ -67,8 +67,7 @@ and its errors reached `_`.
   before v10 it also passed as if it had a `_` catch-all. Write the table as an
   object literal, or type it with the codes of the union.
 - The runtime is unchanged. A wide `StructuredError<string>` still takes a
-  handler for any code, and a call inside a generic function checks the codes
-  of the constraint of its error type.
+  handler for any code.
 
 ## v8 to v9
 
