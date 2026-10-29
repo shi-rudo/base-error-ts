@@ -70,10 +70,7 @@ export const retryable: boolean = matchError(failure, {
 matchError(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
 
 export function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
-  return matchError(error, {
-    RATE_LIMITED: (rateLimited) => (rateLimited.retryable ? 429 : 503),
-    _: () => 500,
-  });
+  return matchError(error, { RATE_LIMITED: () => 429, _: () => 500 });
 }
 
 export function misspelledStatusOf<E extends EmailTaken | RateLimited>(
