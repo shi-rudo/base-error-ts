@@ -18,6 +18,7 @@ export { defineErrors, detailsType } from "./errors/catalog.js";
 export type {
   ErrorSpec,
   ErrorCatalogDefinition,
+  CatalogOptions,
   CatalogJsonValue,
   CatalogMetadata,
   CatalogRedactionPolicy,

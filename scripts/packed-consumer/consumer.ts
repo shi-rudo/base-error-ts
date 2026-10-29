@@ -5,9 +5,12 @@ import {
   BaseError,
   StructuredError,
   ValidationError,
+  defineErrors,
+  detailsType,
   isStructuredError,
   matchError,
   toStructuredError,
+  type CatalogError,
   type ErrorOptions,
 } from "@shirudo/base-error";
 import {
@@ -57,6 +60,32 @@ export const status: number = matchError(failure, {
 
 // @ts-expect-error matchError needs a case for every code of the union
 matchError(failure, { EMAIL_TAKEN: () => 409 });
+
+const AuthzErrors = defineErrors(
+  {
+    not_a_member: { category: "FORBIDDEN", retryable: false },
+    missing_role: {
+      category: "FORBIDDEN",
+      retryable: false,
+      details: detailsType<{ role: string }>(),
+    },
+  },
+  { prefix: "restaurant.authz" },
+);
+declare const authzFailure: CatalogError<typeof AuthzErrors>;
+
+export const prefixedCode: "restaurant.authz.not_a_member" =
+  AuthzErrors.create.not_a_member("actor 42 is not a member").code;
+export const role: string | undefined = AuthzErrors.match(authzFailure, {
+  not_a_member: () => undefined,
+  missing_role: (error) => error.details?.role,
+});
+export const forbidden: "FORBIDDEN" = AuthzErrors.meta(
+  AuthzErrors.code.missing_role,
+).category;
+
+// @ts-expect-error a prefix must not end with the separator
+defineErrors({ X: { category: "C", retryable: false } }, { prefix: "a." });
 
 const options: ErrorOptions<"X", "Y"> = {
   code: "X",

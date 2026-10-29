@@ -147,20 +147,20 @@ describe("defineErrors", () => {
     ).toThrow(/catalog must be a plain object/);
   });
 
-  it("rejects empty error codes", () => {
+  it("rejects empty keys", () => {
     expect(() =>
       // @ts-expect-error runtime defense for JavaScript and unsafe casts
       defineErrors({ "": { category: "INTERNAL", retryable: false } }),
-    ).toThrow(/error codes must not be empty/);
+    ).toThrow(/keys must not be empty/);
   });
 
-  it("rejects symbol codes at runtime", () => {
+  it("rejects symbol keys at runtime", () => {
     expect(() => {
       // @ts-expect-error runtime defense for JavaScript and unsafe casts
       defineErrors({
         [Symbol("BROKEN")]: { category: "INTERNAL", retryable: false },
       });
-    }).toThrow(/codes must be strings/);
+    }).toThrow(/keys must be strings/);
   });
 
   it("rejects malformed definitions at runtime", () => {
@@ -589,6 +589,335 @@ describe("defineErrors", () => {
     const marker = detailsType<{ value: string }>();
     expect(marker).toEqual({});
     expect(Object.isFrozen(marker)).toBe(true);
+  });
+});
+
+const AuthzErrors = defineErrors(
+  {
+    not_a_member: { category: "FORBIDDEN", retryable: false },
+    missing_role: {
+      category: "FORBIDDEN",
+      retryable: false,
+      metadata: { httpStatus: 403 },
+      details: detailsType<{ role: string }>(),
+      redaction: { mode: "deny", keys: ["role"] },
+    },
+  },
+  { prefix: "restaurant.authz" },
+);
+
+type AuthzError = CatalogError<typeof AuthzErrors>;
+
+describe("defineErrors with a prefix", () => {
+  it("derives the code of each definition from the prefix and the key", () => {
+    const cause = new Error("membership lookup failed");
+
+    const error = AuthzErrors.create.missing_role("actor 42 lacks a role", {
+      details: { role: "owner" },
+      cause,
+    });
+
+    expect(error).toBeInstanceOf(StructuredError);
+    expect(error.code).toBe("restaurant.authz.missing_role");
+    expect(error.name).toBe("restaurant.authz.missing_role");
+    expect(error.category).toBe("FORBIDDEN");
+    expect(error.retryable).toBe(false);
+    expect(error.message).toBe("actor 42 lacks a role");
+    expect(error.details).toEqual({ role: "owner" });
+    expect((error as unknown as { cause: unknown }).cause).toBe(cause);
+    expect(JSON.stringify(error.toLogObject())).not.toContain("owner");
+  });
+
+  it("maps each key to its code in a frozen namespace", () => {
+    expect(AuthzErrors.code.not_a_member).toBe("restaurant.authz.not_a_member");
+    expect(AuthzErrors.code.missing_role).toBe("restaurant.authz.missing_role");
+    expect(Object.isFrozen(AuthzErrors.code)).toBe(true);
+    expect(Object.getPrototypeOf(AuthzErrors.code)).toBeNull();
+  });
+
+  it("lists the derived codes in key order", () => {
+    expect(AuthzErrors.codes).toEqual([
+      "restaurant.authz.not_a_member",
+      "restaurant.authz.missing_role",
+    ]);
+  });
+
+  it("looks up the static facts of a definition by its code", () => {
+    const error = AuthzErrors.create.missing_role("actor 42 lacks a role", {
+      details: { role: "owner" },
+    });
+
+    expect(AuthzErrors.meta(error.code)).toEqual({
+      category: "FORBIDDEN",
+      retryable: false,
+      metadata: { httpStatus: 403 },
+    });
+    expect(() => AuthzErrors.meta("missing_role" as never)).toThrow(
+      'meta: unknown error code "missing_role"',
+    );
+  });
+
+  it("recognizes one definition by its key", () => {
+    const error = AuthzErrors.create.not_a_member("actor 42 is not a member");
+
+    expect(AuthzErrors.is(error)).toBe(true);
+    expect(AuthzErrors.is(error, "not_a_member")).toBe(true);
+    expect(AuthzErrors.is(error, "missing_role")).toBe(false);
+    expect(
+      AuthzErrors.is(error, "restaurant.authz.not_a_member" as never),
+    ).toBe(false);
+  });
+
+  it("rejects a lookalike that carries the derived code", () => {
+    const forged = new StructuredError({
+      code: "restaurant.authz.not_a_member",
+      category: "FORBIDDEN",
+      retryable: false,
+      message: "forged",
+    });
+
+    expect(AuthzErrors.is(forged)).toBe(false);
+    expect(AuthzErrors.is(forged, "not_a_member")).toBe(false);
+  });
+
+  it("fails closed when a generated error loses its derived code", () => {
+    const error = AuthzErrors.create.not_a_member("actor 42 is not a member");
+    (error as unknown as { code: string }).code = "not_a_member";
+
+    expect(AuthzErrors.is(error)).toBe(false);
+  });
+
+  it("keeps the key as the code without a prefix", () => {
+    const definition = { FAILURE: { category: "INTERNAL", retryable: false } };
+
+    const withEmptyOptions = defineErrors(definition, {});
+    const withUndefinedPrefix = defineErrors(definition, {
+      prefix: undefined,
+    });
+
+    expect(withEmptyOptions.create.FAILURE("failed").code).toBe("FAILURE");
+    expect(withEmptyOptions.code.FAILURE).toBe("FAILURE");
+    expect(withUndefinedPrefix.codes).toEqual(["FAILURE"]);
+    expect(AppErrors.code.USER_NOT_FOUND).toBe("USER_NOT_FOUND");
+  });
+
+  it("derives the code of a key that matches an Object.prototype member", () => {
+    const collisions = defineErrors(
+      {
+        ["__proto__"]: { category: "X", retryable: false },
+        toString: { category: "X", retryable: false },
+      },
+      { prefix: "p" },
+    );
+
+    const prototypeNamed = collisions.create.__proto__("prototype key");
+
+    expect(prototypeNamed.code).toBe("p.__proto__");
+    expect(collisions.code.__proto__).toBe("p.__proto__");
+    expect(collisions.code.toString).toBe("p.toString");
+    expect(collisions.meta("p.__proto__").category).toBe("X");
+    expect(collisions.is(prototypeNamed, "__proto__")).toBe(true);
+  });
+
+  it("rejects a key with a dot when a prefix is set", () => {
+    for (const key of ["storage.not_found", ".x", "x."]) {
+      expect(() =>
+        defineErrors({ [key]: { category: "X", retryable: false } }, {
+          prefix: "restaurant",
+        } as never),
+      ).toThrow(
+        `defineErrors: key "${key}" contains "."; with a prefix, the prefix holds every segment before the key`,
+      );
+    }
+  });
+
+  it("keeps a dotted key as the code without a prefix", () => {
+    const DbErrors = defineErrors({
+      "db.deadlock": { category: "DEADLOCK", retryable: true },
+    });
+
+    expect(DbErrors.create["db.deadlock"]("deadlock").code).toBe("db.deadlock");
+  });
+
+  it("rejects an invalid prefix at runtime", () => {
+    const definition = { FAILURE: { category: "INTERNAL", retryable: false } };
+    const invalidPrefixes: unknown[] = [
+      "",
+      ".restaurant",
+      "restaurant.",
+      "restaurant..authz",
+      42,
+      null,
+    ];
+
+    for (const prefix of invalidPrefixes) {
+      expect(() =>
+        defineErrors(definition, { prefix: prefix as never }),
+      ).toThrow(/defineErrors: invalid prefix/);
+    }
+  });
+
+  it("names the rejected prefix and the expected form", () => {
+    expect(() =>
+      defineErrors(
+        { FAILURE: { category: "INTERNAL", retryable: false } },
+        { prefix: "restaurant." as never },
+      ),
+    ).toThrow(
+      'defineErrors: invalid prefix "restaurant."; expected a non-empty string without a leading, trailing or doubled "."',
+    );
+  });
+
+  it("rejects options that are no plain object at runtime", () => {
+    const definition = { FAILURE: { category: "INTERNAL", retryable: false } };
+
+    for (const options of [
+      "restaurant",
+      null,
+      ["restaurant"],
+      42,
+      new Date(0),
+    ]) {
+      expect(() => defineErrors(definition, options as never)).toThrow(
+        "defineErrors: options must be a plain object",
+      );
+    }
+  });
+
+  it("accepts null-prototype options", () => {
+    const options = Object.assign(Object.create(null), {
+      prefix: "restaurant.authz",
+    }) as { prefix: "restaurant.authz" };
+
+    const errors = defineErrors(
+      { not_a_member: { category: "FORBIDDEN", retryable: false } },
+      options,
+    );
+
+    expect(errors.codes).toEqual(["restaurant.authz.not_a_member"]);
+  });
+
+  it("rejects unknown and symbol options at runtime", () => {
+    const definition = { FAILURE: { category: "INTERNAL", retryable: false } };
+
+    expect(() =>
+      defineErrors(definition, { prefx: "restaurant" } as never),
+    ).toThrow('defineErrors: unknown option "prefx"');
+    expect(() =>
+      defineErrors(definition, { [Symbol("prefix")]: "restaurant" } as never),
+    ).toThrow('defineErrors: unknown option "Symbol(prefix)"');
+  });
+});
+
+describe("Catalog.match", () => {
+  it("calls the handler of the key, with the error of that key", () => {
+    const describeError = (error: AuthzError) =>
+      AuthzErrors.match(error, {
+        not_a_member: (e) => `not a member: ${e.code}`,
+        missing_role: (e) => `missing role: ${e.details?.role}`,
+      });
+
+    expect(
+      describeError(AuthzErrors.create.not_a_member("actor 42 is no member")),
+    ).toBe("not a member: restaurant.authz.not_a_member");
+    expect(
+      describeError(
+        AuthzErrors.create.missing_role("actor 42 lacks a role", {
+          details: { role: "owner" },
+        }),
+      ),
+    ).toBe("missing role: owner");
+  });
+
+  it("calls the catch-all for a key without a handler", () => {
+    const error = AuthzErrors.create.not_a_member("actor 42 is no member");
+
+    const result = AuthzErrors.match(error as AuthzError, {
+      missing_role: () => "missing role",
+      _: (e) => `caught ${e.code}`,
+    });
+
+    expect(result).toBe("caught restaurant.authz.not_a_member");
+  });
+
+  it("calls the catch-all for a code outside the catalog", () => {
+    const foreign = AppErrors.create.RATE_LIMITED("slow down");
+
+    const result = AuthzErrors.match(foreign as unknown as AuthzError, {
+      not_a_member: () => "not a member",
+      _: (e) => `caught ${e.code}`,
+    });
+
+    expect(result).toBe("caught RATE_LIMITED");
+  });
+
+  it("never routes a key to an inherited Object.prototype member", () => {
+    const Collisions = defineErrors(
+      {
+        toString: { category: "X", retryable: false },
+        other: { category: "X", retryable: false },
+      },
+      { prefix: "p" },
+    );
+    const error = Collisions.create.toString("prototype-named key");
+
+    const result = Collisions.match(error as CatalogError<typeof Collisions>, {
+      other: () => "other",
+      _: () => "catch-all",
+    });
+
+    expect(result).toBe("catch-all");
+  });
+
+  it("throws with the key and the code when no handler matches", () => {
+    const error = AuthzErrors.create.not_a_member("actor 42 is no member");
+    const casesWithoutCatchAll = { missing_role: () => "missing role" };
+
+    expect(() =>
+      AuthzErrors.match(error as AuthzError, casesWithoutCatchAll as never),
+    ).toThrow(
+      'match: no case for key "not_a_member" of error code "restaurant.authz.not_a_member", and no "_" catch-all',
+    );
+  });
+
+  it("throws with the code when a code outside the catalog has no catch-all", () => {
+    const foreign = AppErrors.create.RATE_LIMITED("slow down");
+
+    expect(() =>
+      AuthzErrors.match(foreign as unknown as AuthzError, {
+        not_a_member: () => "not a member",
+        missing_role: () => "missing role",
+      }),
+    ).toThrow(
+      'match: error code "RATE_LIMITED" is not defined in this catalog, and no "_" catch-all',
+    );
+  });
+
+  it("refuses to match in a catalog that defines the key _", () => {
+    const Underscore = defineErrors({
+      _: { category: "C", retryable: false },
+      z: { category: "D", retryable: false },
+    });
+    const error = Underscore.create.z("z failed");
+
+    expect(() =>
+      Underscore.match(error as never, { _: () => "catch-all" } as never),
+    ).toThrow(
+      'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchError',
+    );
+  });
+
+  it("dispatches on the code itself in a catalog without a prefix", () => {
+    const error = AppErrors.create.USER_NOT_FOUND("user 42 missing", {
+      details: { userId: "42" },
+    });
+
+    const result = AppErrors.match(error as AppError, {
+      USER_NOT_FOUND: (e) => e.details?.userId,
+      RATE_LIMITED: () => undefined,
+    });
+
+    expect(result).toBe("42");
   });
 });
 

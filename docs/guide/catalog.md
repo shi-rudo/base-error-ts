@@ -23,12 +23,14 @@ export const AppErrors = defineErrors({
 ```
 
 Definitions must be non-empty finite string-keyed plain objects; null-prototype
-objects are also accepted. Error codes must be non-empty strings. Definitions
-are validated, snapshotted and frozen when the catalog is created.
+objects are also accepted. Keys must be non-empty strings. Without a prefix,
+the key of a definition is its error code; see
+[Codes with a prefix](#codes-with-a-prefix). Definitions are validated,
+snapshotted and frozen when the catalog is created.
 
 ## Constructing errors
 
-Factories live under `create`, leaving every string available as an error code:
+Factories live under `create`, leaving every string available as a key:
 
 ```ts
 throw AppErrors.create.USER_NOT_FOUND("user 123 missing", {
@@ -121,6 +123,130 @@ type UserNotFound = CatalogErrorOf<typeof AppErrors, "USER_NOT_FOUND">;
 `AppErrors.codes` is an immutable runtime list of the finite code set. Adding a
 code changes `CatalogError`, so every exhaustive `matchError` call must handle
 the new member before the application compiles again.
+
+## Codes with a prefix
+
+A codebase with several bounded contexts often uses dotted codes, such as
+`restaurant.authz.not_a_member`. A dotted code is no identifier. As a key, it
+needs brackets at every call. A `prefix` separates the two names:
+
+- The **key** names a definition in the source code, for example the factory
+  `create.not_a_member`.
+- The **code** is what the error carries in `error.code`. Logs, dashboards and
+  the public-error catalog read it.
+
+The catalog derives each code as `${prefix}.${key}`:
+
+```ts
+import {
+  defineErrors,
+  detailsType,
+  type CatalogError,
+} from "@shirudo/base-error";
+
+export const AuthzErrors = defineErrors(
+  {
+    not_a_member: { category: "FORBIDDEN", retryable: false },
+    missing_role: {
+      category: "FORBIDDEN",
+      retryable: false,
+      details: detailsType<{ role: string }>(),
+    },
+  },
+  { prefix: "restaurant.authz" },
+);
+
+export type AuthzError = CatalogError<typeof AuthzErrors>;
+
+const error = AuthzErrors.create.not_a_member(
+  "actor 42 is not a member of org 7",
+);
+error.code; // "restaurant.authz.not_a_member"
+```
+
+The full code stays a literal type in `error.code`, `codes`, `CatalogError`
+and `CatalogErrorOf`.
+
+| Member                                 | Takes    | Returns                            |
+| -------------------------------------- | -------- | ---------------------------------- |
+| `create.<key>(message, options?)`      | the key  | an error that carries the code     |
+| `code.<key>`                           | the key  | the code                           |
+| `codes`                                |          | the codes, in key order            |
+| `match(error, { <key>: handler, _? })` | the key  | the result of the handler          |
+| `is(value, key)`                       | the key  | a type guard for that definition   |
+| `meta(code)`                           | the code | the static facts of the definition |
+| `CatalogErrorOf<C, key>`               | the key  | the error type                     |
+
+`meta` takes the code, because its caller holds an error:
+`AuthzErrors.meta(error.code)`. Without a prefix, the key and the code are the
+same string, and every member behaves as before.
+
+The prefix must be a string literal. It must not be empty, and it must not
+start with, end with or contain a doubled `.`. With a prefix, a key must not
+contain a `.`: the prefix holds every segment before the key, so the key is
+always the last segment of the code. The compiler rejects any other prefix or
+key, and `defineErrors` throws for it at runtime.
+
+### Matching by key
+
+`match` dispatches on the key of an error of this catalog. Without a `_`
+catch-all, the compiler requires a handler for each key. Each handler receives
+the error type of its key:
+
+```ts
+function describe(error: AuthzError): string {
+  return AuthzErrors.match(error, {
+    not_a_member: () => "join the organization first",
+    missing_role: (e) => `ask an owner for the role ${e.details?.role}`,
+  });
+}
+```
+
+`match` rules are the same as the rules of `matchError`. The compiler also
+rejects a key that the catalog does not define. `match` checks no provenance,
+so narrow a caught value with `AuthzErrors.is(value)` first. Every catalog has
+`match`. Without a prefix, it dispatches as `matchError` does. A catalog with
+the key `_` cannot use `match`, because `_` is the catch-all. The compiler
+rejects the call, and `match` throws at runtime.
+
+### Connecting the public-error catalog
+
+`code` and `codes` connect the catalog to the
+[public-error catalog](./public-error) without a copy of a code:
+
+```ts
+import { definePublicErrors } from "@shirudo/base-error/public-error";
+
+const forbidden = { publicCode: "forbidden", status: 403, retryable: false };
+
+const publicErrors = definePublicErrors({
+  fallback: { publicCode: "internal_error", status: 500, retryable: false },
+})
+  .registerByCode(AuthzErrors.code.not_a_member, forbidden)
+  .registerByCode(AuthzErrors.code.missing_role, forbidden);
+
+publicErrors.assertCoverage(AuthzErrors.codes);
+```
+
+`assertCoverage` throws when a code of the catalog has no descriptor, and it
+names each such code.
+
+### Pinning the codes in a test
+
+The source contains the prefix and the key, but not the full code. A search
+for a code from a log finds the catalog by its prefix, and the key is the last
+segment of the code. A key rename changes the code, and the code is a
+contract. Pin the codes of each catalog in a test:
+
+```ts
+expect(AuthzErrors.codes).toEqual([
+  "restaurant.authz.not_a_member",
+  "restaurant.authz.missing_role",
+]);
+```
+
+The test puts each full code into the repository, so a search finds it. A key
+rename then fails the test before it changes a log or a dashboard.
 
 ## Per-call values
 
