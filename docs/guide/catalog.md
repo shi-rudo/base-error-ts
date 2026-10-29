@@ -120,7 +120,9 @@ SecurityErrors.create
 
 The floor holds at a cause position, in `logObjectOf()` and at the pino and
 Sentry setups. A catalog deny-list that holds `"message"` also masks the
-message in `toString()`. Per-instance calls keep last-wins among themselves. On
+message in `toString()`. The floor masks by key: a `redactWith` callback is
+trusted code and can copy a masked value under another key. Per-instance calls
+keep last-wins among themselves. On
 an error with a catalog policy, the log copies the output of `redactWith`, and
 the catalog policy masks the copy. To log a field that the catalog masks,
 change the definition.

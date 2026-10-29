@@ -21,6 +21,8 @@ A `redaction` policy in a `defineErrors` definition is a floor for every error t
 
 The rule in one sentence: the catalog sets the floor, and a single error can only add.
 
+The floor masks by key, as every built-in policy does. A `redactWith` callback is trusted consumer code (proposal 0017): it can copy a masked value under another key, and the floor then judges that key. The floor is a guard against a call that looks like an addition, not against the code of the consumer.
+
 ## Problem
 
 An error had one slot for its policy. The catalog filled that slot in its factory through the public `redact` or `redactAllow`, and every later call overwrote it. The most natural calls removed the protection that the catalog declared:
@@ -58,11 +60,14 @@ The setups of `@shirudo/base-error/pino` and `@shirudo/base-error/sentry` write 
 
 Proposal 0013 lets the output of `redactWith` pass "without validation, copying, freezing, or another implicit redaction policy". On an error with a catalog policy, that rule has one exception: the log copies the output with the log-data copier, and the catalog policy walks the copy. The copy keeps the walk bounded, because a redaction walk reads plain data only. A `Date` in the output becomes its ISO string, as in `details`.
 
+- At the root, the copy has a bounded budget of its own, because the raw build has spent the budget of its log. At a cause position and inside `details`, the copy shares the budget of the enclosing log, so many nested errors cannot multiply the work.
+- If the copy is no record, for example because the callback returned a list or the copy hit its budget, the floor has nothing to walk. The log then writes the triage record: the redaction-failure marker or the size marker as the message, and `name`, `code`, `category`, `retryable` and the time, without the keys that the floor denies. The log reads these fields before the callback runs. At a cause position, a marker of the serializer passes as it is.
+
 Without a catalog policy, proposal 0013 holds unchanged.
 
 ## Implementation
 
-`BaseError` gets a second private slot for the floor. `defineErrors` fills it once, when the factory builds the error, through a function that a static block of the class sets. The function is internal: no entry point exports it, and no public method reads or clears the floor. A key that both policies mask passes the instance mask to the catalog mask; a string mask gives the same marker.
+`BaseError` gets a second private slot for the floor. `defineErrors` prepares the floor once per definition (`createRedactionFloor`) and gives it to each error that the factory builds (`setRedactionFloor`). A static block of the class sets both functions. They are internal: no entry point exports them, and no public method reads or clears the floor. `CatalogRedactionPolicy` is an alias of the one type that describes a built-in policy, so the catalog and the floor cannot drift apart. A key that both policies mask passes the instance mask to the catalog mask; a string mask gives the same marker. In `toString()`, the instance mask of the message runs first and the floor mask after it.
 
 ## Alternatives
 

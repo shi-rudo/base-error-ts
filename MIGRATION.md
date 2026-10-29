@@ -44,6 +44,9 @@ applies the per-instance policy first and the catalog policy after it.
 - `redactWith` on an error with a catalog policy returns a copy of its output,
   and the catalog policy masks the copy. A `Date` in the output becomes its ISO
   string.
+- The floor masks by key, as every built-in policy does. A `redactWith`
+  callback is trusted consumer code: it can copy a masked value under another
+  key, and the floor then judges that key.
 - Per-instance calls keep last-wins among themselves. An error without a
   catalog policy behaves as before.
 
