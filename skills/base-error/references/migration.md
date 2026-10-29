@@ -25,6 +25,7 @@ that older code, older docs and older skills still name onto version 10.
 | a hand-written pino `err` serializer or `logMethod` hook around `logObjectOf` | replaced in 10 | `pinoErrorOptions` from `@shirudo/base-error/pino` |
 | `Sentry.captureException(error, { extra: error.toLogObject() })` | a leak; replaced in 10 | `beforeSend` and `logObjectContextIntegration()` from `@shirudo/base-error/sentry` |
 | a catalog keyed by a dotted code, with a separate object of code constants | new in 10 | `defineErrors({ key: … }, { prefix })`, see `catalogs-and-classes.md` |
+| a per-instance `redact`, `redactAllow` or `redactWith` that relaxes the `redaction` policy of a catalog definition | changed in 10 | the catalog policy is a floor, and the call only adds masking; change the definition, or build the error outside the catalog |
 
 When code names an API that is in neither this skill nor the table, check
 `src/index.ts`, `src/public-error/index.ts`, `src/pino/index.ts` and

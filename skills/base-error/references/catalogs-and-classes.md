@@ -51,7 +51,9 @@ the key is the code. For dotted codes, see *Dotted codes: a prefix*.
   consumer's choice; `metadata.httpStatus` is a convention, not a field the
   library reads.
 - `redaction: { mode: "deny" | "allow", keys: […] }` on a definition applies a
-  sticky log redaction policy to every instance of that code.
+  sticky log redaction policy to every instance of that code. It is a floor:
+  a per-instance `redact`, `redactAllow` or `redactWith` adds to it and cannot
+  relax it (see `logging-and-redaction.md`).
 
 ### Dotted codes: a prefix
 
