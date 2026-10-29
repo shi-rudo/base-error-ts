@@ -82,33 +82,26 @@ export const AuthzErrors = defineErrors(
 ```
 
 Definitions of two areas need two prefixes, so they belong in two catalogs.
-For a union of two catalogs, narrow with `is` and match each catalog by key:
+Match a union of two catalogs with `matchError`. It dispatches on the code. A
+quoted code is a valid key of an object literal, so it needs no brackets:
 
 ```ts
 type AccessError =
   CatalogError<typeof AuthzErrors> | CatalogError<typeof StorageErrors>;
 
 function toStatus(error: AccessError): number {
-  if (AuthzErrors.is(error)) {
-    return AuthzErrors.match(error, {
-      not_a_member: () => 403,
-      missing_role: () => 403,
-    });
-  }
-  return StorageErrors.match(error, { not_found: () => 404 });
+  return matchError(error, {
+    "restaurant.authz.not_a_member": () => 403,
+    "restaurant.authz.missing_role": () => 403,
+    "restaurant.storage.not_found": () => 404,
+  });
 }
 ```
 
-`matchError` also takes the union. A quoted code is a valid key of an object
-literal, so it needs no brackets:
-
-```ts
-matchError(error, {
-  "restaurant.authz.not_a_member": () => 403,
-  "restaurant.authz.missing_role": () => 403,
-  "restaurant.storage.not_found": () => 404,
-});
-```
+Do not split the union with `AuthzErrors.is`. `is` checks provenance, not the
+code. An error that this catalog instance did not create fails it, for example
+an error rebuilt with `fromJSON`. That error then reaches the branch of the
+other catalog, and its `match` throws.
 
 ## Why catalogs have no `merge`, `map` or `select`
 

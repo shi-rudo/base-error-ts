@@ -85,7 +85,7 @@ Without a prefix, the key and the code are the same string, so each member behav
 - The separator is a fixed `.`. The dot is the separator of the convention that needs this feature. A free concatenation turns a forgotten separator into a different code (`restaurant.authznot_a_member`), and the code is a contract. A code in another format, such as `AUTHZ_NOT_A_MEMBER`, is an identifier already and needs no prefix.
 - The prefix must be a non-empty string without a leading, a trailing or a doubled `.`. `defineErrors` throws at creation for any other value, and for an unknown option.
 - The prefix must be a string literal type. A prefix of type `string` turns every code into `${string}.key`, so `CatalogError` loses its literal codes. The compiler rejects it, as it rejects a widened definition.
-- Keys keep their rules: any non-empty string.
+- With a prefix, a key must not contain a `.`. The prefix holds every segment before the key, so the key is always the last segment of the code. A key such as `.x` would otherwise give the code `restaurant..x`, and the catalog `a` with the key `b.c` would give the same code as the catalog `a.b` with the key `c`. Without a prefix, a key keeps its rules: any non-empty string.
 - The prefix belongs to the catalog, not to a definition. Definitions of one area compose with object spread before `defineErrors`, as before. Definitions of two areas belong in two catalogs.
 
 ## `match`
@@ -98,10 +98,11 @@ Without a prefix, the key and the code are the same string, so each member behav
 - Each handler receives the error type of its key, so `details` has the type of that definition.
 - The compiler rejects a key that the catalog does not define. A misspelled key next to `_` would otherwise send its errors to `_` without notice.
 - If no handler matches and no `_` is present, `match` throws an error that names the code and the key. Only a call that bypasses the types reaches this path.
+- A catalog with the key `_` cannot use `match`. The handler of that key and the catch-all would be one property, and the compiler would stop checking the other keys. The compiler rejects the call, and `match` throws at runtime. `defineErrors` still accepts the key, so an existing catalog keeps working.
 
 `match` checks no provenance, as `matchError` checks none. `is` remains the trust boundary of a catalog.
 
-`matchError` remains the matcher for a union of several catalogs. A quoted code is a valid key of an object literal, so it needs no brackets: `matchError(e, { "restaurant.authz.not_a_member": …, "restaurant.storage.not_found": … })`.
+`matchError` remains the matcher for a union of several catalogs. A quoted code is a valid key of an object literal, so it needs no brackets: `matchError(e, { "restaurant.authz.not_a_member": …, "restaurant.storage.not_found": … })`. A split of the union with `is` is wrong: `is` checks provenance, so an error rebuilt with `fromJSON` fails it and reaches the `match` of the other catalog, which throws.
 
 ## Searching a code
 

@@ -182,8 +182,10 @@ and `CatalogErrorOf`.
 same string, and every member behaves as before.
 
 The prefix must be a string literal. It must not be empty, and it must not
-start with, end with or contain a doubled `.`. The compiler rejects any other
-prefix, and `defineErrors` throws for it at runtime.
+start with, end with or contain a doubled `.`. With a prefix, a key must not
+contain a `.`: the prefix holds every segment before the key, so the key is
+always the last segment of the code. The compiler rejects any other prefix or
+key, and `defineErrors` throws for it at runtime.
 
 ### Matching by key
 
@@ -203,7 +205,9 @@ function describe(error: AuthzError): string {
 `match` rules are the same as the rules of `matchError`. The compiler also
 rejects a key that the catalog does not define. `match` checks no provenance,
 so narrow a caught value with `AuthzErrors.is(value)` first. Every catalog has
-`match`. Without a prefix, it dispatches as `matchError` does.
+`match`. Without a prefix, it dispatches as `matchError` does. A catalog with
+the key `_` cannot use `match`, because `_` is the catch-all. The compiler
+rejects the call, and `match` throws at runtime.
 
 ### Connecting the public-error catalog
 
