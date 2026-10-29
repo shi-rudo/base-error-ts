@@ -332,3 +332,22 @@ defineErrors(reusableDefinition, { prefx: "restaurant" });
 
 // @ts-expect-error an empty catalog stays invalid with options
 defineErrors({}, { prefix: "restaurant" });
+
+defineErrors(
+  { "storage.not_found": { category: "NOT_FOUND", retryable: false } },
+  // @ts-expect-error with a prefix, a key must not contain a dot
+  { prefix: "restaurant" },
+);
+
+const dottedKeyWithoutPrefix: "db.deadlock" = defineErrors({
+  "db.deadlock": { category: "DEADLOCK", retryable: true },
+}).code["db.deadlock"];
+void dottedKeyWithoutPrefix;
+
+const UnderscoreErrors = defineErrors({
+  _: { category: "C", retryable: false },
+  z: { category: "D", retryable: false },
+});
+declare const underscoreError: CatalogError<typeof UnderscoreErrors>;
+// @ts-expect-error match refuses a catalog whose key _ is also the catch-all
+UnderscoreErrors.match(underscoreError, { _: () => 1 });

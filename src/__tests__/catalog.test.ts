@@ -719,6 +719,26 @@ describe("defineErrors with a prefix", () => {
     expect(collisions.is(prototypeNamed, "__proto__")).toBe(true);
   });
 
+  it("rejects a key with a dot when a prefix is set", () => {
+    for (const key of ["storage.not_found", ".x", "x."]) {
+      expect(() =>
+        defineErrors({ [key]: { category: "X", retryable: false } }, {
+          prefix: "restaurant",
+        } as never),
+      ).toThrow(
+        `defineErrors: key "${key}" contains "."; with a prefix, the prefix holds every segment before the key`,
+      );
+    }
+  });
+
+  it("keeps a dotted key as the code without a prefix", () => {
+    const DbErrors = defineErrors({
+      "db.deadlock": { category: "DEADLOCK", retryable: true },
+    });
+
+    expect(DbErrors.create["db.deadlock"]("deadlock").code).toBe("db.deadlock");
+  });
+
   it("rejects an invalid prefix at runtime", () => {
     const definition = { FAILURE: { category: "INTERNAL", retryable: false } };
     const invalidPrefixes: unknown[] = [
@@ -870,6 +890,20 @@ describe("Catalog.match", () => {
       }),
     ).toThrow(
       'match: error code "RATE_LIMITED" is not defined in this catalog, and no "_" catch-all',
+    );
+  });
+
+  it("refuses to match in a catalog that defines the key _", () => {
+    const Underscore = defineErrors({
+      _: { category: "C", retryable: false },
+      z: { category: "D", retryable: false },
+    });
+    const error = Underscore.create.z("z failed");
+
+    expect(() =>
+      Underscore.match(error as never, { _: () => "catch-all" } as never),
+    ).toThrow(
+      'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchError',
     );
   });
 
