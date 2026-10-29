@@ -37,10 +37,23 @@ function importedNames(source) {
 
 function readText(path) {
   try {
-    return readFileSync(path, "utf8");
+    return readFileSync(path, "utf8").replace(/\r\n/g, "\n");
   } catch {
     return undefined;
   }
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** The last fenced TypeScript block in `markdown`, or the empty string. */
+function lastTypeScriptBlock(markdown) {
+  const start = Math.max(
+    markdown.lastIndexOf("```ts\n"),
+    markdown.lastIndexOf("```typescript\n"),
+  );
+  return start === -1 ? "" : markdown.slice(start);
 }
 
 const problems = [];
@@ -48,7 +61,7 @@ let snippets = 0;
 for (const page of readdirSync(guideDirectory).filter((file) =>
   file.endsWith(".md"),
 )) {
-  const markdown = readFileSync(guideDirectory + page, "utf8");
+  const markdown = readText(guideDirectory + page) ?? "";
   for (const match of markdown.matchAll(SNIPPET)) {
     snippets++;
     const [, path, region] = match;
@@ -59,18 +72,18 @@ for (const page of readdirSync(guideDirectory).filter((file) =>
     }
     const body = source.match(
       new RegExp(
-        `// #region ${region}\\n([\\s\\S]*?)// #endregion ${region}\\n`,
+        `// #region ${escapeRegExp(region)}\\n([\\s\\S]*?)// #endregion ${escapeRegExp(region)}\\n`,
       ),
     )?.[1];
     if (body === undefined) {
       problems.push(`${page}: ${path} marks no region "${region}"`);
       continue;
     }
-    const inFront = markdown.slice(0, match.index);
-    const shown = inFront.slice(Math.max(inFront.lastIndexOf("```ts\n"), 0));
+    const shown = lastTypeScriptBlock(markdown.slice(0, match.index));
     const shownNames = new Set(importedNames(shown));
     for (const name of importedNames(source)) {
-      if (new RegExp(`\\b${name}\\b`).test(body) && !shownNames.has(name)) {
+      const used = new RegExp(`(?<![\\w$])${escapeRegExp(name)}(?![\\w$])`);
+      if (used.test(body) && !shownNames.has(name)) {
         problems.push(
           `${page}: the import block in front of ${path}#${region} does not import ${name}`,
         );
