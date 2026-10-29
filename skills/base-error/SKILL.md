@@ -47,7 +47,9 @@ TS1479. It has no runtime dependencies.
 
 Keep them apart. `res.json(error)`, `Response.json(error)`, `JSON.stringify(error)`
 and returning the error from a handler all reach `toJSON()` and leak the full
-log object.
+log object. The default error handler of a framework reads the error itself:
+Fastify 5 without `setErrorHandler` sends `code` and `message`, and Express 5
+sends the stack when `NODE_ENV` is not `production`.
 
 ## Core workflow
 
@@ -94,6 +96,12 @@ log object.
 
 - Never send `toLogObject()`, `toJSON()` or the error object to a client.
   Produce client output with `project`, and `toProblem` for HTTP.
+- Install an error handler of your own in every HTTP framework, and send only
+  the `toProblem` result from it. Do not rely on a default error handler.
+  Register the errors that the framework raises for a bad request, or the
+  fallback answers them with `500`: in Fastify by `code`, such as
+  `FST_ERR_VALIDATION` and `FST_ERR_CTP_INVALID_JSON_BODY`, and for
+  `express.json()` by `type`, such as `entity.parse.failed`, with `register`.
 - `project` never throws: a value that matches no descriptor becomes the
   catalog's `fallback`. Register every code that should reach a client, and
   report `kind: "fallback"` outcomes from `onProject` so a missing
