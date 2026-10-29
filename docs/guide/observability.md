@@ -347,12 +347,14 @@ err.redactWith(() => ({ message: "Request failed" }));
 
 The callback can mutate its input or return another record, including `{}`.
 For the error that you log, its return value passes through without validation, copying, freezing, or another implicit redaction policy.
+One exception: on an error from `defineErrors` whose definition declares `redaction`, the log copies the return value with the log-data copier, and the catalog policy masks the copy (see [the catalog floor](./catalog#catalog-level-log-redaction)).
 The TypeScript signature requires a record and rejects promises.
 It does not prove that the record is safe for JSON or contains no secrets.
 Cycles, bigint values, getters, and `toJSON` callbacks can still make later JSON serialization throw.
 
-Policy registration is last-wins.
+Policy registration is last-wins among the policies of one instance.
 `err.redactAllow([]).redactWith(fn)` replaces the allow-list instead of composing with it.
+The catalog policy of a catalog error is a floor below them, and no per-instance policy replaces it.
 A successful callback can replace `code`, change `retryable`, or reintroduce sensitive data.
 When the error is the cause of another error, the log copies the custom output with the
 log-data copier, and the policy of the enclosing error walks that copy. The copy follows

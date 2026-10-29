@@ -8,9 +8,11 @@
 
 ## 10.0.0 - 2026-10-29
 
-Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
+Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. A redaction policy in a catalog definition is now a floor: a policy on a single error adds to it and no longer replaces it. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
 
 ### Breaking Changes
+
+- **A catalog redaction policy is a floor.** An error had one slot for its policy, and `defineErrors` filled it with the `redaction` policy of the definition. A per-instance `redact`, `redactAllow` or `redactWith` replaced that policy. So `redact(["email"])` on a code that denies `password` logged `password` in plain text, and the same call on a code with an allow-list logged every other field. Now the log applies the per-instance policy first and the catalog policy after it, at the root, at a cause position, in `logObjectOf` and in `toString()`. A built-in per-instance call can add masking but never remove it, and per-instance calls keep last-wins among themselves. The floor masks by key, as every built-in policy does: a `redactWith` callback is trusted code and can copy a masked value under another key. On an error with a catalog policy, the log copies the output of `redactWith` and masks the copy; a `Date` in the output becomes its ISO string. An error without a catalog policy behaves as before. See `MIGRATION.md` and `proposals/0021-catalog-redaction-floor.md`.
 
 - **The package ships one ES module build.** The CommonJS build and its `.d.cts` declarations are gone. `require()` loads the ES module build on Node.js 24, so `import` and `require` load the same classes. Before, a process that loaded both held two classes of each error. `instanceof`, `isBaseError` and the cause serializer failed across the two builds. A masked error of one build also came out raw through `logObjectOf` of the other. A TypeScript project that compiles to CommonJS with `module: node16` gets TS1479. It needs `module: nodenext` with TypeScript 5.8 or later, or `module: node20` with TypeScript 5.9 or later. See `MIGRATION.md` and proposal 0019.
 
@@ -29,6 +31,10 @@ Major release. The package ships one ES module build, so `import` and `require` 
 ### Changed
 
 - **The definition errors of `defineErrors` name the key.** With a prefix, a key is no longer always the code. The messages now read `keys must be strings`, `keys must not be empty`, `invalid definition for key "…"` and `unknown definition field "…" for key "…"`. A second argument that is not a plain object now throws. Before, `defineErrors` ignored it.
+
+### Fixed
+
+- **`ValidationError` takes the readonly issues of a Standard Schema result.** `ValidationErrorOptions.issues` and `addIssues` declared a mutable `ValidationIssue[]`, and Standard Schema types the issues of a failure result as a `ReadonlyArray`. So `new ValidationError(message, { issues: result.issues })` failed with TS4104 for Zod, Valibot or ArkType, as the guide shows it. Both now accept `readonly ValidationIssue[]`. A readonly parameter accepts every array that the old one accepted.
 
 ### Documentation
 

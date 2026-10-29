@@ -2,11 +2,14 @@
 
 ## v9 to v10
 
-v10 ships one ES module build (proposal 0019). The CommonJS build is gone.
-`require()` loads the ES module build on Node.js 24, so `import` and `require`
-load the same classes. The other changes of v10 add features and keep the
-behavior of v9: `logObjectOf`, and the subpaths `@shirudo/base-error/pino` and
-`@shirudo/base-error/sentry`.
+v10 has two breaking changes. It ships one ES module build (proposal 0019):
+the CommonJS build is gone, and `require()` loads the ES module build on
+Node.js 24, so `import` and `require` load the same classes. A redaction policy
+in a catalog definition is a floor (proposal 0021): a policy on a single error
+adds to it and no longer replaces it. The other changes of v10 add features
+and keep the behavior of v9: `logObjectOf`, the subpaths
+`@shirudo/base-error/pino` and `@shirudo/base-error/sentry`, and the `prefix`
+and `match` of a catalog.
 
 ### One ES module build
 
@@ -25,6 +28,27 @@ behavior of v9: `logObjectOf`, and the subpaths `@shirudo/base-error/pino` and
   dependency that loaded it through `require` held two copies of each class.
   Now both load one class. So `instanceof`, `isBaseError`, the cause
   serializer and `logObjectOf` recognize the errors of both.
+
+### A catalog redaction policy is a floor
+
+Before v10, `redact`, `redactAllow` or `redactWith` on an error from
+`defineErrors` replaced the `redaction` policy of its definition. Now the log
+applies the per-instance policy first and the catalog policy after it.
+
+- A call that masks more keeps working, and the catalog keys stay masked. Before,
+  `redact(["email"])` on a code that denies `password` logged `password` in plain
+  text. Now both are masked.
+- A call that relaxed a catalog policy no longer relaxes it. To log a field that
+  the catalog masks, change the definition, or build the error outside the
+  catalog.
+- `redactWith` on an error with a catalog policy returns a copy of its output,
+  and the catalog policy masks the copy. A `Date` in the output becomes its ISO
+  string.
+- The floor masks by key, as every built-in policy does. A `redactWith`
+  callback is trusted consumer code: it can copy a masked value under another
+  key, and the floor then judges that key.
+- Per-instance calls keep last-wins among themselves. An error without a
+  catalog policy behaves as before.
 
 ## v8 to v9
 
