@@ -12,10 +12,10 @@ behavior of v9: `logObjectOf`, and the subpaths `@shirudo/base-error/pino` and
 
 - A JavaScript file that calls `require("@shirudo/base-error")` on Node.js 24
   keeps working. It gets the ES module build.
-- A TypeScript project that compiles to CommonJS needs `module: nodenext` and
-  TypeScript 5.8 or a later version. With `module: node16`, or with an earlier
-  TypeScript, the compiler reports TS1479 for an import of the package. Switch
-  to `module: nodenext` and TypeScript 5.8, or compile to an ES module.
+- A TypeScript project that compiles to CommonJS with `module: node16`, or
+  with `module: nodenext` before TypeScript 5.8, gets TS1479 for an import of
+  the package. Switch to `module: nodenext` with TypeScript 5.8 or later, to
+  `module: node20` with TypeScript 5.9 or later, or compile to an ES module.
 - A TypeScript project with `module: commonjs` (resolution `node10`) keeps
   compiling with TypeScript 5 and 6.
 - Jest supports `require()` of an ES module from Node.js 24.9, according to

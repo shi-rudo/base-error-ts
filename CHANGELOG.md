@@ -4,7 +4,7 @@
 
 ### Breaking Changes
 
-- **The package ships one ES module build.** The CommonJS build and its `.d.cts` declarations are gone. `require()` loads the ES module build on Node.js 24, so `import` and `require` load the same classes. Before, a process that loaded both held two classes of each error. Then `instanceof`, `isBaseError` and the cause serializer failed across the two builds, and a masked error of one build came out raw through `logObjectOf` of the other. A TypeScript project that compiles to CommonJS needs `module: nodenext` and TypeScript 5.8 or later, because `module: node16` reports TS1479. See `MIGRATION.md` and proposal 0019.
+- **The package ships one ES module build.** The CommonJS build and its `.d.cts` declarations are gone. `require()` loads the ES module build on Node.js 24, so `import` and `require` load the same classes. Before, a process that loaded both held two classes of each error. `instanceof`, `isBaseError` and the cause serializer failed across the two builds. A masked error of one build also came out raw through `logObjectOf` of the other. A TypeScript project that compiles to CommonJS with `module: node16` gets TS1479. It needs `module: nodenext` with TypeScript 5.8 or later, or `module: node20` with TypeScript 5.9 or later. See `MIGRATION.md` and proposal 0019.
 
 ### Added
 
