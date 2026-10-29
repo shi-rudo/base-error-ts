@@ -62,8 +62,13 @@ and its errors reached `_`.
 - A union with the code `_` cannot use `matchError`, because `_` is the
   catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code.
+- A handler table typed `Record<string, …>` no longer passes for a closed
+  union. It names every string, so the compiler cannot check its names, and
+  before v10 it also passed as if it had a `_` catch-all. Write the table as an
+  object literal, or type it with the codes of the union.
 - The runtime is unchanged. A wide `StructuredError<string>` still takes a
-  handler for any code.
+  handler for any code, and a call inside a generic function checks the codes
+  of the constraint of its error type.
 
 ## v8 to v9
 
