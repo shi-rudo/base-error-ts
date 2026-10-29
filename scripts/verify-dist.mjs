@@ -17,10 +17,16 @@
  * subpaths must share it. With a second class, `logObjectOf` does not
  * recognize an error of the other class, so the policy of that error does not
  * hold, and the log line or the Sentry event carries the raw message. The
- * check builds a masked error through `import` and through `require` and runs
- * it through both subpaths.
+ * check runs a masked error through both subpaths.
+ *
+ * `require` must load every entry of the exports map, because a CommonJS
+ * consumer loads the ES module build through require(esm). A top-level
+ * `await` in the graph of an entry makes `require` throw
+ * ERR_REQUIRE_ASYNC_MODULE. The build target ES2020 rejects a top-level
+ * `await` today; this check also holds when the target rises.
  */
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -94,9 +100,18 @@ assert.equal(
   "subclass name inference",
 );
 
-const required = require("@shirudo/base-error");
+const manifest = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
+for (const subpath of Object.keys(manifest.exports)) {
+  const specifier = `${manifest.name}${subpath.slice(1)}`;
+  assert.doesNotThrow(
+    () => require(specifier),
+    `require must load ${specifier}`,
+  );
+}
 assert.equal(
-  required.BaseError,
+  require(manifest.name).BaseError,
   bundle.BaseError,
   "require and import of the package must load the same BaseError class",
 );
@@ -105,33 +120,27 @@ const pino = await import(new URL("../dist/pino/index.js", import.meta.url));
 const sentry = await import(
   new URL("../dist/sentry/index.js", import.meta.url)
 );
-
-for (const [loader, core] of [
-  ["import", bundle],
-  ["require", required],
-]) {
-  const masked = new core.StructuredError({
-    code: "SOME_CODE",
-    category: "X",
-    retryable: false,
-    message: "raw message",
-  }).redact(["message"]);
-  assert.equal(
-    pino.pinoErrorOptions.serializers.err(masked).message,
-    "[REDACTED]",
-    `${loader}: the pino subpath must share the core of the root entry`,
-  );
-  const event = sentry.beforeSend(
-    { exception: { values: [{ type: "Error", value: "raw message" }] } },
-    { originalException: masked },
-  );
-  assert.equal(
-    event.exception.values[0].value,
-    "[REDACTED]",
-    `${loader}: the sentry subpath must share the core of the root entry`,
-  );
-}
+const masked = new bundle.StructuredError({
+  code: "SOME_CODE",
+  category: "X",
+  retryable: false,
+  message: "raw message",
+}).redact(["message"]);
+assert.equal(
+  pino.pinoErrorOptions.serializers.err(masked).message,
+  "[REDACTED]",
+  "the pino subpath must share the core of the root entry",
+);
+const event = sentry.beforeSend(
+  { exception: { values: [{ type: "Error", value: "raw message" }] } },
+  { originalException: masked },
+);
+assert.equal(
+  event.exception.values[0].value,
+  "[REDACTED]",
+  "the sentry subpath must share the core of the root entry",
+);
 
 console.log(
-  "verify-dist: bundle class names are intact, and require, import and the subpaths share one core",
+  "verify-dist: bundle class names are intact, require loads every entry, and require, import and the subpaths share one core",
 );
