@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Documentation
+
+- **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`. Every code example in it compiles against the source of this release.
+
 ## 10.0.0 - 2026-10-29
 
 Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
@@ -19,8 +25,6 @@ Major release. The package ships one ES module build, so `import` and `require` 
   - `beforeSend` gives each exception of a Sentry event the name and the message of its node in the log object. `logObjectContextIntegration()` adds the log object as the `error` context, which Sentry normalizes. An `error` context of the application wins. Both follow the error that Sentry reports: the captured error, or the first error that a captured object holds. A captured value without an error keeps the event that Sentry builds.
   - Neither subpath imports pino or Sentry, so the package keeps zero dependencies and no peer dependency. The declarations use own types. Type tests check them against `LoggerOptions` of pino 10 and `Options` of `@sentry/core` 11.
   - Both subpath bundles load the core from the root bundle, so an error of the root entry keeps its policy there. `verify-dist.mjs`, the runtime smoke and the packed-consumer check guard this. Proposal 0018 records the decision.
-
-- **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`. Every code example in it compiles against the source of this release.
 
 ### Changed
 
