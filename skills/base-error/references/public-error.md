@@ -66,10 +66,13 @@ export const publicErrors = definePublicErrors({
 - `registerByCode` keys on the technical `code`; `register({ match, descriptor })`
   keys on a type guard and is tried after the code matches.
 - Several technical codes may map to one public code, but they must agree on
-  its wire identity (`status`, `type`, `title`, `category`, `userMessages`);
-  registration rejects a conflict.
-- If any descriptor declares a `category`, the fallback must declare one too.
-  It is the bucket a client uses for a code it does not know.
+  its transport (`status`, `type`, `title`, `category`); registration rejects a
+  conflict. Two descriptors that both declare `userMessages` must declare the
+  same messages. `retryable` is not compared.
+- `definePublicErrors({ fallback, categories })` declares the public
+  categories. The catalog then rejects any other category, and the fallback
+  must declare one: it is the bucket a client uses for a code it does not
+  know. Without `categories`, nothing checks a category.
 - `assertCoverage(codes)` throws at startup when a listed technical code has no
   descriptor, for example `publicErrors.assertCoverage(OrderErrors.codes)`.
 - `new PublicErrorCatalog(…)` works too, but leaves the public-code union as
@@ -82,7 +85,8 @@ export const publicErrors = definePublicErrors({
 | `publicCode` | wire identity | the code the client sees; not the technical code |
 | `status` | wire identity | HTTP status, an integer from 100 to 599 |
 | `type`, `title` | wire identity | RFC 9457 type URI and static title |
-| `category`, `retryable` | wire identity | the public values; the internal ones never cross |
+| `category` | wire identity | the public category; the internal one never crosses |
+| `retryable` | public value | the public flag; the internal one never crosses |
 | `userMessages` | messages | a `LocalizedMessageSet` of end-user text |
 | `projectDetails` | projector | vetted `details` for the view |
 | `projectFields` | projector | field faults, `{ field, code }[]` |
@@ -110,9 +114,11 @@ return Response.json(body, { status, headers });
 - `project` takes `unknown` and never throws. An unregistered value becomes
   the fallback.
 - `localize` throws when the message set is missing, so guard `messagesFor`.
-- `toProblem` deep-copies `details` into JSON-safe data and drops what is not
-  JSON-safe, listing it in `outcome.omitted`. `title` is the localized message
-  when there is one, otherwise the descriptor's static `title`.
+- `toProblem` deep-copies `details`, `fields` and `extensions` into JSON-safe
+  data. If any part of one member is not JSON-safe, such as a `Date`, it drops
+  that whole member and lists it in `outcome.omitted`. Return only JSON-safe
+  data from a projector. `title` is the localized message when there is one,
+  otherwise the descriptor's static `title`.
 - The first argument of `toProblem` may be an explicit transport,
   `{ status, type?, title? }`, instead of the catalog.
 - Every stage has a catalog-free form: `projectWithDescriptor(descriptor,
@@ -128,7 +134,7 @@ rethrown infrastructure error never reaches the client with its message:
 try {
   return { ok: true, value: await placeOrder(input) } as const;
 } catch (e) {
-  logger.error({ err: logObjectOf(e) }, "placeOrder failed");
+  logger.error({ err: e }, "placeOrder failed"); // a pino logger with pinoErrorOptions
   return { ok: false, error: project(publicErrors, e) } as const;
 }
 ```

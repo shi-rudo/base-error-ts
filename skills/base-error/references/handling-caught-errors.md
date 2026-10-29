@@ -165,7 +165,11 @@ Pass a factory when the error is costly to build; it runs only on failure.
 | `filterCauseChain`, `someCauseChain`, `everyCauseChain` | all matches, any, every |
 | `isChainRetryable(e)` | a full `StructuredError` in the chain is retryable |
 | `someChainRetryable(e)` | any link has `retryable === true` |
-| `getRootCauseRetryable(e)`, `getFirstRetryableCause(e)` | the root's flag, the first retryable link |
+| `getRootCauseRetryable(e)`, `getFirstRetryableCause(e)` | the root is a full `StructuredError` with `retryable: true`; the first such link |
+
+`isChainRetryable`, `getRootCauseRetryable` and `getFirstRetryableCause` need
+the full `code`, `category` and `retryable` shape. A `BaseError` subclass with
+only `retryable = true` counts for `someChainRetryable` alone.
 
 A nullish `cause` ends the chain. The helpers follow `cause` only; pass
 `{ aggregates: true }` to also visit the members of an `AggregateError` or

@@ -87,6 +87,10 @@ const failure = AccountErrors.create.PROFILE_UPDATE_FAILED("update failed", {
 }).redact(["email", "taxId"]);
 ```
 
+- The last redactor wins. `redact`, `redactAllow` and `redactWith` replace
+  the policy that the error had, also the catalog's `redaction` policy, and a
+  second `redact` call replaces the first. To extend a policy, list every key
+  in one call: `.redact(["email", "taxId", "iban"])`.
 - The policy travels with the error. As a `cause`, its node is masked by its
   own policy first, then by the outer error's policy.
 - Redaction selects keys, not values. To hide the time, deny both `timestamp`

@@ -18,6 +18,8 @@
   - Neither subpath imports pino or Sentry, so the package keeps zero dependencies and no peer dependency. The declarations use own types. Type tests check them against `LoggerOptions` of pino 10 and `Options` of `@sentry/core` 11.
   - Both subpath bundles load the core from the root bundle, so an error of the root entry keeps its policy there. `verify-dist.mjs`, the runtime smoke and the packed-consumer check guard this. Proposal 0018 records the decision.
 
+- **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`. Every code example in it compiles against the source of this release.
+
 ### Changed
 
 - **The definition errors of `defineErrors` name the key.** With a prefix, a key is no longer always the code. The messages now read `keys must be strings`, `keys must not be empty`, `invalid definition for key "…"` and `unknown definition field "…" for key "…"`. A second argument that is not a plain object now throws. Before, `defineErrors` ignored it.

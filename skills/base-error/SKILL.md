@@ -1,22 +1,18 @@
 ---
 name: base-error
 description: >
-  Use @shirudo/base-error to model errors as typed values and to turn them into
-  safe client output. Covers BaseError, StructuredError, defineErrors (also
-  with a prefix for dotted codes), detailsType, CatalogError, CatalogErrorOf,
-  Catalog.match, matchError, matchThrown,
-  defineErrorClassSet, guard, isError, hasErrorCode, isErrorOf, isAnyErrorOf,
-  isStructuredError, isRetryable, toStructuredError, ValidationError,
-  publicIssues, StructuredAggregateError, getRootCause, findInCauseChain,
-  someChainRetryable, toLogObject, logObjectOf, redact, redactAllow,
-  redactWith, buildOwnLogFields, StructuredError.fromJSON, and the
-  public-error subpath: definePublicErrors, PublicErrorCatalog, project,
-  localize, toProblem, LocalizedMessageSet, PublicCodeOf, onProject, the pino
-  subpath (pinoErrorOptions) and the Sentry subpath (beforeSend,
-  logObjectContextIntegration).
-  Activate when defining error classes or catalogs (also with dotted codes
-  such as context.area.reason), handling a caught value,
-  logging or redacting errors, mapping errors to an HTTP response, a server
+  Use @shirudo/base-error to model errors as typed values, log them with
+  redaction, and turn them into safe client output. Covers BaseError,
+  StructuredError, defineErrors (with a prefix for dotted codes), detailsType,
+  CatalogError, Catalog.match, matchError, matchThrown, defineErrorClassSet,
+  guard, the type guards, toStructuredError, ValidationError,
+  StructuredAggregateError, toLogObject, logObjectOf, redact, redactAllow,
+  redactWith, the public-error subpath (definePublicErrors, project, localize, toProblem,
+  LocalizedMessageSet, PublicCodeOf), the pino subpath (pinoErrorOptions) and
+  the Sentry subpath (beforeSend, logObjectContextIntegration). Activate when
+  defining error classes or catalogs (also with dotted codes such as
+  context.area.reason), handling a caught value, logging or redacting errors,
+  reporting to pino or Sentry, mapping errors to an HTTP response, a server
   function result or an RFC 9457 problem body, localizing error messages, or
   upgrading from an older major version.
 type: core
@@ -36,7 +32,7 @@ sources:
   - "shi-rudo/base-error-ts:MIGRATION.md"
 ---
 
-# base-error — typed errors and safe client output
+# base-error: typed errors and safe client output
 
 `@shirudo/base-error` models a failure as a technical error with a stable
 `code`, a `category`, a `retryable` flag, `details` and a `cause` chain. The
