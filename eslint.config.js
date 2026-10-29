@@ -57,6 +57,17 @@ const SUBPATH_BOUNDARY = {
     "Module boundary: core must not import a subpath module (dependency direction is subpath -> core).",
 };
 
+// The pino and sentry subpaths reach the core through the root entry, which
+// their bundles load from the root bundle (tsup.config.ts). A direct import of
+// a class module would bundle a second copy of the class, and an error of the
+// root entry would lose its policy there. Pure helpers may come directly.
+const LOG_SINK_CORE_IMPORTS = {
+  regex:
+    "^\\.\\./(?!index\\.js$|errors/(?:guarded-read|native-error|walker-bounds)\\.js$)",
+  message:
+    "A pino or sentry subpath imports the core through ../index.js. Only the pure helpers guarded-read, native-error and walker-bounds may come directly.",
+};
+
 export default [
   js.configs.recommended,
   ...compat.extends(
@@ -101,6 +112,15 @@ export default [
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": ["error", { patterns: [NODE_BUILTIN_IMPORTS] }],
       "no-restricted-syntax": ["error", ...GUARDED_READ_SYNTAX],
+    },
+  },
+  {
+    files: ["src/pino/**/*.ts", "src/sentry/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [NODE_BUILTIN_IMPORTS, LOG_SINK_CORE_IMPORTS] },
+      ],
     },
   },
   // Core library source (everything outside the subpaths and tests):
