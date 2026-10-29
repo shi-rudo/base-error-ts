@@ -23,15 +23,18 @@ yarn add @shirudo/base-error
 
 :::
 
-The package ships ESM, CommonJS and type declarations, and has **zero runtime
-dependencies**.
+The package ships one ES module build with type declarations, and has **zero
+runtime dependencies**. `require()` loads the ES module build on Node.js 24, so
+`import` and `require` load the same classes.
 
 The declarations need TypeScript 5.0 or a later version, and `lib` ES2020 or a
-later version. They resolve under `node16`, `nodenext` and `bundler`, for an
-ES module and for a CommonJS module. `node10` works with TypeScript 5 and 6,
-and TypeScript 7 removed it. CI installs the packed package into a fresh
-project and checks each of these combinations with TypeScript 5.0.4, the
-latest 6.x and the latest release.
+later version. For an ES module, they resolve under `node16`, `nodenext` and
+`bundler`. A CommonJS module needs `module: nodenext` with TypeScript 5.8 or
+later, or `module: node20` with TypeScript 5.9 or later. `module: node16`
+refuses the package (TS1479). `module: commonjs` (resolution `node10`) works
+with TypeScript 5 and 6, and TypeScript 7 removed `node10`. CI installs the
+packed package into a fresh project and checks each of these combinations
+with TypeScript 5.0.4, 5.8, 5.9, the latest 6.x and the latest release.
 
 ## Your first error
 

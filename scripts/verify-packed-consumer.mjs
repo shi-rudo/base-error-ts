@@ -11,7 +11,8 @@
  *   It does not compile when a declared value export is missing at runtime,
  *   or when a runtime export has no declaration.
  * - `runtime.mjs` and `runtime.cjs` load every entry point through the
- *   exports map.
+ *   exports map. `runtime.cjs` loads the ES module build through require()
+ *   and checks that require() and import() load the same classes.
  * - The fixtures install neither pino nor a Sentry SDK, so the declarations
  *   of the pino and sentry subpaths must resolve without them.
  *
@@ -35,8 +36,13 @@ import { fileURLToPath } from "node:url";
 const repo = fileURLToPath(new URL("..", import.meta.url));
 const templates = fileURLToPath(new URL("packed-consumer/", import.meta.url));
 
-/** The documented minimum, the latest 6.x, and the latest release. */
-const COMPILERS = ["5.0.4", "6", "latest"];
+/**
+ * The documented minimum for an ES module consumer, the first versions that
+ * allow a CommonJS consumer to require an ES module (5.8 with
+ * `module: nodenext`, 5.9 with `module: node20`), the latest 6.x, and the
+ * latest release.
+ */
+const COMPILERS = ["5.0.4", "5.8", "5.9", "6", "latest"];
 
 const ENTRIES = {
   root: "@shirudo/base-error",
@@ -54,10 +60,25 @@ const COMMON_OPTIONS = {
   skipLibCheck: false,
 };
 
-/** `legacy` marks node10, which TypeScript 6 deprecates and 7 removes. */
+/**
+ * `legacy` marks node10, which TypeScript 6 deprecates and 7 removes. The
+ * package ships one ES module build, and a CommonJS file requires it through
+ * require(esm). `requireEsmFrom` names the first TypeScript version whose
+ * module setting allows that. Before that version, and with `module: node16`
+ * in every version (`refusesRequireEsm`), the check compiles and expects
+ * TS1479, so the documented refusal stays a measurement. `moduleFrom` names
+ * the first version that knows the module setting at all. `node20-cjs` keeps
+ * the default module resolution of `module: node20`.
+ */
 const MODES = [
   { name: "node16-esm", dir: "esm", module: "node16", resolution: "node16" },
-  { name: "node16-cjs", dir: "cjs", module: "node16", resolution: "node16" },
+  {
+    name: "node16-cjs",
+    dir: "cjs",
+    module: "node16",
+    resolution: "node16",
+    refusesRequireEsm: true,
+  },
   {
     name: "nodenext-esm",
     dir: "esm",
@@ -69,6 +90,13 @@ const MODES = [
     dir: "cjs",
     module: "nodenext",
     resolution: "nodenext",
+    requireEsmFrom: [5, 8],
+  },
+  {
+    name: "node20-cjs",
+    dir: "cjs",
+    module: "node20",
+    moduleFrom: [5, 9],
   },
   { name: "bundler", dir: "esm", module: "esnext", resolution: "bundler" },
   {
@@ -143,9 +171,9 @@ function createFixture(work, tarball, compiler) {
     copyFileSync(join(templates, file), join(fixture, file));
   }
   const listed = JSON.parse(run("node", ["list-exports.mjs"], fixture));
-  for (const [dir, format] of [
-    ["esm", "esm"],
-    ["cjs", "cjs"],
+  for (const [dir, loader] of [
+    ["esm", "import"],
+    ["cjs", "require"],
   ]) {
     copyFileSync(
       join(templates, "consumer.ts"),
@@ -154,7 +182,7 @@ function createFixture(work, tarball, compiler) {
     const runtimeExports = Object.fromEntries(
       Object.entries(ENTRIES).map(([alias, entry]) => [
         alias,
-        listed[entry][format],
+        listed[entry][loader],
       ]),
     );
     writeFileSync(
@@ -168,26 +196,48 @@ function createFixture(work, tarball, compiler) {
   return { fixture, version };
 }
 
+function isBefore([major, minor], [fromMajor, fromMinor]) {
+  return major < fromMajor || (major === fromMajor && minor < fromMinor);
+}
+
 function compile({ fixture, version }, mode) {
-  const major = Number(version.split(".")[0]);
-  if (mode.legacy && major >= 7) {
+  const installed = version.split(".").map(Number);
+  if (mode.legacy && installed[0] >= 7) {
     return "unsupported: TypeScript 7 removed moduleResolution node10";
+  }
+  if (mode.moduleFrom !== undefined && isBefore(installed, mode.moduleFrom)) {
+    return `unsupported: module ${mode.module} needs TypeScript ${mode.moduleFrom.join(".")}`;
   }
   writeJson(join(fixture, `tsconfig.${mode.name}.json`), {
     compilerOptions: {
       ...COMMON_OPTIONS,
       module: mode.module,
       moduleResolution: mode.resolution,
-      ...(mode.legacy && major === 6 && { ignoreDeprecations: "6.0" }),
+      ...(mode.legacy && installed[0] === 6 && { ignoreDeprecations: "6.0" }),
     },
     files: [`${mode.dir}/consumer.ts`, `${mode.dir}/export-parity.ts`],
   });
-  run(
-    join(fixture, "node_modules/.bin/tsc"),
-    ["-p", `tsconfig.${mode.name}.json`],
-    fixture,
+  const tsc = join(fixture, "node_modules/.bin/tsc");
+  const args = ["-p", `tsconfig.${mode.name}.json`];
+  const refuses =
+    mode.refusesRequireEsm === true ||
+    (mode.requireEsmFrom !== undefined &&
+      isBefore(installed, mode.requireEsmFrom));
+  if (!refuses) {
+    run(tsc, args, fixture);
+    return "passed";
+  }
+  try {
+    run(tsc, args, fixture);
+  } catch (error) {
+    if (`${error.stdout}`.includes("TS1479")) {
+      return "unsupported, as expected: require of an ES module (TS1479)";
+    }
+    throw error;
+  }
+  throw new Error(
+    `${mode.name} compiled, but TS1479 was expected. Update MODES and the docs.`,
   );
-  return "passed";
 }
 
 const work = mkdtempSync(join(tmpdir(), "base-error-consumer-"));

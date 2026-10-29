@@ -275,15 +275,24 @@ against `src`.
   work too.
 - TypeScript 5.0 or a later version, with `strict` mode, for full type safety.
 - `lib` ES2020 or a later version.
-- Module resolution `node16`, `nodenext` or `bundler`. `node10` works with
-  TypeScript 5 and 6. TypeScript 7 removed it.
-- The package ships ESM, CommonJS and type declarations.
+- For an ES module: module resolution `node16`, `nodenext` or `bundler`.
+- For a CommonJS module: `module: nodenext` with TypeScript 5.8 or later, or
+  `module: node20` with TypeScript 5.9 or later. `module: node16` refuses the
+  package (TS1479). `module: commonjs` (resolution `node10`) works with
+  TypeScript 5 and 6. TypeScript 7 removed `node10`.
+- The package ships one ES module build with type declarations. `require()`
+  loads it on Node.js 24, so `import` and `require` load the same classes.
 
-## Upgrade from 8.x
+## Upgrade
+
+Version 10 ships one ES module build. A TypeScript project that compiles to
+CommonJS with `module: node16` must switch to `module: nodenext` or
+`module: node20`. Read the
+[migration guide](MIGRATION.md#v9-to-v10) before you upgrade from 9.x.
 
 Version 9 changes the log output and some APIs. For example, it removes
 `buildLogObject()` in favor of `buildOwnLogFields()`. Read the
-[migration guide](MIGRATION.md#v8-to-v9) before you upgrade.
+[migration guide](MIGRATION.md#v8-to-v9) before you upgrade from 8.x.
 
 ## License
 

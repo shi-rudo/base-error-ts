@@ -122,6 +122,8 @@ logger[level]({ err: error }, "request failed");
 - If your dependency tree holds two copies of this package, an error from the
   other copy logs without its policy. `logObjectOf` writes it like a foreign
   error. Deduplicate the package.
+  One copy ships one ES module build, so `import` and `require` load the same
+  classes.
 - The `redact` option of pino is a separate mechanism. It masks paths in the
   whole line, for example `req.headers.authorization`. The policy of an error
   travels with the error, also when the error is the cause of another error.

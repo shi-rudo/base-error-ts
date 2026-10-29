@@ -1,5 +1,31 @@
 # Migration Guide
 
+## v9 to v10
+
+v10 ships one ES module build (proposal 0019). The CommonJS build is gone.
+`require()` loads the ES module build on Node.js 24, so `import` and `require`
+load the same classes. The other changes of v10 add features and keep the
+behavior of v9: `logObjectOf`, and the subpaths `@shirudo/base-error/pino` and
+`@shirudo/base-error/sentry`.
+
+### One ES module build
+
+- A JavaScript file that calls `require("@shirudo/base-error")` on Node.js 24
+  keeps working. It gets the ES module build.
+- A TypeScript project that compiles to CommonJS with `module: node16`, or
+  with `module: nodenext` before TypeScript 5.8, gets TS1479 for an import of
+  the package. Switch to `module: nodenext` with TypeScript 5.8 or later, to
+  `module: node20` with TypeScript 5.9 or later, or compile to an ES module.
+- A TypeScript project with `module: commonjs` (resolution `node10`) keeps
+  compiling with TypeScript 5 and 6.
+- Jest supports `require()` of an ES module from Node.js 24.9, according to
+  its documentation. If a CommonJS test cannot load the package on an earlier
+  Node.js 24, upgrade Node.js.
+- Before v10, an application that loaded the package through `import` and a
+  dependency that loaded it through `require` held two copies of each class.
+  Now both load one class. So `instanceof`, `isBaseError`, the cause
+  serializer and `logObjectOf` recognize the errors of both.
+
 ## v8 to v9
 
 v9 applies a threat model to the error model (proposal 0017). The log copies

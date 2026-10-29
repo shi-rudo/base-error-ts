@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- **The package ships one ES module build.** The CommonJS build and its `.d.cts` declarations are gone. `require()` loads the ES module build on Node.js 24, so `import` and `require` load the same classes. Before, a process that loaded both held two classes of each error. `instanceof`, `isBaseError` and the cause serializer failed across the two builds. A masked error of one build also came out raw through `logObjectOf` of the other. A TypeScript project that compiles to CommonJS with `module: node16` gets TS1479. It needs `module: nodenext` with TypeScript 5.8 or later, or `module: node20` with TypeScript 5.9 or later. See `MIGRATION.md` and proposal 0019.
+
 ### Added
 
 - **`defineErrors` derives dotted codes from a prefix and a key.** A dotted code such as `restaurant.authz.not_a_member` is no identifier, so a catalog keyed by its code needed brackets at every call and a second object for the codes. `defineErrors(definition, { prefix: "restaurant.authz" })` gives each definition the code `${prefix}.${key}`. The key names the factory: `AuthzErrors.create.not_a_member(…)`. The new `code` namespace maps each key to its code, for `registerByCode`. The new `match` method takes handlers named by key, and the compiler rejects a key that the catalog does not define. `is(value, key)` and `CatalogErrorOf` take the key, and `meta` takes the code. `codes`, `CatalogError` and `CatalogErrorOf` keep the full code as a literal type. The compiler and the runtime reject an empty prefix, a leading, trailing or doubled `.`, and a key that contains a `.`, so the key is always the last segment of the code. A catalog with the key `_` cannot use `match`, because `_` is the catch-all. Without a prefix, the key is the code and every member behaves as before. The guide recommends a test that pins the codes of a catalog, so that a search finds each full code. See `proposals/0020-catalog-code-prefix.md`.
