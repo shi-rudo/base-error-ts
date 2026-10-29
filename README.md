@@ -253,6 +253,17 @@ To read it locally, run `pnpm docs:dev`.
 - [Migration](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/migration.md)
 - [Changelog](CHANGELOG.md)
 
+## Agent Skill
+
+The package ships an agent skill for AI coding assistants in
+[`skills/base-error/`](skills/base-error/), and the npm and JSR packages
+include it. Copy the folder into your project's skill directory, such as
+`.claude/skills/` for Claude Code or `.agents/skills/` for other agents. It
+teaches the assistant the catalogs, the guards and matchers, the log path with
+redaction, and the public-error pipeline of this major version, and it maps the
+APIs of older majors onto the current ones. Every code example in it compiles
+against `src`.
+
 ## Requirements
 
 - Node.js 24 or a later version. Bun, Deno, modern browsers and edge runtimes
