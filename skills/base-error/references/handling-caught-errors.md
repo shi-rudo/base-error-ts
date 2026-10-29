@@ -46,13 +46,14 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
 
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`.
-- A union with the code `_` cannot use `matchError`: `_` is the catch-all.
+- A union with the code `_` cannot name a handler next to `_`: `_` is the
+  catch-all. A table with only `_` compiles.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
 - In a generic function, an error typed `StructuredError<Code>` with `Code` a
-  type parameter names no code, and `matchError` accepts no table for it.
-  Assign the error to a variable typed with its codes or with
-  `StructuredError<string>`, and match that variable.
+  type parameter names no code. `matchError` takes only a `_`-only table for
+  it. To name handlers, assign the error to a variable typed with its codes
+  or with `StructuredError<string>`, and match that variable.
 
 ## Closed dispatch by key: `Errors.match`
 
