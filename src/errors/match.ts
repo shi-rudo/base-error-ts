@@ -22,10 +22,25 @@ type Cases<E extends StructuredError<string, string>> = {
   [K in E["code"]]?: (error: CaseArg<E, K>) => unknown;
 } & { _?: (error: E) => unknown };
 
-/** The union of every handler's return type. This is the result of `matchError`. */
-type Result<C> = {
+/** The union of every handler's return type. This is the result of a matcher. */
+export type HandlerResult<C> = {
   [K in keyof C]: C[K] extends (...args: never[]) => infer R ? R : never;
 }[keyof C];
+
+/**
+ * The own handler of `name` in a handler table. A name that collides with an
+ * `Object.prototype` member (e.g. "toString", "valueOf", "hasOwnProperty")
+ * must route to its explicit case or the `_` catch-all. It must never route
+ * to an inherited method.
+ */
+export function ownCase<H>(
+  cases: Readonly<Record<string, H | undefined>>,
+  name: string,
+): H | undefined {
+  return Object.prototype.hasOwnProperty.call(cases, name)
+    ? cases[name]
+    : undefined;
+}
 
 /**
  * Exhaustiveness constraint: if no `_` catch-all is given, every `code` must
@@ -83,16 +98,9 @@ type Exhaustive<
 export function matchError<
   E extends StructuredError<string, string>,
   const C extends Cases<E>,
->(error: E, cases: Exhaustive<E, C>): Result<C> {
+>(error: E, cases: Exhaustive<E, C>): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
-  // Own-property lookup only. A `code` that collides with an `Object.prototype`
-  // member (e.g. "toString", "valueOf", "hasOwnProperty") must route to its
-  // explicit case or the `_` catch-all. It must never route to an inherited
-  // method.
-  const ownHandler = Object.prototype.hasOwnProperty.call(table, error.code)
-    ? table[error.code]
-    : undefined;
-  const handler = ownHandler ?? table._;
+  const handler = ownCase(table, error.code) ?? table._;
 
   if (!handler) {
     throw new Error(
@@ -100,5 +108,5 @@ export function matchError<
     );
   }
 
-  return handler(error) as Result<C>;
+  return handler(error) as HandlerResult<C>;
 }

@@ -10,8 +10,10 @@
  * - A generated parity file lists the runtime exports of each entry point.
  *   It does not compile when a declared value export is missing at runtime,
  *   or when a runtime export has no declaration.
- * - `runtime.mjs` and `runtime.cjs` load both entry points through the
+ * - `runtime.mjs` and `runtime.cjs` load every entry point through the
  *   exports map.
+ * - The fixtures install neither pino nor a Sentry SDK, so the declarations
+ *   of the pino and sentry subpaths must resolve without them.
  *
  * Run it after the build: pnpm exec tsup && node scripts/verify-packed-consumer.mjs
  */
@@ -39,6 +41,8 @@ const COMPILERS = ["5.0.4", "6", "latest"];
 const ENTRIES = {
   root: "@shirudo/base-error",
   publicError: "@shirudo/base-error/public-error",
+  pino: "@shirudo/base-error/pino",
+  sentry: "@shirudo/base-error/sentry",
 };
 
 const COMMON_OPTIONS = {

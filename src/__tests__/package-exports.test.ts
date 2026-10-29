@@ -16,8 +16,8 @@ const exportsMap = manifest.exports as Record<string, ConditionalExport>;
 const subpaths = Object.keys(exportsMap);
 
 describe("package exports", () => {
-  it("declares both entry points", () => {
-    expect(subpaths).toEqual([".", "./public-error"]);
+  it("declares the core, the public-error, the pino and the Sentry entry points", () => {
+    expect(subpaths).toEqual([".", "./public-error", "./pino", "./sentry"]);
   });
 
   for (const subpath of subpaths) {

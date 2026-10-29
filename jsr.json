@@ -5,7 +5,9 @@
   "license": "MIT",
   "exports": {
     ".": "./src/index.ts",
-    "./public-error": "./src/public-error/index.ts"
+    "./public-error": "./src/public-error/index.ts",
+    "./pino": "./src/pino/index.ts",
+    "./sentry": "./src/sentry/index.ts"
   },
   "publish": {
     "include": ["src/**/*.ts", "README.md", "LICENSE", "CHANGELOG.md", "skills/**/*.md"],

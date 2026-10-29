@@ -10,6 +10,8 @@ import {
   project,
   toProblem,
 } from "../dist/public-error/index.js";
+import { pinoErrorOptions } from "../dist/pino/index.js";
+import { beforeSend } from "../dist/sentry/index.js";
 
 const failures = [];
 function check(name, ok) {
@@ -94,6 +96,27 @@ check(
   fallback.status === 500 &&
     fallback.body.code === "internal_error" &&
     JSON.stringify(fallback.body).includes("unregistered") === false,
+);
+
+// The pino and sentry subpaths share the core of the root entry, so the
+// policy of an error of the root entry holds in both.
+const masked = new StructuredError({
+  code: "LOOKUP_FAILED",
+  category: "INTERNAL",
+  retryable: false,
+  message: "raw message",
+}).redact(["message"]);
+check(
+  "the pino subpath keeps the policy of a root-entry error",
+  pinoErrorOptions.serializers.err(masked).message === "[REDACTED]",
+);
+const event = beforeSend(
+  { exception: { values: [{ type: "Error", value: "raw message" }] } },
+  { originalException: masked },
+);
+check(
+  "the sentry subpath keeps the policy of a root-entry error",
+  event.exception.values[0].value === "[REDACTED]",
 );
 
 if (failures.length > 0) {

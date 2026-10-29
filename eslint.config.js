@@ -47,12 +47,25 @@ const GUARDED_READ_SYNTAX = [
   },
 ];
 
-// Dependency direction is public-error -> core. Core (and the root barrel) must
-// never import the public-error module.
-const PUBLIC_ERROR_BOUNDARY = {
-  group: ["**/public-error", "**/public-error/**"],
+// Dependency direction is subpath -> core. Core (and the root barrel) must
+// never import a subpath module: public-error, pino or sentry. The pino and
+// sentry patterns need a file below the folder, so the npm package `pino` and
+// the scope `@sentry` stay outside them.
+const SUBPATH_BOUNDARY = {
+  group: ["**/public-error", "**/public-error/**", "**/pino/*", "**/sentry/*"],
   message:
-    "Module boundary: core must not import the public-error module (dependency direction is public-error -> core).",
+    "Module boundary: core must not import a subpath module (dependency direction is subpath -> core).",
+};
+
+// The pino and sentry subpaths reach the core through the root entry, which
+// their bundles load from the root bundle (tsup.config.ts). A direct import of
+// a class module would bundle a second copy of the class, and an error of the
+// root entry would lose its policy there. Pure helpers may come directly.
+const LOG_SINK_CORE_IMPORTS = {
+  regex:
+    "^\\.\\./(?!index\\.js$|errors/(?:guarded-read|native-error|walker-bounds)\\.js$)",
+  message:
+    "A pino or sentry subpath imports the core through ../index.js. Only the pure helpers guarded-read, native-error and walker-bounds may come directly.",
 };
 
 export default [
@@ -87,26 +100,44 @@ export default [
       ],
     },
   },
-  // Upper layer (the public-error pipeline): edge-clean, may import core, may
-  // not import Node built-ins.
+  // Upper layer (the subpath modules): edge-clean, may import core, may not
+  // import Node built-ins.
   {
-    files: ["src/public-error/**/*.ts"],
+    files: [
+      "src/public-error/**/*.ts",
+      "src/pino/**/*.ts",
+      "src/sentry/**/*.ts",
+    ],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": ["error", { patterns: [NODE_BUILTIN_IMPORTS] }],
       "no-restricted-syntax": ["error", ...GUARDED_READ_SYNTAX],
     },
   },
-  // Core library source (everything outside the public-error subpath and tests):
-  // edge-clean and forbidden from importing the public-error module.
+  {
+    files: ["src/pino/**/*.ts", "src/sentry/**/*.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [NODE_BUILTIN_IMPORTS, LOG_SINK_CORE_IMPORTS] },
+      ],
+    },
+  },
+  // Core library source (everything outside the subpaths and tests):
+  // edge-clean and forbidden from importing a subpath module.
   {
     files: ["src/**/*.ts"],
-    ignores: ["src/public-error/**", "src/__tests__/**"],
+    ignores: [
+      "src/public-error/**",
+      "src/pino/**",
+      "src/sentry/**",
+      "src/__tests__/**",
+    ],
     rules: {
       "no-restricted-globals": ["error", ...EDGE_RESTRICTED_GLOBALS],
       "no-restricted-imports": [
         "error",
-        { patterns: [NODE_BUILTIN_IMPORTS, PUBLIC_ERROR_BOUNDARY] },
+        { patterns: [NODE_BUILTIN_IMPORTS, SUBPATH_BOUNDARY] },
       ],
       "no-restricted-syntax": ["error", ...GUARDED_READ_SYNTAX],
     },

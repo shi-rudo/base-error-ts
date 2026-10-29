@@ -78,6 +78,7 @@ export default defineConfig({
             },
             { text: "Observability & logging", link: "/guide/observability" },
             { text: "Logging with pino", link: "/guide/logging-with-pino" },
+            { text: "Reporting to Sentry", link: "/guide/reporting-to-sentry" },
           ],
         },
         {

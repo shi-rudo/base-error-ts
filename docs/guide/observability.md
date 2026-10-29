@@ -406,18 +406,21 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
 ## pino
 
 Pino has a standard serializer for the `err` key that reads the error object
-itself, so a redaction policy does not hold there. [Logging with
-pino](./logging-with-pino) shows the setup that writes every value under `err`
-through `logObjectOf()`.
+itself, so a redaction policy does not hold there. The subpath
+`@shirudo/base-error/pino` writes every value under `err` through
+`logObjectOf()`. [Logging with pino](./logging-with-pino) shows the setup.
 
-## Sentry / OpenTelemetry
+## Sentry
 
-Pass `toLogObject()` (or the error itself) to your reporter. Because the cause
-chain is serialized, nested root causes survive the trip:
+Sentry reads the error object itself, so a redaction policy does not hold in
+the exceptions of the event. The subpath `@shirudo/base-error/sentry` writes
+the exceptions of every event through `logObjectOf()`.
+[Reporting to Sentry](./reporting-to-sentry) shows the setup.
 
-```ts
-Sentry.captureException(error, { extra: error.toLogObject() });
-```
+## Other reporters
+
+A reporter that reads the error object itself bypasses the redaction policy.
+Give it the log object from `logObjectOf(error)` instead of the error.
 
 ## Reconstructing: `StructuredError.fromJSON`
 

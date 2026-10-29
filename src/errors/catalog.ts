@@ -3,6 +3,8 @@ import type { RedactMask } from "./BaseError.js";
 import { isInstanceOf } from "./guarded-read.js";
 import { cloneJsonSafe } from "./json-safe.js";
 import type { JsonSafeValue } from "./json-safe.js";
+import { ownCase } from "./match.js";
+import type { HandlerResult } from "./match.js";
 
 /** JSON-safe static metadata supported by catalog definitions. Alias of `JsonSafeValue`, whose module owns the JSON-safety rules. */
 export type CatalogJsonValue = JsonSafeValue;
@@ -93,6 +95,18 @@ type ValidPrefix<P extends string | undefined> = [P] extends [undefined]
         ? P
         : PrefixRule;
 
+type DottedKeyRule = "expected keys without a dot when a prefix is set";
+
+/** The prefix holds every segment, so the key is the last segment of a code. */
+type PrefixFor<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined,
+> = [P] extends [undefined]
+  ? P
+  : [Extract<keyof T, `${string}.${string}`>] extends [never]
+    ? ValidPrefix<P>
+    : DottedKeyRule;
+
 type InvalidCatalogSpec<T extends ErrorCatalogDefinition> = {
   [K in keyof T]: Exclude<keyof T[K], keyof ErrorSpec> extends never
     ? T[K] extends { redaction: infer R }
@@ -122,7 +136,7 @@ type CatalogArgs<
   ? [invalidCatalog: never]
   : "" extends keyof T
     ? [invalidCatalog: never]
-    : [options?: CatalogOptions<ValidPrefix<P>>];
+    : [options?: CatalogOptions<PrefixFor<T, P>>];
 
 type CategoryOf<S> = S extends { category: infer C extends string }
   ? C
@@ -171,11 +185,6 @@ type CatalogFactories<
   [K in keyof T]: FactoryFor<CodeOf<K & string, P>, T[K]>;
 };
 
-/** The union of every handler's return type. This is the result of `match`. */
-type HandlerResult<C> = {
-  [K in keyof C]: C[K] extends (...args: never[]) => infer R ? R : never;
-}[keyof C];
-
 /** The keys whose code occurs in the error union `E`. */
 type KeyIn<
   T extends ErrorCatalogDefinition,
@@ -199,6 +208,9 @@ type KeyCases<
   [K in keyof T & string]?: (error: KeyCaseArg<P, E, K>) => unknown;
 } & { _?: (error: E) => unknown };
 
+type CatchAllKeyRule =
+  "match is unavailable: the key _ is also the catch-all; rename the key, or use matchError";
+
 /**
  * Rejects a key that the catalog does not define. Without a `_` catch-all,
  * every key of `E` must have a handler.
@@ -208,17 +220,19 @@ type KeyExhaustive<
   P extends string | undefined,
   E extends StructuredError<string, string>,
   C,
-> = [Exclude<keyof C, (keyof T & string) | "_">] extends [never]
-  ? "_" extends keyof C
-    ? C
-    : [Exclude<KeyIn<T, P, E>, keyof C>] extends [never]
+> = "_" extends keyof T
+  ? CatchAllKeyRule
+  : [Exclude<keyof C, (keyof T & string) | "_">] extends [never]
+    ? "_" extends keyof C
       ? C
-      : C & {
-          [K in Exclude<KeyIn<T, P, E>, keyof C>]: (
-            error: KeyCaseArg<P, E, K>,
-          ) => unknown;
-        }
-  : C & Record<Exclude<keyof C, (keyof T & string) | "_">, never>;
+      : [Exclude<KeyIn<T, P, E>, keyof C>] extends [never]
+        ? C
+        : C & {
+            [K in Exclude<KeyIn<T, P, E>, keyof C>]: (
+              error: KeyCaseArg<P, E, K>,
+            ) => unknown;
+          }
+    : C & Record<Exclude<keyof C, (keyof T & string) | "_">, never>;
 
 /** The object returned by {@link defineErrors}. */
 export type Catalog<
@@ -322,15 +336,17 @@ function snapshotRedaction(value: unknown): CatalogRedactionPolicy | undefined {
   });
 }
 
+function isPlainObject(value: unknown): value is object {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
 function readPrefix(options: unknown): string | undefined {
   if (options === undefined) return undefined;
-  if (
-    typeof options !== "object" ||
-    options === null ||
-    Array.isArray(options) ||
-    (Object.getPrototypeOf(options) !== Object.prototype &&
-      Object.getPrototypeOf(options) !== null)
-  ) {
+  if (!isPlainObject(options)) {
     throw new Error("defineErrors: options must be a plain object");
   }
   for (const key of Reflect.ownKeys(options)) {
@@ -406,13 +422,7 @@ export function defineErrors(
   catalog: ErrorCatalogDefinition,
   catalogOptions?: unknown,
 ): Catalog<ErrorCatalogDefinition> {
-  if (
-    typeof catalog !== "object" ||
-    catalog === null ||
-    Array.isArray(catalog) ||
-    (Object.getPrototypeOf(catalog) !== Object.prototype &&
-      Object.getPrototypeOf(catalog) !== null)
-  ) {
+  if (!isPlainObject(catalog)) {
     throw new Error("defineErrors: catalog must be a plain object");
   }
 
@@ -432,10 +442,16 @@ export function defineErrors(
   }
 
   const prefix = readPrefix(catalogOptions);
+  const keyIsCatchAll = keys.includes("_");
   const codeByKey = Object.create(null) as Record<string, string>;
   const keyByCode = new Map<string, string>();
   const codes: string[] = [];
   for (const key of keys) {
+    if (prefix !== undefined && key.includes(".")) {
+      throw new Error(
+        `defineErrors: key "${key}" contains "."; with a prefix, the prefix holds every segment before the key`,
+      );
+    }
     const code = prefix === undefined ? key : `${prefix}.${key}`;
     codeByKey[key] = code;
     keyByCode.set(code, key);
@@ -565,14 +581,14 @@ export function defineErrors(
         ((error: StructuredError<string, string>) => unknown) | undefined
       >,
     ): unknown {
+      if (keyIsCatchAll) {
+        throw new Error(
+          'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchError',
+        );
+      }
       const key = keyByCode.get(error.code);
-      // Own properties only: a key such as "toString" must not reach
-      // Object.prototype.
-      const ownHandler =
-        key !== undefined && Object.prototype.hasOwnProperty.call(cases, key)
-          ? cases[key]
-          : undefined;
-      const handler = ownHandler ?? cases._;
+      const handler =
+        (key === undefined ? undefined : ownCase(cases, key)) ?? cases._;
 
       if (!handler) {
         throw new Error(

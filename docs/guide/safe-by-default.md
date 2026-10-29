@@ -66,5 +66,7 @@ scrubbed. See [Observability & logging](./observability).
 
 You do, and you get it on the log path: `toLogObject()` keeps the full,
 (optionally redacted) error. See [Observability & logging](./observability).
+Sentry reads the error object itself, so use the setup in
+[Reporting to Sentry](./reporting-to-sentry) to keep the policy in the event.
 The client path is a separate concern: the `public-error` pipeline builds the
 client payload. See [Public error pipeline](./public-error).
