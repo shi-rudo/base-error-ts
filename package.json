@@ -1,6 +1,6 @@
 {
   "name": "@shirudo/base-error",
-  "version": "9.0.1",
+  "version": "10.0.0",
   "description": "A cross-environment base error class for TypeScript applications, designed for seamless use across Node.js, browsers, and edge runtimes.",
   "homepage": "https://github.com/shi-rudo/base-error-ts#readme",
   "repository": {
