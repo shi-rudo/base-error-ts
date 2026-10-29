@@ -40,7 +40,7 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **The observability guide no longer gives the Sentry advice that leaked.** It recommended `Sentry.captureException(error, { extra: error.toLogObject() })`, which sent the raw message of the error to Sentry. It now points to the Sentry subpath. A new section says to give any other reporter `logObjectOf(error)` instead of the error.
 
-- **The README no longer says that a client never sees the `message`.** The library sends no error to a client, but the default error handler of a framework reads the error itself. Fastify 5 without `setErrorHandler` sends the internal `code` and the technical `message`. Express 5 sends the stack, and with it the message, when `NODE_ENV` is not `production`. Pitfall 2, _The default error handler of a framework sends the `message`_, shows both and an error handler that sends only the result of the pipeline. The pitfalls after it move down by one.
+- **The README no longer says that a client never sees the `message`.** The library sends no error to a client, but the default error handler of a framework reads the error itself. Fastify 5 without `setErrorHandler` sends the internal `code` and the technical `message`. Express 5 sends the stack, and with it the message, when `NODE_ENV` is not `production`. Pitfall 2, _The default error handler of a framework sends the `message`_, shows both and an error handler that sends only the result of the pipeline. It also says to register the errors that the framework raises for a bad request, such as `FST_ERR_VALIDATION`, because the fallback answers them with `500`. The pitfalls after it move down by one.
 
 ## 9.0.1 - 2026-10-23
 

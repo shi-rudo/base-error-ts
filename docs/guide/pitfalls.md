@@ -53,19 +53,46 @@ does not call the pipeline. It reads the fields of the error itself:
   sends only `Internal Server Error`.
 
 Other frameworks behave differently. Do not rely on a default handler. Install
-your own error handler, and send only the result of the pipeline from it. In
-Fastify:
+your own error handler, and send only the result of the pipeline from it.
+
+Your handler also gets the errors that the framework raises for a bad request,
+for example a body that is not valid JSON. If the catalog does not register
+them, the fallback answers `500` where the default handler answered `400`.
+Register each error that a client can cause. In Fastify, these errors carry a
+`code`:
 
 ```ts
+const catalog = definePublicErrors({
+  fallback: { publicCode: "internal_error", status: 500 },
+})
+  .registerByCode("FST_ERR_CTP_INVALID_JSON_BODY", {
+    publicCode: "invalid_json",
+    status: 400,
+  })
+  .registerByCode("FST_ERR_VALIDATION", {
+    publicCode: "invalid_request",
+    status: 400,
+  })
+  .registerByCode("FST_ERR_CTP_BODY_TOO_LARGE", {
+    publicCode: "payload_too_large",
+    status: 413,
+  });
+
 app.setErrorHandler((error, request, reply) => {
   const { status, headers, body } = toProblem(catalog, project(catalog, error));
   return reply.status(status).headers(headers).send(body);
 });
 ```
 
+Fastify has more of these codes, for example `FST_ERR_CTP_EMPTY_JSON_BODY`
+(400) and `FST_ERR_CTP_INVALID_MEDIA_TYPE` (415).
+
 In Express, register an error middleware with four parameters after the routes,
-and send the same result from it. Log the error in the same handler, see
-[Logging with pino](./logging-with-pino).
+and send the same result from it. The errors of `express.json()` have no
+`code`. They have a `type`, for example `entity.parse.failed` (400) and
+`entity.too.large` (413). Register them with `register` and a `match` function.
+
+Log the error in the same handler, see [Logging with pino](./logging-with-pino).
 
 ## 3. `StructuredError.name` is the `code`, not `"StructuredError"`
 
