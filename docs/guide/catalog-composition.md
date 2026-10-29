@@ -61,6 +61,55 @@ An error created by `UserErrors` is intentionally not recognized by a second
 catalog built from the same definitions. Provenance belongs to the exact catalog
 instance that created the error.
 
+## A prefix belongs to the catalog
+
+`defineErrors` applies its [prefix](./catalog#codes-with-a-prefix) to every
+definition. Definitions of one area compose as before:
+
+```ts
+const membershipErrors = {
+  not_a_member: { category: "FORBIDDEN", retryable: false },
+} satisfies ErrorCatalogDefinition;
+
+const roleErrors = {
+  missing_role: { category: "FORBIDDEN", retryable: false },
+} satisfies ErrorCatalogDefinition;
+
+export const AuthzErrors = defineErrors(
+  { ...membershipErrors, ...roleErrors },
+  { prefix: "restaurant.authz" },
+);
+```
+
+Definitions of two areas need two prefixes, so they belong in two catalogs.
+For a union of two catalogs, narrow with `is` and match each catalog by key:
+
+```ts
+type AccessError =
+  CatalogError<typeof AuthzErrors> | CatalogError<typeof StorageErrors>;
+
+function toStatus(error: AccessError): number {
+  if (AuthzErrors.is(error)) {
+    return AuthzErrors.match(error, {
+      not_a_member: () => 403,
+      missing_role: () => 403,
+    });
+  }
+  return StorageErrors.match(error, { not_found: () => 404 });
+}
+```
+
+`matchError` also takes the union. A quoted code is a valid key of an object
+literal, so it needs no brackets:
+
+```ts
+matchError(error, {
+  "restaurant.authz.not_a_member": () => 403,
+  "restaurant.authz.missing_role": () => 403,
+  "restaurant.storage.not_found": () => 404,
+});
+```
+
 ## Why catalogs have no `merge`, `map` or `select`
 
 Runtime catalog transformation would need to redefine provenance, duplicate-code

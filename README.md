@@ -167,7 +167,8 @@ of the request.
 - `StructuredError` carries a typed `code`, a `category`, a `retryable` flag and
   `details`.
 - `defineErrors` defines many codes in one place, with typed factories and
-  metadata per code.
+  metadata per code. A prefix gives dotted codes, such as
+  `billing.card_declined`, factories without brackets.
 - `StructuredAggregateError` collects many failures in one error, for example
   from `Promise.allSettled`.
 - `ValidationError` collects field issues. The issue format is compatible with
