@@ -61,6 +61,14 @@ export const status: number = matchError(failure, {
 // @ts-expect-error matchError needs a case for every code of the union
 matchError(failure, { EMAIL_TAKEN: () => 409 });
 
+export const retryable: boolean = matchError(failure, {
+  RATE_LIMITED: (error) => error.retryable,
+  _: () => false,
+});
+
+// @ts-expect-error matchError rejects a code that the union does not contain
+matchError(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
+
 const AuthzErrors = defineErrors(
   {
     not_a_member: { category: "FORBIDDEN", retryable: false },

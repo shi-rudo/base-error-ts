@@ -42,21 +42,32 @@ export function ownCase<H>(
     : undefined;
 }
 
+type CatchAllCodeRule =
+  "matchError is unavailable: the code _ is also the catch-all; rename the code";
+
+/** A wide `string` code contains `_` too, but it names no code `_`. */
+type HasCatchAllCode<E extends StructuredError<string, string>> =
+  string extends E["code"] ? false : "_" extends E["code"] ? true : false;
+
 /**
- * Exhaustiveness constraint: if no `_` catch-all is given, every `code` must
- * have a handler. Missing codes are added as required, so an incomplete object
- * fails to type-check.
+ * Rejects a code that `E` does not contain, also next to a `_` catch-all.
+ * Without a `_` catch-all, every `code` must have a handler. Missing codes are
+ * added as required, so an incomplete object fails to type-check.
  */
-type Exhaustive<
-  E extends StructuredError<string, string>,
-  C,
-> = "_" extends keyof C
-  ? C
-  : [Exclude<E["code"], keyof C>] extends [never]
-    ? C
-    : C & {
-        [K in Exclude<E["code"], keyof C>]: (error: CaseArg<E, K>) => unknown;
-      };
+type Exhaustive<E extends StructuredError<string, string>, C> =
+  HasCatchAllCode<E> extends true
+    ? CatchAllCodeRule
+    : [Exclude<keyof C, E["code"] | "_">] extends [never]
+      ? "_" extends keyof C
+        ? C
+        : [Exclude<E["code"], keyof C>] extends [never]
+          ? C
+          : C & {
+              [K in Exclude<E["code"], keyof C>]: (
+                error: CaseArg<E, K>,
+              ) => unknown;
+            }
+      : C & Record<Exclude<keyof C, E["code"] | "_">, never>;
 
 /**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
