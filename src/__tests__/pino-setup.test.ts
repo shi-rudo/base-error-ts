@@ -141,6 +141,55 @@ describe("the pino setup", () => {
     expect(lines[0]).toContain(MAX_CAUSE_DEPTH_MARKER);
   });
 
+  it("keeps the depth marker of a deep cause chain logged under err", () => {
+    const { logger, lines } = recordingLogger();
+    let chain = new Error("hop 0");
+    for (let hop = 1; hop < 150; hop++) {
+      chain = withCause(new Error(`hop ${hop}`), chain);
+    }
+
+    logger.error(
+      {
+        err: new StructuredError({
+          code: "REQUEST_FAILED",
+          category: "INTERNAL",
+          retryable: false,
+          message: "request failed",
+          cause: chain,
+        }),
+      },
+      "request failed",
+    );
+
+    expect(lines[0]).toContain(MAX_CAUSE_DEPTH_MARKER);
+  });
+
+  it("leaves the own fields of a foreign error out of the line", () => {
+    const { logger, parsed } = recordingLogger();
+    const foreign = Object.assign(new Error("not found"), {
+      statusCode: 404,
+      authorization: "Bearer secret-token",
+    });
+
+    logger.error(foreign);
+
+    expect(Object.keys(parsed()[0]!.err as Line).sort()).toEqual([
+      "message",
+      "name",
+      "stack",
+    ]);
+  });
+
+  it("keeps the policy of an error that a worker posts through toJSON and fromJSON", () => {
+    const { logger, lines } = recordingLogger();
+    const posted = structuredClone(redactedLookupError().toJSON());
+
+    logger.error(StructuredError.fromJSON(posted));
+
+    expect(lines[0]).not.toContain(SECRET_EMAIL);
+    expect(lines[0]).toContain('"code":"USER_NOT_FOUND"');
+  });
+
   it("writes an error from another realm under err through the library", () => {
     const { logger, parsed } = recordingLogger();
     const foreign: unknown = runInNewContext('new Error("vm failure")');

@@ -26,6 +26,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Documentation
 
+- **The pino and Sentry guides name what the setups write for a foreign error.** They write the fixed fields of the log object and leave the own fields of the error out, such as `errno` or `statusCode`, because a foreign error can carry secrets in any field. A field that matters goes into the `details` of a wrapping `StructuredError`. The guides also state that an error posted by a worker loses its class and its policy, and that `error.toJSON()` with `StructuredError.fromJSON` keeps the masked fields masked.
+
 - **The guide pages _Logging with pino_ and _Reporting to Sentry_ show the subpaths.** They name the tested versions and the limits. Both pages load their usage from `examples/pino-logger.ts` and `examples/sentry-reporter.ts`, which CI compiles and runs against pino and `@sentry/node`. `scripts/verify-doc-snippets.mjs` fails the docs build when a snippet drifts from its example.
 
 - **The observability guide no longer gives the Sentry advice that leaked.** It recommended `Sentry.captureException(error, { extra: error.toLogObject() })`, which sent the raw message of the error to Sentry. It now points to the Sentry subpath. A new section says to give any other reporter `logObjectOf(error)` instead of the error.

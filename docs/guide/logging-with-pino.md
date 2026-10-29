@@ -81,6 +81,38 @@ For an error that denies `message` and `email`, the line looks like this
 Your log store can filter, count and alert on `err.code`, `err.category` and
 `err.retryable`. These fields are part of the contract of the log object.
 
+## Fields of a foreign error
+
+For an error that is not an error of this library, the log object holds a
+fixed set of fields: `name`, `message`, `stack`, `code`, `category`,
+`retryable`, `details`, the cause chain and the members of an aggregate.
+Pino's standard serializer writes more: `type`, and the own fields of the
+error, such as `errno`, `syscall`, `path` or `statusCode`.
+
+The setup leaves these fields out on purpose. A foreign error can carry
+anything in its own fields, for example the request headers of an HTTP client,
+and no policy covers a foreign error. So the setup writes only the fields that
+it knows. The log object names the class in `name`, not in `type`. The message
+of a Node.js system error, such as `ENOENT`, already holds its path.
+
+To keep a field, wrap the error in a `StructuredError` and put the field into
+its `details`:
+
+```ts
+try {
+  await readFile(configPath);
+} catch (caught) {
+  throw new StructuredError({
+    code: "CONFIG_READ_FAILED",
+    category: "INTERNAL",
+    retryable: false,
+    message: "reading the config failed",
+    details: { path: configPath },
+    cause: caught,
+  });
+}
+```
+
 ## In a catch block
 
 A `catch` block receives any value. Pino itself reads an object in the first
@@ -117,8 +149,14 @@ logger[level]({ err: error }, "request failed");
 - Pino and the setup recognize an error in the first argument with
   `instanceof Error`. An error from a `node:vm` context fails this test, and
   pino writes it as a merge object without its message. Log such an error under
-  `err`: `logger.error({ err: error })`. An error that a worker posts arrives as
-  a copy in the receiving realm and passes the test.
+  `err`: `logger.error({ err: error })`.
+- An error that a worker posts with `postMessage` arrives as a plain `Error`,
+  without its class and its policy, so its raw message reaches the line. Post
+  `error.toJSON()` instead, and rebuild the error with
+  `StructuredError.fromJSON` on the other side. The masked fields stay masked.
+- Log the error itself under `err`, not its log object. The setup copies a
+  ready-made log object (`{ err: error.toLogObject() }`) as plain data, and the
+  copy cuts a cause chain deeper than 100 levels without a marker.
 - If your dependency tree holds two copies of this package, an error from the
   other copy logs without its policy. `logObjectOf` writes it like a foreign
   error. Deduplicate the package.
