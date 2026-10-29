@@ -247,6 +247,21 @@ AuthzErrors.match(authzError, { not_a_member: () => 1 });
 // @ts-expect-error a key that the catalog does not define is rejected
 AuthzErrors.match(authzError, { not_a_membr: () => 1, _: () => 2 });
 
+const HttpErrors = defineErrors({
+  "404": { category: "NOT_FOUND", retryable: false },
+  "500": { category: "INTERNAL", retryable: false },
+});
+declare const httpError: CatalogError<typeof HttpErrors>;
+
+const numericKeyMatch: number = HttpErrors.match(httpError, {
+  404: () => 1,
+  _: () => 2,
+});
+void numericKeyMatch;
+
+// @ts-expect-error a numeric key that the catalog does not define is rejected
+HttpErrors.match(httpError, { 403: () => 1, _: () => 2 });
+
 AuthzErrors.match(authzError, {
   // @ts-expect-error handlers are named by key, not by code
   "restaurant.authz.not_a_member": () => 1,
