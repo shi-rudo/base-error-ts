@@ -6,9 +6,17 @@
 
 - **`logObjectOf(value)` returns the log form of any thrown value.** A `catch` block receives `unknown`, and only a `BaseError` had `toLogObject()`. A `BaseError` of this realm now returns its `toLogObject()`, with its redaction policy. Any other error returns the node that a `BaseError` writes for it as its cause. That node holds the name, message and stack of the error, its structured fields, its members and its cause chain. A `BaseError` in that chain keeps its policy. Any other value returns as a copy of log data. The function does not throw, and its work stays bounded. It writes a foreign error from its fields and runs no `toLogObject` or `toJSON` of that error. So a `BaseError` from another realm logs without a policy, as it does in a cause chain.
 
+- **The subpaths `@shirudo/base-error/pino` and `@shirudo/base-error/sentry` keep the policy of an error at pino and at Sentry.** Both read an error themselves and bypassed a `redact` policy. Pino's standard `err` serializer wrote the raw message, the raw `details` and the raw cause, and a call without text copied the raw message into `msg`. Sentry wrote the raw name and message of the error, of each cause and of each member of an aggregate into the event.
+  - `pinoErrorOptions` holds a serializer for `err` and a `logMethod` hook, and sets `errorKey` to `err`. Both parts write the value through `logObjectOf()`, so a native error keeps its own name and message, and `msg` holds the masked message. In a `catch` block, `logger.error({ err: caught }, text)` does not throw for any value.
+  - `beforeSend` gives each exception of a Sentry event the name and the message of its node in the log object. `logObjectContextIntegration()` adds the log object as the `error` context, which Sentry normalizes. An `error` context of the application wins. Both follow the error that Sentry reports: the captured error, or the first error that a captured object holds. A captured value without an error keeps the event that Sentry builds.
+  - Neither subpath imports pino or Sentry, so the package keeps zero dependencies and no peer dependency. The declarations use own types. Type tests check them against `LoggerOptions` of pino 10 and `Options` of `@sentry/core` 11.
+  - Both subpath bundles load the core from the root bundle, so an error of the root entry keeps its policy there. `verify-dist.mjs`, the runtime smoke and the packed-consumer check guard this. Proposal 0018 records the decision.
+
 ### Documentation
 
-- **A tested setup for pino.** Pino's standard `err` serializer reads an error itself and never calls `toLogObject()`. So pino wrote the raw message, the raw `details` and the raw cause of an error under `err`, also with a `redact` policy. A call without text also copied the raw message into `msg`. The new guide page _Logging with pino_ and `examples/pino-logger.ts` give a serializer and a `logMethod` hook that write every value under `err` through `logObjectOf()`. A test runs the setup against pino 10. Pino is a dev dependency only.
+- **The guide pages _Logging with pino_ and _Reporting to Sentry_ show the subpaths.** They name the tested versions and the limits. Both pages load their usage from `examples/pino-logger.ts` and `examples/sentry-reporter.ts`, which CI compiles and runs against pino and `@sentry/node`. `scripts/verify-doc-snippets.mjs` fails the docs build when a snippet drifts from its example.
+
+- **The observability guide no longer gives the Sentry advice that leaked.** It recommended `Sentry.captureException(error, { extra: error.toLogObject() })`, which sent the raw message of the error to Sentry. It now points to the Sentry subpath. A new section says to give any other reporter `logObjectOf(error)` instead of the error.
 
 ## 9.0.1 - 2026-10-23
 

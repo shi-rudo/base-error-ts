@@ -193,6 +193,9 @@ of the request.
   the stack, every cause, the members of an aggregate, and the details.
 - `logObjectOf(value)` writes the log form of any thrown value: an error of
   this library, a native `Error`, or a value that is not an error.
+- The subpaths `@shirudo/base-error/pino` and `@shirudo/base-error/sentry`
+  keep the policy of an error in a pino line and in a Sentry event. They add
+  no dependency.
 - `redact`, `redactAllow`, `partialMask` and `redactWith` mask personal data in
   the log.
 - `StructuredError.fromJSON` rebuilds a typed error from a log or from a worker
@@ -247,6 +250,7 @@ To read it locally, run `pnpm docs:dev`.
 - [Public error pipeline](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/public-error.md)
 - [Observability and logging (with PII redaction and `fromJSON`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/observability.md)
 - [Logging with pino](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/logging-with-pino.md)
+- [Reporting to Sentry](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/reporting-to-sentry.md)
 
 **Reference**
 
