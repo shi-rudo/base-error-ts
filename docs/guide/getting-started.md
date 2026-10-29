@@ -29,11 +29,12 @@ runtime dependencies**. `require()` loads the ES module build on Node.js 24, so
 
 The declarations need TypeScript 5.0 or a later version, and `lib` ES2020 or a
 later version. For an ES module, they resolve under `node16`, `nodenext` and
-`bundler`. A CommonJS module needs `nodenext` and TypeScript 5.8 or a later
-version. `node10` works with TypeScript 5 and 6, and TypeScript 7 removed it.
-CI installs the packed package into a fresh project and checks each of these
-combinations with TypeScript 5.0.4, 5.8, the latest 6.x and the latest
-release.
+`bundler`. A CommonJS module needs `module: nodenext` with TypeScript 5.8 or
+later, or `module: node20` with TypeScript 5.9 or later. `module: node16`
+refuses the package (TS1479). `module: commonjs` (resolution `node10`) works
+with TypeScript 5 and 6, and TypeScript 7 removed `node10`. CI installs the
+packed package into a fresh project and checks each of these combinations
+with TypeScript 5.0.4, 5.8, 5.9, the latest 6.x and the latest release.
 
 ## Your first error
 

@@ -1,5 +1,7 @@
-// Prints the runtime export names of each entry point, per module format, as
-// the packed package resolves from this directory.
+// Prints the runtime export names of each entry point, as the packed package
+// resolves from this directory. The package ships one ES module build, so
+// both loaders read the same module: `import` directly and `require`
+// through require(esm).
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -12,8 +14,8 @@ const entries = [
 const exportsOf = {};
 for (const entry of entries) {
   exportsOf[entry] = {
-    esm: Object.keys(await import(entry)).sort(),
-    cjs: Object.keys(require(entry)).sort(),
+    import: Object.keys(await import(entry)).sort(),
+    require: Object.keys(require(entry)).sort(),
   };
 }
 console.log(JSON.stringify(exportsOf));
