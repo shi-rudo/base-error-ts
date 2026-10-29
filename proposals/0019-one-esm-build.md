@@ -1,6 +1,6 @@
 # One ESM build
 
-Status: proposed; release: 10.0.0.
+Status: implemented; release: 10.0.0.
 Tracking: `base-error-ts-82a`.
 
 ## Decision

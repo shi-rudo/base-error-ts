@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- **The package ships one ES module build.** The CommonJS build and its `.d.cts` declarations are gone. `require()` loads the ES module build on Node.js 24, so `import` and `require` load the same classes. Before, a process that loaded both held two classes of each error. Then `instanceof`, `isBaseError` and the cause serializer failed across the two builds, and a masked error of one build came out raw through `logObjectOf` of the other. A TypeScript project that compiles to CommonJS needs `module: nodenext` and TypeScript 5.8 or later, because `module: node16` reports TS1479. See `MIGRATION.md` and proposal 0019.
+
 ### Added
 
 - **`logObjectOf(value)` returns the log form of any thrown value.** A `catch` block receives `unknown`, and only a `BaseError` had `toLogObject()`. A `BaseError` of this realm now returns its `toLogObject()`, with its redaction policy. Any other error returns the node that a `BaseError` writes for it as its cause. That node holds the name, message and stack of the error, its structured fields, its members and its cause chain. A `BaseError` in that chain keeps its policy. Any other value returns as a copy of log data. The function does not throw, and its work stays bounded. It writes a foreign error from its fields and runs no `toLogObject` or `toJSON` of that error. So a `BaseError` from another realm logs without a policy, as it does in a cause chain.

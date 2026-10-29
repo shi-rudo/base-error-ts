@@ -119,6 +119,8 @@ For an error that denies `message` and `email`, the event holds this (shortened)
 - If your dependency tree holds two copies of this package, an error from the
   other copy reaches Sentry without its policy. `logObjectOf` writes it like a
   foreign error. Deduplicate the package.
+  One copy ships one ES module build, so `import` and `require` load the same
+  classes.
 - The tests of this repository run the setup against the event builder of
   `@sentry/core` 11, which `@sentry/node` uses. The example of this page
   compiles and runs against `@sentry/node` 11.
