@@ -5,12 +5,17 @@ The package supports three matching modes for different type models:
 | Matcher               | Input model                         | Completion                       |
 | --------------------- | ----------------------------------- | -------------------------------- |
 | `matchError`          | closed `StructuredError` code union | compile-time exhaustive          |
+| `Catalog.match`       | errors of one catalog, by key       | compile-time exhaustive          |
 | `ErrorClassSet.match` | declared local Error-class set      | compile-time exhaustive          |
 | `matchThrown`         | open-world `unknown`                | explicit `.otherwise()` fallback |
 
 Use `matchError` when your application owns a closed error catalog. Use
 `matchThrown` at boundaries that receive native errors, third-party classes,
 Node.js-style error codes, or arbitrary thrown values.
+
+`Catalog.match` is `matchError` with handlers named by the key of a
+definition. A catalog with a [prefix](./catalog#codes-with-a-prefix) uses it,
+so that a dotted code needs no brackets.
 
 ## Open-world matching with `matchThrown`
 

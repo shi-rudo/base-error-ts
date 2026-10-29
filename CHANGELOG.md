@@ -4,7 +4,13 @@
 
 ### Added
 
+- **`defineErrors` derives dotted codes from a prefix and a key.** A dotted code such as `restaurant.authz.not_a_member` is no identifier, so a catalog keyed by its code needed brackets at every call and a second object for the codes. `defineErrors(definition, { prefix: "restaurant.authz" })` gives each definition the code `${prefix}.${key}`. The key names the factory: `AuthzErrors.create.not_a_member(…)`. The new `code` namespace maps each key to its code, for `registerByCode`. The new `match` method takes handlers named by key, and the compiler rejects a key that the catalog does not define. `is(value, key)` and `CatalogErrorOf` take the key, and `meta` takes the code. `codes`, `CatalogError` and `CatalogErrorOf` keep the full code as a literal type. The compiler and the runtime reject an empty prefix and a leading, trailing or doubled `.`. Without a prefix, the key is the code and every member behaves as before. The guide recommends a test that pins the codes of a catalog, so that a search finds each full code. See `proposals/0019-catalog-code-prefix.md`.
+
 - **`logObjectOf(value)` returns the log form of any thrown value.** A `catch` block receives `unknown`, and only a `BaseError` had `toLogObject()`. A `BaseError` of this realm now returns its `toLogObject()`, with its redaction policy. Any other error returns the node that a `BaseError` writes for it as its cause. That node holds the name, message and stack of the error, its structured fields, its members and its cause chain. A `BaseError` in that chain keeps its policy. Any other value returns as a copy of log data. The function does not throw, and its work stays bounded. It writes a foreign error from its fields and runs no `toLogObject` or `toJSON` of that error. So a `BaseError` from another realm logs without a policy, as it does in a cause chain.
+
+### Changed
+
+- **The definition errors of `defineErrors` name the key.** With a prefix, a key is no longer always the code. The messages now read `keys must be strings`, `keys must not be empty`, `invalid definition for key "…"` and `unknown definition field "…" for key "…"`. A second argument that is not a plain object now throws. Before, `defineErrors` ignored it.
 
 ### Documentation
 

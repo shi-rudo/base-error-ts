@@ -58,6 +58,41 @@ export type ErrorSpec = {
 /** A reusable finite catalog definition. Prefer `satisfies` over annotation. */
 export type ErrorCatalogDefinition = Readonly<Record<string, ErrorSpec>>;
 
+/** Options accepted by {@link defineErrors}. */
+export type CatalogOptions<P extends string | undefined = string | undefined> =
+  {
+    /**
+     * The namespace in front of every key. The code of a definition is
+     * `${prefix}.${key}`. Without a prefix, the key is the code.
+     */
+    readonly prefix?: P;
+  };
+
+type CodeOf<K extends string, P extends string | undefined> = [P] extends [
+  undefined,
+]
+  ? K
+  : `${P}.${K}`;
+
+type InvalidPrefix<P extends string> = P extends
+  "" | `.${string}` | `${string}.` | `${string}..${string}`
+  ? true
+  : false;
+
+/** A string type, so that the compiler error states the rule. */
+type PrefixRule =
+  "expected a string literal prefix without a leading, trailing or doubled dot";
+
+type ValidPrefix<P extends string | undefined> = [P] extends [undefined]
+  ? P
+  : undefined extends P
+    ? PrefixRule
+    : string extends P
+      ? PrefixRule
+      : InvalidPrefix<P & string> extends false
+        ? P
+        : PrefixRule;
+
 type InvalidCatalogSpec<T extends ErrorCatalogDefinition> = {
   [K in keyof T]: Exclude<keyof T[K], keyof ErrorSpec> extends never
     ? T[K] extends { redaction: infer R }
@@ -80,13 +115,14 @@ type ValidCatalogDefinition<T extends ErrorCatalogDefinition> = [
         : never
       : never;
 
-type CatalogValidationArgs<T extends ErrorCatalogDefinition> = [
-  ValidCatalogDefinition<T>,
-] extends [never]
+type CatalogArgs<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined,
+> = [ValidCatalogDefinition<T>] extends [never]
   ? [invalidCatalog: never]
   : "" extends keyof T
     ? [invalidCatalog: never]
-    : [];
+    : [options?: CatalogOptions<ValidPrefix<P>>];
 
 type CategoryOf<S> = S extends { category: infer C extends string }
   ? C
@@ -128,25 +164,95 @@ type FactoryFor<K extends string, S> = S extends {
     ) => StructuredError<K, CategoryOf<S>, Record<string, never>>;
 
 /** Typed factory namespace produced by {@link defineErrors}. */
-type CatalogFactories<T extends Record<string, ErrorSpec>> = {
-  [K in keyof T]: FactoryFor<K & string, T[K]>;
+type CatalogFactories<
+  T extends Record<string, ErrorSpec>,
+  P extends string | undefined,
+> = {
+  [K in keyof T]: FactoryFor<CodeOf<K & string, P>, T[K]>;
 };
 
+/** The union of every handler's return type. This is the result of `match`. */
+type HandlerResult<C> = {
+  [K in keyof C]: C[K] extends (...args: never[]) => infer R ? R : never;
+}[keyof C];
+
+/** The keys whose code occurs in the error union `E`. */
+type KeyIn<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined,
+  E extends StructuredError<string, string>,
+> = {
+  [K in keyof T & string]: CodeOf<K, P> extends E["code"] ? K : never;
+}[keyof T & string];
+
+type KeyCaseArg<
+  P extends string | undefined,
+  E extends StructuredError<string, string>,
+  K extends string,
+> = Extract<E, { code: CodeOf<K, P> }>;
+
+type KeyCases<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined,
+  E extends StructuredError<string, string>,
+> = {
+  [K in keyof T & string]?: (error: KeyCaseArg<P, E, K>) => unknown;
+} & { _?: (error: E) => unknown };
+
+/**
+ * Rejects a key that the catalog does not define. Without a `_` catch-all,
+ * every key of `E` must have a handler.
+ */
+type KeyExhaustive<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined,
+  E extends StructuredError<string, string>,
+  C,
+> = [Exclude<keyof C, (keyof T & string) | "_">] extends [never]
+  ? "_" extends keyof C
+    ? C
+    : [Exclude<KeyIn<T, P, E>, keyof C>] extends [never]
+      ? C
+      : C & {
+          [K in Exclude<KeyIn<T, P, E>, keyof C>]: (
+            error: KeyCaseArg<P, E, K>,
+          ) => unknown;
+        }
+  : C & Record<Exclude<keyof C, (keyof T & string) | "_">, never>;
+
 /** The object returned by {@link defineErrors}. */
-export type Catalog<T extends ErrorCatalogDefinition> = {
-  /** Factory namespace with one precisely typed constructor per error code. */
-  readonly create: CatalogFactories<T>;
-  /** Finite runtime list of the catalog's error codes. */
-  readonly codes: readonly (keyof T & string)[];
+export type Catalog<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined = undefined,
+> = {
+  /** Factory namespace with one precisely typed constructor per key. */
+  readonly create: CatalogFactories<T, P>;
+  /** The code of each key. */
+  readonly code: { readonly [K in keyof T & string]: CodeOf<K, P> };
+  /** Finite runtime list of the catalog's error codes, in key order. */
+  readonly codes: readonly CodeOf<keyof T & string, P>[];
   /** Returns immutable core fields and static boundary metadata for a code. */
-  meta<K extends keyof T>(code: K): CatalogMeta<T[K]>;
+  meta<K extends keyof T & string>(code: CodeOf<K, P>): CatalogMeta<T[K]>;
   /** Recognize any error created by this exact catalog. */
-  is(value: unknown): value is CatalogError<Catalog<T>>;
-  /** Recognize one code created by this exact catalog. */
+  is(value: unknown): value is CatalogError<Catalog<T, P>>;
+  /** Recognize the errors of one key created by this exact catalog. */
   is<K extends keyof T & string>(
     value: unknown,
-    code: K,
-  ): value is CatalogErrorOf<Catalog<T>, K>;
+    key: K,
+  ): value is CatalogErrorOf<Catalog<T, P>, K>;
+  /**
+   * Exhaustively dispatch on the key of an error of this catalog, with type
+   * narrowing. `matchError` with handlers named by key: it checks no
+   * provenance, and it throws when no case matches and no `_` catch-all
+   * exists.
+   */
+  match<
+    E extends CatalogError<Catalog<T, P>>,
+    const C extends KeyCases<T, P, E>,
+  >(
+    error: E,
+    cases: KeyExhaustive<T, P, E, C>,
+  ): HandlerResult<C>;
 };
 
 /**
@@ -167,7 +273,7 @@ export type CatalogError<C extends { create: Record<string, unknown> }> = {
     : never;
 }[keyof C["create"]];
 
-/** Extract one generated error type from a catalog by its code. */
+/** Extract one generated error type from a catalog by its key. */
 export type CatalogErrorOf<
   C extends { create: Record<string, unknown> },
   K extends keyof C["create"],
@@ -216,6 +322,38 @@ function snapshotRedaction(value: unknown): CatalogRedactionPolicy | undefined {
   });
 }
 
+function readPrefix(options: unknown): string | undefined {
+  if (options === undefined) return undefined;
+  if (
+    typeof options !== "object" ||
+    options === null ||
+    Array.isArray(options) ||
+    (Object.getPrototypeOf(options) !== Object.prototype &&
+      Object.getPrototypeOf(options) !== null)
+  ) {
+    throw new Error("defineErrors: options must be a plain object");
+  }
+  for (const key of Reflect.ownKeys(options)) {
+    if (key !== "prefix") {
+      throw new Error(`defineErrors: unknown option "${String(key)}"`);
+    }
+  }
+
+  const fields = options as CatalogOptions;
+  const prefix: unknown = fields.prefix;
+  if (prefix === undefined) return undefined;
+  if (typeof prefix !== "string" || prefix.split(".").includes("")) {
+    const rendered =
+      typeof prefix === "string"
+        ? `"${prefix}"`
+        : `of type ${prefix === null ? "null" : typeof prefix}`;
+    throw new Error(
+      `defineErrors: invalid prefix ${rendered}; expected a non-empty string without a leading, trailing or doubled "."`,
+    );
+  }
+  return prefix;
+}
+
 /**
  * Define a catalog of structured errors from a declarative spec.
  *
@@ -245,13 +383,28 @@ function snapshotRedaction(value: unknown): CatalogRedactionPolicy | undefined {
  *
  * const status = AppErrors.meta(err.code).metadata.httpStatus;
  * ```
+ *
+ * A `prefix` separates the key of a definition from its code. The key names
+ * the factory, and the code is `${prefix}.${key}`:
+ *
+ * @example
+ * ```ts
+ * const AuthzErrors = defineErrors(
+ *   { not_a_member: { category: "FORBIDDEN", retryable: false } },
+ *   { prefix: "restaurant.authz" },
+ * );
+ *
+ * AuthzErrors.create.not_a_member("actor 42 is not a member of org 7").code;
+ * // "restaurant.authz.not_a_member"
+ * ```
  */
-export function defineErrors<const T extends ErrorCatalogDefinition>(
-  catalog: T,
-  ..._validation: CatalogValidationArgs<T>
-): Catalog<T>;
+export function defineErrors<
+  const T extends ErrorCatalogDefinition,
+  const P extends string | undefined = undefined,
+>(catalog: T, ...options: CatalogArgs<T, P>): Catalog<T, P>;
 export function defineErrors(
   catalog: ErrorCatalogDefinition,
+  catalogOptions?: unknown,
 ): Catalog<ErrorCatalogDefinition> {
   if (
     typeof catalog !== "object" ||
@@ -264,18 +417,29 @@ export function defineErrors(
   }
 
   const ownKeys = Reflect.ownKeys(catalog);
-  if (ownKeys.some((code) => typeof code !== "string")) {
-    throw new Error("defineErrors: error codes must be strings");
+  if (ownKeys.some((key) => typeof key !== "string")) {
+    throw new Error("defineErrors: keys must be strings");
   }
   if (ownKeys.includes("")) {
-    throw new Error("defineErrors: error codes must not be empty");
+    throw new Error("defineErrors: keys must not be empty");
   }
 
   const create = Object.create(null) as Record<string, unknown>;
   const provenance = new WeakMap<object, string>();
-  const codes = Object.keys(catalog);
-  if (codes.length === 0) {
+  const keys = Object.keys(catalog);
+  if (keys.length === 0) {
     throw new Error("defineErrors: catalog must not be empty");
+  }
+
+  const prefix = readPrefix(catalogOptions);
+  const codeByKey = Object.create(null) as Record<string, string>;
+  const keyByCode = new Map<string, string>();
+  const codes: string[] = [];
+  for (const key of keys) {
+    const code = prefix === undefined ? key : `${prefix}.${key}`;
+    codeByKey[key] = code;
+    keyByCode.set(code, key);
+    codes.push(code);
   }
 
   const snapshot = Object.create(null) as Record<string, RuntimeSpec>;
@@ -291,8 +455,8 @@ export function defineErrors(
     "redaction",
   ]);
 
-  for (const code of codes) {
-    const spec = catalog[code] as ErrorSpec;
+  for (const key of keys) {
+    const spec = catalog[key] as ErrorSpec;
     if (
       typeof spec !== "object" ||
       spec === null ||
@@ -300,12 +464,12 @@ export function defineErrors(
       spec.category.length === 0 ||
       typeof spec.retryable !== "boolean"
     ) {
-      throw new Error(`defineErrors: invalid definition for code "${code}"`);
+      throw new Error(`defineErrors: invalid definition for key "${key}"`);
     }
-    for (const key of Reflect.ownKeys(spec)) {
-      if (typeof key !== "string" || !allowedSpecKeys.has(key)) {
+    for (const field of Reflect.ownKeys(spec)) {
+      if (typeof field !== "string" || !allowedSpecKeys.has(field)) {
         throw new Error(
-          `defineErrors: unknown definition field "${String(key)}" for code "${code}"`,
+          `defineErrors: unknown definition field "${String(field)}" for key "${key}"`,
         );
       }
     }
@@ -326,22 +490,23 @@ export function defineErrors(
           }) as CatalogMetadata);
     const redaction = snapshotRedaction(spec.redaction);
 
-    snapshot[code] = Object.freeze({
+    snapshot[key] = Object.freeze({
       category: spec.category,
       retryable: spec.retryable,
       ...(metadata !== undefined && { metadata }),
       ...(redaction !== undefined && { redaction }),
     });
-    metaSnapshot[code] = Object.freeze({
+    metaSnapshot[key] = Object.freeze({
       category: spec.category,
       retryable: spec.retryable,
       ...(metadata !== undefined && { metadata }),
     });
   }
 
-  for (const code of codes) {
-    const spec = snapshot[code] as RuntimeSpec;
-    create[code] = (
+  for (const key of keys) {
+    const spec = snapshot[key] as RuntimeSpec;
+    const code = codeByKey[key] as string;
+    create[key] = (
       message: string,
       options?: FactoryBaseOptions & { details?: Record<string, unknown> },
     ) => {
@@ -360,36 +525,64 @@ export function defineErrors(
           mask: spec.redaction.mask,
         });
       }
-      provenance.set(error, code);
+      provenance.set(error, key);
       return error;
     };
   }
 
   return Object.freeze({
     create: Object.freeze(create),
+    code: Object.freeze(codeByKey),
     codes: Object.freeze(codes),
     meta(code: string) {
-      if (!Object.prototype.hasOwnProperty.call(snapshot, code)) {
+      const key = keyByCode.get(code);
+      if (key === undefined) {
         throw new Error(`meta: unknown error code "${code}"`);
       }
-      return metaSnapshot[code] as CatalogMeta<ErrorSpec>;
+      return metaSnapshot[key] as CatalogMeta<ErrorSpec>;
     },
-    is(value: unknown, expectedCode?: string): boolean {
+    is(value: unknown, expectedKey?: string): boolean {
       if (!isInstanceOf(value, StructuredError)) return false;
 
-      const actualCode = provenance.get(value);
-      if (actualCode === undefined) return false;
-      if (expectedCode !== undefined && actualCode !== expectedCode) {
+      const actualKey = provenance.get(value);
+      if (actualKey === undefined) return false;
+      if (expectedKey !== undefined && actualKey !== expectedKey) {
         return false;
       }
 
-      const spec = snapshot[actualCode];
+      const spec = snapshot[actualKey];
       return (
         spec !== undefined &&
-        value.code === actualCode &&
+        value.code === codeByKey[actualKey] &&
         value.category === spec.category &&
         value.retryable === spec.retryable
       );
+    },
+    match(
+      error: StructuredError<string, string>,
+      cases: Record<
+        string,
+        ((error: StructuredError<string, string>) => unknown) | undefined
+      >,
+    ): unknown {
+      const key = keyByCode.get(error.code);
+      // Own properties only: a key such as "toString" must not reach
+      // Object.prototype.
+      const ownHandler =
+        key !== undefined && Object.prototype.hasOwnProperty.call(cases, key)
+          ? cases[key]
+          : undefined;
+      const handler = ownHandler ?? cases._;
+
+      if (!handler) {
+        throw new Error(
+          key === undefined
+            ? `match: error code "${error.code}" is not defined in this catalog, and no "_" catch-all`
+            : `match: no case for key "${key}" of error code "${error.code}", and no "_" catch-all`,
+        );
+      }
+
+      return handler(error);
     },
   }) as unknown as Catalog<ErrorCatalogDefinition>;
 }

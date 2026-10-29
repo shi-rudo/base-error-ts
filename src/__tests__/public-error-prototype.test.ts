@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { defineErrors } from "../errors/catalog.js";
 import { StructuredError } from "../errors/StructuredError.js";
 import { LocalizedMessageSet } from "../public-error/LocalizedMessageSet.js";
 import { PublicErrorCatalog } from "../public-error/PublicErrorCatalog.js";
@@ -260,6 +261,28 @@ describe("single source of truth", () => {
     expect(() =>
       catalog.assertCoverage(["db.deadlock", "missing.code"]),
     ).toThrow(/missing\.code/);
+  });
+
+  it("registers and covers the derived codes of a prefixed catalog", () => {
+    const AuthzErrors = defineErrors(
+      { not_a_member: { category: "FORBIDDEN", retryable: false } },
+      { prefix: "restaurant.authz" },
+    );
+    const catalog = new PublicErrorCatalog({
+      fallback: { publicCode: "internal_error", status: 500, retryable: false },
+    }).registerByCode(AuthzErrors.code.not_a_member, {
+      publicCode: "forbidden",
+      status: 403,
+      retryable: false,
+    });
+
+    const view = project(
+      catalog,
+      AuthzErrors.create.not_a_member("actor 42 is not a member of org 7"),
+    );
+
+    expect(() => catalog.assertCoverage(AuthzErrors.codes)).not.toThrow();
+    expect(view.code).toBe("forbidden");
   });
 
   it("rejects one public code mapped to conflicting transport", () => {
