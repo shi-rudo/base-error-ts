@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 10.0.0 - 2026-10-29
+
+Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error. See `MIGRATION.md`.
 
 ### Breaking Changes
 
