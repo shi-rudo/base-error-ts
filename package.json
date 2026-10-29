@@ -33,8 +33,7 @@
   ],
   "author": "shirudo",
   "license": "MIT",
-  "main": "dist/index.cjs",
-  "module": "dist/index.js",
+  "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bugs": {
     "url": "https://github.com/shi-rudo/base-error-ts/issues"
@@ -56,44 +55,20 @@
   "type": "module",
   "exports": {
     ".": {
-      "import": {
-        "types": "./dist/index.d.ts",
-        "default": "./dist/index.js"
-      },
-      "require": {
-        "types": "./dist/index.d.cts",
-        "default": "./dist/index.cjs"
-      }
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     },
     "./public-error": {
-      "import": {
-        "types": "./dist/public-error/index.d.ts",
-        "default": "./dist/public-error/index.js"
-      },
-      "require": {
-        "types": "./dist/public-error/index.d.cts",
-        "default": "./dist/public-error/index.cjs"
-      }
+      "types": "./dist/public-error/index.d.ts",
+      "default": "./dist/public-error/index.js"
     },
     "./pino": {
-      "import": {
-        "types": "./dist/pino/index.d.ts",
-        "default": "./dist/pino/index.js"
-      },
-      "require": {
-        "types": "./dist/pino/index.d.cts",
-        "default": "./dist/pino/index.cjs"
-      }
+      "types": "./dist/pino/index.d.ts",
+      "default": "./dist/pino/index.js"
     },
     "./sentry": {
-      "import": {
-        "types": "./dist/sentry/index.d.ts",
-        "default": "./dist/sentry/index.js"
-      },
-      "require": {
-        "types": "./dist/sentry/index.d.cts",
-        "default": "./dist/sentry/index.cjs"
-      }
+      "types": "./dist/sentry/index.d.ts",
+      "default": "./dist/sentry/index.js"
     }
   },
   "typesVersions": {

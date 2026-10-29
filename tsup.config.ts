@@ -7,8 +7,8 @@ const LOG_SINK_SUBPATHS = ["pino", "sentry"];
 
 /**
  * The pino and sentry subpaths import the core through the root entry. Their
- * bundles keep that import as a relative path to the root bundle of the same
- * format, so a consumer loads one core. A subpath then recognizes an error of
+ * bundles keep that import as a relative path to the root bundle, so a
+ * consumer loads one core. A subpath then recognizes an error of
  * the root entry by the private brand of its class. A copy of the core in a
  * subpath bundle would lose the policy of that error. verify-dist.mjs guards
  * this on every build.
@@ -16,14 +16,11 @@ const LOG_SINK_SUBPATHS = ["pino", "sentry"];
 const subpathsShareTheCore: EsbuildPlugin = {
   name: "subpaths-share-the-core",
   setup(build) {
-    // tsup builds both formats as esbuild "esm"; the extension tells them apart.
-    const extension = build.initialOptions.outExtension?.[".js"] ?? ".js";
-    const rootBundle = `../index${extension}`;
     build.onResolve({ filter: /^\.\.\/index\.js$/ }, ({ importer }) =>
       new RegExp(
         `[\\\\/]src[\\\\/](${LOG_SINK_SUBPATHS.join("|")})[\\\\/]`,
       ).test(importer)
-        ? { path: rootBundle, external: true }
+        ? { path: "../index.js", external: true }
         : undefined,
     );
   },
@@ -40,7 +37,7 @@ export default defineConfig({
       ]),
     ),
   },
-  format: ["esm", "cjs"],
+  format: ["esm"],
   dts: {
     resolve: true,
   },

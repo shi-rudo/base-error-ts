@@ -1,6 +1,7 @@
-// Loads every entry point of the packed package through the "require"
-// condition of its exports map. It runs one error through the core, the
-// public-error pipeline, the pino setup and the Sentry setup.
+// Loads every entry point of the packed package through require(), which
+// loads the ES module build. It runs one error through the core, the
+// public-error pipeline, the pino setup and the Sentry setup, and checks that
+// require() and import() load the same BaseError class.
 const assert = require("node:assert/strict");
 
 const { StructuredError, isStructuredError } = require("@shirudo/base-error");
@@ -49,4 +50,7 @@ const maskedEvent = beforeSend(
   { originalException: masked },
 );
 assert.equal(maskedEvent.exception.values[0].value, "[REDACTED]");
-console.log("cjs runtime: passed");
+import("@shirudo/base-error").then((imported) => {
+  assert.equal(imported.BaseError, require("@shirudo/base-error").BaseError);
+  console.log("cjs runtime: passed");
+});
