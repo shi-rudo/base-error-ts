@@ -90,6 +90,20 @@ function misspelledInGeneric<E extends CatalogError<typeof UserErrors>>(
   return matchError(error, { USER_NOT_FUND: () => 404, _: () => 500 });
 }
 
+function statusOfBareCode<Code extends string>(
+  error: StructuredError<Code, string>,
+): number {
+  // @ts-expect-error a code typed by a bare type parameter names no code, so the compiler cannot check the table
+  return matchError(error, { _: () => 500 });
+}
+
+function statusOfAnnotatedCode<Code extends string>(
+  error: StructuredError<Code, string>,
+): number {
+  const wide: StructuredError<string, string> = error;
+  return matchError(wide, { _: () => 500 });
+}
+
 const HttpErrors = defineErrors({
   "404": { category: "NOT_FOUND", retryable: false },
   "500": { category: "INTERNAL", retryable: false },
@@ -154,6 +168,8 @@ void statusWithCatchAll;
 void statusOfEveryCode;
 void statusOfAnyError;
 void misspelledInGeneric;
+void statusOfBareCode;
+void statusOfAnnotatedCode;
 void underscorePrefixedCode;
 void numericKeyWithCatchAll;
 void numericKeysComplete;

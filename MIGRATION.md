@@ -66,6 +66,11 @@ and its errors reached `_`.
   union. It names every string, so the compiler cannot check its names, and
   before v10 it also passed as if it had a `_` catch-all. Write the table as an
   object literal, or type it with the codes of the union.
+- An error whose code type is a bare type parameter, such as
+  `StructuredError<Code>` in a generic function, names no code, so
+  `matchError` accepts no table for it. Assign the error to a variable typed
+  with the union of its codes, or with `StructuredError<string>`, and match
+  that variable.
 - The runtime is unchanged. A wide `StructuredError<string>` still takes a
   handler for any code.
 

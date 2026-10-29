@@ -45,7 +45,10 @@ export function ownCase<H>(
 type CatchAllCodeRule =
   "matchError is unavailable: the code _ is also the catch-all; rename the code";
 
-/** A numeric object key such as `404` names the code `"404"`. */
+/**
+ * The names of a handler table. A numeric object key such as `404` has the
+ * name `"404"`: a code for `matchError`, a key for `Catalog.match`.
+ */
 export type HandlerNames<C> = `${Extract<keyof C, string | number>}`;
 
 /**
