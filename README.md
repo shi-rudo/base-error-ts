@@ -126,12 +126,13 @@ into a `StructuredError`.
 
 ```ts
 error.redact(["userId"]);
-// Every log of this error now writes details.userId as "[REDACTED]".
+// toLogObject() and JSON.stringify(error) now write details.userId as "[REDACTED]".
 ```
 
 The policy stays on the error. It also applies when another error logs this
 one as its cause. `redactAllow` works the other way: it masks every data field
-that you did not list.
+that you did not list. `console.log(error)` prints the error itself, not the
+log object, so it shows the raw value. Log `logObjectOf(error)` instead.
 
 ### 4. Answer the client
 

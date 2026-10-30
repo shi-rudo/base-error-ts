@@ -62,7 +62,9 @@ When you _do_ want to surface information, you say so by name in a
 The log path is the one that carries the full technical truth, so that is where
 redaction applies. `redact` / `redactAllow` configure a **sticky** mask on the
 error so even an auto-serialize (`JSON.stringify(error)` that a logger does) is
-scrubbed. See [Observability & logging](./observability).
+scrubbed. `console.log(error)` does not serialize: it prints the error itself,
+with raw values ([Pitfalls](./pitfalls), item 6). See
+[Observability & logging](./observability).
 
 ## "But I need the full error for Sentry"
 
