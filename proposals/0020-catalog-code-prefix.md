@@ -1,6 +1,6 @@
 # A prefix that separates the catalog key from the error code
 
-Status: implemented; release: next minor (unreleased).
+Status: implemented; release: 10.0.0.
 Tracking: `base-error-ts-zk7`.
 
 ## Decision
