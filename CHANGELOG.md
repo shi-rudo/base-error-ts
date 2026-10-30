@@ -6,6 +6,8 @@
 
 - **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`.
 
+- **The guide says what `console.log` prints for a redacted error.** Pitfall 6 and the observability guide said that `console.log(err)` shows the raw message. It also shows the raw `details`, every own field of a subclass and the cause with its raw `details`, because Node and Bun print the error itself and not the log object. So `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` prints it. The skill says the same now.
+
 ## 10.0.0 - 2026-10-29
 
 Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. A redaction policy in a catalog definition is now a floor: a policy on a single error adds to it and no longer replaces it. `matchError` rejects a handler for a code that the union does not contain. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error, and the README no longer says that a client never sees the `message`. See `MIGRATION.md`.

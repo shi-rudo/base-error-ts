@@ -388,8 +388,9 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
   The header uses each field's mask result without calling the mask again.
   If a result cannot convert to text, the stack becomes `"[REDACTED]"`.
   `toString()` honors message masking too. The `err.stack` property (whose header carries
-  the raw message) and Node's `console.log(err)` inspection (which prints
-  that property) stay unredacted. When redaction matters, log errors through
+  the raw message) stays unredacted. `console.log(err)` and `util.inspect` on
+  Node and Bun print the error itself, not the log object: the raw stack, the
+  raw `details`, every own field and the raw cause. When redaction matters, log errors through
   a structured serializer that hits `toJSON` (`logger.error({ err })`), never
   via string interpolation.
 - **Log path only**: the client path (the [public-error pipeline](./public-error)) emits

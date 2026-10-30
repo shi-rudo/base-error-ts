@@ -100,9 +100,11 @@ const failure = AccountErrors.create.PROFILE_UPDATE_FAILED("update failed", {
   own policy first, then by the outer error's policy.
 - Redaction selects keys, not values. To hide the time, deny both `timestamp`
   and `timestampIso`.
-- `err.stack` and `console.log(err)` show the raw message. Interpolating the
-  error into a string uses `toString()`, which masks a denied message; a
-  structured logger call is still the safe default.
+- `err.stack` shows the raw message. `console.log(err)` and `util.inspect`
+  print the error itself, not the log object: the raw message, the raw
+  `details`, every own field and the raw cause. Interpolating the error into a
+  string uses `toString()`, which masks a denied message; a structured logger
+  call is still the safe default.
 - `redactWith` output is trusted as returned. Without a catalog policy, the
   library does not mask or validate it again. With a catalog policy, the log
   copies the output as log data and the catalog policy masks the copy; a

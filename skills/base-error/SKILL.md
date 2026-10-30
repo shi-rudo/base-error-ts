@@ -124,8 +124,9 @@ sends the stack when `NODE_ENV` is not `production`.
   Never write a separate object of code constants next to the catalog.
 - A key rename changes the code, which logs and dashboards read. Pin the codes
   of each catalog in a test: `expect(Errors.codes).toEqual([…])`.
-- Redaction rewrites the log object. `err.stack` and `console.log(err)` still
-  show the raw message; log through a structured logger.
+- Redaction rewrites the log object. `err.stack` still shows the raw message,
+  and `console.log(err)` shows the raw message, the raw `details` and every own
+  field. Log through a structured logger, never through `console.log`.
 - `publicIssues({ messages: true })` passes validator messages through
   unchanged. Use it only for messages you wrote.
 - Use `toStructuredError` at a boundary, for observability. Rethrow

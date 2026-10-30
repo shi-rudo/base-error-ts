@@ -139,7 +139,7 @@ class PaymentDeclinedError extends BaseError<"PaymentDeclinedError"> {
 }
 ```
 
-## 6. Redaction covers the log object, not `err.stack` or string interpolation
+## 6. Redaction covers the log object, not `err.stack`, `console.log` or string interpolation
 
 `redact` / `redactAllow` / `redactWith` rewrite `toLogObject()` / `toJSON()`.
 A deny-listed `"name"` or `"message"` is also masked in log stack headers on
@@ -153,12 +153,18 @@ err.redact(["message", "apiKey"]);
 JSON.stringify(err); // ✓ redacted, stack headers included
 `${err}`; // ✓ message masked (toString)
 err.stack; // ✗ the property keeps the raw message in its header
-console.log(err); // ✗ Node inspection prints that property → raw message
+console.log(err); // ✗ raw message, raw details.apiKey, raw own fields
 ```
 
+`console.log`, `console.error` and `util.inspect` on Node and Bun do not read
+the log object. They print the error itself: the stack with the raw message,
+the raw `details`, every own field of a subclass, and the cause with its own
+raw `details`. A key that the policy masks in the log is readable there.
+
 When redaction matters, route errors through a structured serializer that hits
-`toJSON` (`logger.error({ err })`) instead of interpolating them into log
-strings. See [Observability](./observability#redacting-pii-from-logs).
+`toJSON` (`logger.error({ err })`). Do not pass the error to `console.log`, and
+do not interpolate it into log strings. See
+[Observability](./observability#redacting-pii-from-logs).
 
 ## 7. `publicIssues({ messages: true })` passes the validator's `message` through
 
