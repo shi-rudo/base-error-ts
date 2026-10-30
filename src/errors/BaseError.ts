@@ -239,12 +239,15 @@ export class BaseError<T extends string> extends Error {
    * `name: message` header, the redaction rewrites that header with the
    * masked fields and keeps the frames. If a stack does not start with that
    * header, the redaction hands the whole stack to the mask. The
-   * {@link toString} render masks a deny-listed technical message as well.
+   * {@link toString} render masks a deny-listed technical message of this
+   * error as well, but not the message of a cause.
    * The log states the time in two keys, `timestamp` and `timestampIso`; to
-   * hide it, deny both. The `err.stack` property and Node's `console.log(err)`
-   * inspection (which prints that property) stay unredacted. When redaction
-   * matters, log errors only through a structured serializer that hits
-   * `toJSON`, never via string interpolation.
+   * hide it, deny both. The `err.stack` property stays unredacted.
+   * `console.log(err)` prints the error itself, not the log object: every own
+   * field with its raw value, the cause and the members of an aggregate. When
+   * redaction matters, log `logObjectOf(err)` or use a logger setup that calls
+   * it. Never pass the error to `console.log`, and never interpolate it into a
+   * string.
    *
    * @param keys - Property names to mask wherever they appear in the log object.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
@@ -311,10 +314,11 @@ export class BaseError<T extends string> extends Error {
    * {@link toLogObject}).
    *
    * ⚠️ Scope: rewrites the **log object** only. The technical `message` is part
-   * of the kept structural envelope. So `toString`, `err.stack`, and Node's
-   * `console.log(err)` inspection carry it unchanged, unless a redaction floor
-   * denies `"message"`: then `toString` masks it. To mask the message itself,
-   * see {@link redact}.
+   * of the kept structural envelope. So `toString` and `err.stack` carry it
+   * unchanged, unless a redaction floor denies `"message"`: then `toString`
+   * masks it. To mask the message itself, see {@link redact}.
+   * `console.log(err)` prints the error itself, not the log object, so it
+   * shows every own field with its raw value, `details` among them.
    *
    * @param keys - Data leaf keys allowed to survive in the log.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
@@ -368,11 +372,12 @@ export class BaseError<T extends string> extends Error {
    * The consumer must bound those calls and terminate the callback.
    *
    * ⚠️ Scope: applies to the **log object** only. The library cannot map a
-   * custom redactor onto the one-line {@link toString} render. So `toString`,
-   * `err.stack`, and `console.log(err)` inspection keep the raw technical
-   * message. This holds even when the redactor scrubs the message from the
-   * log. Only a redaction floor that denies `"message"` masks it in
-   * `toString`.
+   * custom redactor onto the one-line {@link toString} render. So `toString`
+   * and `err.stack` keep the raw technical message. This holds even when the
+   * redactor scrubs the message from the log. Only a redaction floor that
+   * denies `"message"` masks it in `toString`. `console.log(err)` prints the
+   * error itself, not the log object, so it shows every own field with its raw
+   * value.
    * Changing the log's `message` does not automatically scrub its `stack`.
    */
   public redactWith(

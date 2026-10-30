@@ -6,7 +6,7 @@
 
 - **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`.
 
-- **The guide says what `console.log` prints for a redacted error.** Pitfall 6 and the observability guide said that `console.log(err)` shows the raw message. It also shows the raw `details`, every own field of a subclass and the cause with its raw `details`, because Node and Bun print the error itself and not the log object. So `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` prints it. The skill says the same now.
+- **The guide says what `console.log` prints for a redacted error.** Pitfall 6 and the observability guide said that `console.log(err)` shows the raw message. It prints the error itself, not the log object. So it also shows every own field with its raw value, the cause and the members of an aggregate. `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` still prints it. The guide now says to log `logObjectOf(err)` or to use the pino setup. It no longer names `logger.error({ err })` as safe, because a plain pino logger reads the error itself. It also says that `toString()` masks the message of a cause only by the policy of that cause. The README, the JSDoc of `redact`, `redactAllow` and `redactWith`, and the skill say the same.
 
 ## 10.0.0 - 2026-10-29
 

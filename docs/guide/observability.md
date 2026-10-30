@@ -387,12 +387,15 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
   and a stack that does not start with that header is masked as a whole.
   The header uses each field's mask result without calling the mask again.
   If a result cannot convert to text, the stack becomes `"[REDACTED]"`.
-  `toString()` honors message masking too. The `err.stack` property (whose header carries
-  the raw message) stays unredacted. `console.log(err)` and `util.inspect` on
-  Node and Bun print the error itself, not the log object: the raw stack, the
-  raw `details`, every own field and the raw cause. When redaction matters, log errors through
-  a structured serializer that hits `toJSON` (`logger.error({ err })`), never
-  via string interpolation.
+  `toString()` masks the message of each error by the policy of that error
+  only, so the message of a cause follows only its own policy. The `err.stack`
+  property (whose header carries the raw message) stays unredacted.
+  `console.log(err)` and `util.inspect` print the error itself, not the log
+  object. That output holds every own field with its raw value, the cause and
+  the members of an aggregate. When redaction matters, log `logObjectOf(err)` or
+  use a logger setup that calls it, such as the
+  [pino setup](./logging-with-pino). Never pass the error to `console.log`, and
+  never interpolate it into a string.
 - **Log path only**: the client path (the [public-error pipeline](./public-error)) emits
   only an explicit allowlist, so it is already safe by default.
 - **Defense-in-depth at the source**, not a replacement for logger-level

@@ -145,25 +145,32 @@ class PaymentDeclinedError extends BaseError<"PaymentDeclinedError"> {
 A deny-listed `"name"` or `"message"` is also masked in log stack headers on
 the root, causes, and aggregate members. Recognized headers reuse the masked
 fields and keep the frames; other stacks are masked as a whole.
-`toString()` masks a deny-listed message, but two common sinks stay raw:
+`toString()` masks a deny-listed message only in part, and two common sinks stay
+raw:
 
 ```ts
 err.redact(["message", "apiKey"]);
 
 JSON.stringify(err); // ✓ redacted, stack headers included
-`${err}`; // ✓ message masked (toString)
+console.log(logObjectOf(err)); // ✓ the same log object
+`${err}`; // ⚠ own message masked, the message of a cause is not
 err.stack; // ✗ the property keeps the raw message in its header
-console.log(err); // ✗ raw message, raw details.apiKey, raw own fields
+console.log(err); // ✗ prints the error itself, with raw values
 ```
 
-`console.log`, `console.error` and `util.inspect` on Node and Bun do not read
-the log object. They print the error itself: the stack with the raw message,
-the raw `details`, every own field of a subclass, and the cause with its own
-raw `details`. A key that the policy masks in the log is readable there.
+`console.log`, `console.error` and `util.inspect` do not read the log object.
+They print the error itself. On Node and Bun, that output holds the stack with
+the raw message and every own field with its raw value, such as `details`. It
+also holds the cause and the members of an aggregate, with their raw values.
+Treat the output of every console as raw.
 
-When redaction matters, route errors through a structured serializer that hits
-`toJSON` (`logger.error({ err })`). Do not pass the error to `console.log`, and
-do not interpolate it into log strings. See
+`toString()` applies the message policy of each error to that error only. The
+policy of the outer error does not reach the message of a cause.
+
+When redaction matters, log `logObjectOf(err)`, or use a logger setup that calls
+it, such as the [pino setup](./logging-with-pino). A plain pino logger reads the
+error itself, so `logger.error({ err })` leaks there too. Do not pass the error
+to `console.log`, and do not interpolate it into log strings. See
 [Observability](./observability#redacting-pii-from-logs).
 
 ## 7. `publicIssues({ messages: true })` passes the validator's `message` through
