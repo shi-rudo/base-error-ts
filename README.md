@@ -269,8 +269,8 @@ The package ships an agent skill for AI coding assistants in
 include it. Copy the folder into your project's skill directory, such as
 `.claude/skills/` for Claude Code or `.agents/skills/` for other agents. It
 teaches the assistant the catalogs, the guards and matchers, the log path with
-redaction, and the public-error pipeline of this major version, and it maps the
-APIs of older majors onto the current ones.
+redaction, the setups for pino and Sentry, and the public-error pipeline. It
+also maps the APIs of older majors onto the APIs of this major version.
 
 ## Requirements
 

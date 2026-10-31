@@ -18,7 +18,7 @@ description: >
 metadata:
   type: "core"
   library: "base-error"
-  library_version: "10.0.1"
+  library_version: "10.0.0"
   repository: "shi-rudo/base-error-ts"
   sources: "src/index.ts, src/public-error/index.ts, src/errors/catalog.ts, src/errors/StructuredError.ts, src/errors/BaseError.ts, src/public-error/PublicErrorCatalog.ts, src/public-error/types.ts, src/pino/index.ts, src/sentry/index.ts, docs/guide, MIGRATION.md"
 ---
