@@ -52,10 +52,11 @@ The setup has two parts:
   integration removed. A marker of the log object, such as
   `[Circular cause chain]`, becomes the message. Every other exception keeps
   what Sentry and your integrations wrote, such as a scrubbed or a cut value.
-  An exception without a node keeps no name and no message. If several
-  exceptions carry no `exception_id`, each gets the name and the message of
-  the node of the error. An event without an original error, for example
-  from `captureEvent`, has no policy to keep and stays as it is.
+  An exception without a node gets no name and the value `[No log node]`,
+  because Sentry discards an exception without a type and a value. If
+  several exceptions carry no `exception_id`, each gets the name and the
+  message of the node of the error. An event without an original error, for
+  example from `captureEvent`, has no policy to keep and stays as it is.
 - **The `LogObjectContext` integration.** It adds the log object of the error
   as the `error` context, with `code`, `category`, `retryable` and `details`.
   Sentry runs it before it normalizes the event, so `normalizeDepth` (3 by
@@ -131,7 +132,7 @@ For an error that denies `message` and `email`, the event holds this (shortened)
   context too, or leave the `LogObjectContext` integration out.
 - The hook knows the links `cause` and `errors[i]`. If you pass another `key`
   to `linkedErrorsIntegration`, the exceptions that Sentry links through that
-  key keep no name and no message.
+  key get no name and the value `[No log node]`.
 - The context keeps the log object to `normalizeDepth`. Deeper values become
   `[Object]`. If you need them, set a higher `normalizeDepth`.
 - If your dependency tree holds two copies of this package, an error from the
