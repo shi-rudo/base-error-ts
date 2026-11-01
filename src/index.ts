@@ -9,7 +9,7 @@ export type {
 } from "./errors/BaseError.js";
 export { StructuredError } from "./errors/StructuredError.js";
 export type { ErrorOptions } from "./errors/ErrorOptions.js";
-export { matchError } from "./errors/match.js";
+export { matchErrorCode } from "./errors/match.js";
 export { matchThrown } from "./errors/match-thrown.js";
 export type { ThrownMatcher } from "./errors/match-thrown.js";
 export { defineErrorClassSet } from "./errors/error-class-set.js";

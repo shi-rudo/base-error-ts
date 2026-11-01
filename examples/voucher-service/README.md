@@ -22,7 +22,7 @@ the library in silence; CI runs it with the other examples.
 | `errors.ts`        | The `defineErrors` catalog: codes, categories, retryability, metadata, and a catalog redaction policy. `ValidationError` collects request issues.                            |
 | `redemption.ts`    | The domain. It throws catalog errors, uses one `guard` invariant, and translates the gateway failure once, with its cause.                                                   |
 | `notifications.ts` | The fan-out. Provider failures collect into a `StructuredAggregateError`.                                                                                                    |
-| `logging.ts`       | The log edge: one structured line per handled failure, level by exhaustive `matchError`, masking with `partialMask` on top of the catalog policy.                            |
+| `logging.ts`       | The log edge: one structured line per handled failure, level by exhaustive `matchErrorCode`, masking with `partialMask` on top of the catalog policy.                        |
 | `queue.ts`         | The queue boundary: a dead letter crosses as JSON and comes back through `StructuredError.fromJSON`, aggregate members included.                                             |
 | `public-errors.ts` | The boundary catalog (`definePublicErrors`): one descriptor per public code, localized user messages, one vetted detail, field faults from `publicIssues`, and a retry hint. |
 | `server.ts`        | The HTTP edge: `matchThrown` classifies the thrown value, `toStructuredError` coerces the rest, then `project` → `localize` → `toProblem` builds the response.               |

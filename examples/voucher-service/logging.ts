@@ -1,13 +1,17 @@
 /**
  * The log edge. One line per handled failure, structured, with the level
- * decided by an exhaustive `matchError` over the catalog codes. `partialMask`
+ * decided by an exhaustive `matchErrorCode` over the catalog codes. `partialMask`
  * demonstrates a masking redaction on top of the catalog policy.
  */
-import { isStructuredError, matchError, partialMask } from "../../src/index.js";
+import {
+  isStructuredError,
+  matchErrorCode,
+  partialMask,
+} from "../../src/index.js";
 import type { StructuredError } from "../../src/index.js";
 
 export function levelFor(error: StructuredError<string, string>): string {
-  return matchError(error, {
+  return matchErrorCode(error, {
     VOUCHER_NOT_FOUND: () => "info",
     VOUCHER_EXPIRED: () => "info",
     VOUCHER_ALREADY_REDEEMED: () => "info",

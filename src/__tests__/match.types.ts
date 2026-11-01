@@ -2,7 +2,7 @@ import {
   StructuredError,
   defineErrors,
   detailsType,
-  matchError,
+  matchErrorCode,
   type CatalogError,
 } from "../index.js";
 
@@ -17,31 +17,31 @@ const UserErrors = defineErrors({
 declare const userError: CatalogError<typeof UserErrors>;
 
 // @ts-expect-error a code that the union does not contain is rejected next to a catch-all
-matchError(userError, { USER_NOT_FUND: () => 1, _: () => 2 });
+matchErrorCode(userError, { USER_NOT_FUND: () => 1, _: () => 2 });
 
-matchError(userError, {
+matchErrorCode(userError, {
   USER_NOT_FOUND: () => 1,
   RATE_LIMITED: () => 2,
   // @ts-expect-error a code that the union does not contain is rejected in a complete table
   USER_NOT_FUND: () => 3,
 });
 
-const withCatchAll: string | undefined = matchError(userError, {
+const withCatchAll: string | undefined = matchErrorCode(userError, {
   USER_NOT_FOUND: (error) => error.details?.userId,
   _: (error) => error.code,
 });
 
-const complete: number = matchError(userError, {
+const complete: number = matchErrorCode(userError, {
   USER_NOT_FOUND: () => 404,
   RATE_LIMITED: () => 429,
 });
 
 // @ts-expect-error without a catch-all, every code of the union needs a handler
-matchError(userError, { USER_NOT_FOUND: () => 404 });
+matchErrorCode(userError, { USER_NOT_FOUND: () => 404 });
 
 declare const wideError: StructuredError<string, string>;
 
-const anyCode: number = matchError(wideError, {
+const anyCode: number = matchErrorCode(wideError, {
   ANY_CODE: () => 1,
   _: () => 2,
 });
@@ -53,16 +53,16 @@ const CatchAllCodeErrors = defineErrors({
 declare const catchAllCodeError: CatalogError<typeof CatchAllCodeErrors>;
 
 // @ts-expect-error a union with the code _ cannot name a handler next to _, because _ is the catch-all
-matchError(catchAllCodeError, { RATE_LIMITED: () => 1, _: () => 2 });
+matchErrorCode(catchAllCodeError, { RATE_LIMITED: () => 1, _: () => 2 });
 
 // @ts-expect-error a union with the code _ cannot name a handler without _ either
-matchError(catchAllCodeError, { RATE_LIMITED: () => 1 });
+matchErrorCode(catchAllCodeError, { RATE_LIMITED: () => 1 });
 
-const catchAllOnly: number = matchError(catchAllCodeError, { _: () => 1 });
+const catchAllOnly: number = matchErrorCode(catchAllCodeError, { _: () => 1 });
 
 declare const underscorePrefixed: StructuredError<`_${string}`, string>;
 
-const underscorePrefixedCode: number = matchError(underscorePrefixed, {
+const underscorePrefixedCode: number = matchErrorCode(underscorePrefixed, {
   _internal: () => 1,
   _: () => 2,
 });
@@ -70,13 +70,13 @@ const underscorePrefixedCode: number = matchError(underscorePrefixed, {
 function statusWithCatchAll<E extends CatalogError<typeof UserErrors>>(
   error: E,
 ): number {
-  return matchError(error, { USER_NOT_FOUND: () => 404, _: () => 500 });
+  return matchErrorCode(error, { USER_NOT_FOUND: () => 404, _: () => 500 });
 }
 
 function statusOfEveryCode<E extends CatalogError<typeof UserErrors>>(
   error: E,
 ): number {
-  return matchError(error, {
+  return matchErrorCode(error, {
     USER_NOT_FOUND: () => 404,
     RATE_LIMITED: () => 429,
   });
@@ -85,34 +85,34 @@ function statusOfEveryCode<E extends CatalogError<typeof UserErrors>>(
 function statusOfAnyError<E extends StructuredError<string, string>>(
   error: E,
 ): number {
-  return matchError(error, { _: () => 500 });
+  return matchErrorCode(error, { _: () => 500 });
 }
 
 function misspelledInGeneric<E extends CatalogError<typeof UserErrors>>(
   error: E,
 ): number {
   // @ts-expect-error a code that the union does not contain is rejected in a generic caller
-  return matchError(error, { USER_NOT_FUND: () => 404, _: () => 500 });
+  return matchErrorCode(error, { USER_NOT_FUND: () => 404, _: () => 500 });
 }
 
 function statusOfBareCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
-  return matchError(error, { _: () => 500 });
+  return matchErrorCode(error, { _: () => 500 });
 }
 
 function namedHandlerOfBareCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
   // @ts-expect-error a code typed by a bare type parameter names no code, so a named handler cannot be checked
-  return matchError(error, { USER_NOT_FOUND: () => 404, _: () => 500 });
+  return matchErrorCode(error, { USER_NOT_FOUND: () => 404, _: () => 500 });
 }
 
 function statusOfAnnotatedCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
   const wide: StructuredError<string, string> = error;
-  return matchError(wide, { USER_NOT_FOUND: () => 404, _: () => 500 });
+  return matchErrorCode(wide, { USER_NOT_FOUND: () => 404, _: () => 500 });
 }
 
 declare const brandedCodeError: StructuredError<
@@ -120,7 +120,7 @@ declare const brandedCodeError: StructuredError<
   string
 >;
 
-const brandedCodeWithCatchAll: number = matchError(brandedCodeError, {
+const brandedCodeWithCatchAll: number = matchErrorCode(brandedCodeError, {
   SOME_CODE: () => 1,
   _: () => 2,
 });
@@ -130,12 +130,12 @@ declare const brandedLiteralsError:
   | StructuredError<"A" & CodeBrand, string>
   | StructuredError<"B" & CodeBrand, string>;
 
-const brandedLiteralsComplete: number = matchError(brandedLiteralsError, {
+const brandedLiteralsComplete: number = matchErrorCode(brandedLiteralsError, {
   A: () => 1,
   B: () => 2,
 });
 
-const brandedLiteralsCatchAll: number = matchError(brandedLiteralsError, {
+const brandedLiteralsCatchAll: number = matchErrorCode(brandedLiteralsError, {
   _: () => 2,
 });
 
@@ -143,7 +143,7 @@ declare const literalAndBrandedError:
   | StructuredError<"KNOWN", string>
   | StructuredError<string & CodeBrand, string>;
 
-const literalAndBrandedWithCatchAll: number = matchError(
+const literalAndBrandedWithCatchAll: number = matchErrorCode(
   literalAndBrandedError,
   { KNOWN: () => 1, _: () => 2 },
 );
@@ -174,12 +174,12 @@ function misspelledInGenericClassUnion<
   E extends EmailTakenError | RateLimitedError,
 >(error: E): number {
   // @ts-expect-error a code that the union does not contain is rejected in a generic caller of a class union
-  return matchError(error, { EMAIL_TAKN: () => 409, _: () => 500 });
+  return matchErrorCode(error, { EMAIL_TAKN: () => 409, _: () => 500 });
 }
 
 declare const openCodeError: StructuredError<"KNOWN" | (string & {}), string>;
 
-const openCodeWithCatchAll: number = matchError(openCodeError, {
+const openCodeWithCatchAll: number = matchErrorCode(openCodeError, {
   OTHER_CODE: () => 1,
   _: () => 2,
 });
@@ -190,23 +190,23 @@ const HttpErrors = defineErrors({
 });
 declare const httpError: CatalogError<typeof HttpErrors>;
 
-const numericKeyWithCatchAll: number = matchError(httpError, {
+const numericKeyWithCatchAll: number = matchErrorCode(httpError, {
   404: () => 1,
   _: () => 2,
 });
 
-const numericKeysComplete: number = matchError(httpError, {
+const numericKeysComplete: number = matchErrorCode(httpError, {
   404: () => 1,
   500: () => 2,
 });
 
 // @ts-expect-error a numeric key that names no code of the union is rejected
-matchError(httpError, { 403: () => 1, _: () => 2 });
+matchErrorCode(httpError, { 403: () => 1, _: () => 2 });
 
 declare const dynamicTable: Record<string, () => number>;
 
 // @ts-expect-error a table typed Record<string, …> names no code, so the compiler cannot check it against a closed union
-matchError(userError, dynamicTable);
+matchErrorCode(userError, dynamicTable);
 
 enum PaymentCode {
   Declined = "PAYMENT_DECLINED",
@@ -214,30 +214,30 @@ enum PaymentCode {
 }
 declare const paymentError: StructuredError<PaymentCode, "PAYMENT">;
 
-const enumCodesComplete: number = matchError(paymentError, {
+const enumCodesComplete: number = matchErrorCode(paymentError, {
   PAYMENT_DECLINED: () => 1,
   CARD_EXPIRED: () => 2,
 });
 
-const enumCodeWithCatchAll: number = matchError(paymentError, {
+const enumCodeWithCatchAll: number = matchErrorCode(paymentError, {
   [PaymentCode.Declined]: () => 1,
   _: () => 2,
 });
 
 // @ts-expect-error a key that names no member of the enum is rejected
-matchError(paymentError, { PAYMENT_DECLIND: () => 1, _: () => 2 });
+matchErrorCode(paymentError, { PAYMENT_DECLIND: () => 1, _: () => 2 });
 
 type Untyped = ReturnType<typeof JSON.parse>;
 declare const untypedError: Untyped;
 
-const untypedWithCatchAll: number = matchError(untypedError, {
+const untypedWithCatchAll: number = matchErrorCode(untypedError, {
   ANY_CODE: () => 1,
   _: () => 2,
 });
 
 declare const anyCodeError: StructuredError<Untyped, Untyped>;
 
-const anyCodeWithCatchAll: number = matchError(anyCodeError, {
+const anyCodeWithCatchAll: number = matchErrorCode(anyCodeError, {
   ANY_CODE: () => 1,
   _: () => 2,
 });

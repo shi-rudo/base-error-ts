@@ -8,7 +8,7 @@ import {
   defineErrors,
   detailsType,
   isStructuredError,
-  matchError,
+  matchErrorCode,
   toStructuredError,
   type CatalogError,
   type ErrorOptions,
@@ -53,37 +53,37 @@ class RateLimited extends StructuredError<"RATE_LIMITED", "LIMIT"> {
 
 declare const failure: EmailTaken | RateLimited;
 
-export const status: number = matchError(failure, {
+export const status: number = matchErrorCode(failure, {
   EMAIL_TAKEN: () => 409,
   RATE_LIMITED: (error) => (error.retryable ? 429 : 503),
 });
 
-// @ts-expect-error matchError needs a case for every code of the union
-matchError(failure, { EMAIL_TAKEN: () => 409 });
+// @ts-expect-error matchErrorCode needs a case for every code of the union
+matchErrorCode(failure, { EMAIL_TAKEN: () => 409 });
 
-export const retryable: boolean = matchError(failure, {
+export const retryable: boolean = matchErrorCode(failure, {
   RATE_LIMITED: (error) => error.retryable,
   _: () => false,
 });
 
-// @ts-expect-error matchError rejects a code that the union does not contain
-matchError(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
+// @ts-expect-error matchErrorCode rejects a code that the union does not contain
+matchErrorCode(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
 
 export function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
-  return matchError(error, { RATE_LIMITED: () => 429, _: () => 500 });
+  return matchErrorCode(error, { RATE_LIMITED: () => 429, _: () => 500 });
 }
 
 export function statusOfAnyCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
-  return matchError(error, { _: () => 500 });
+  return matchErrorCode(error, { _: () => 500 });
 }
 
 declare const brandedFailure: StructuredError<
   string & { readonly __brand: "ErrorCode" },
   string
 >;
-export const brandedStatus: number = matchError(brandedFailure, {
+export const brandedStatus: number = matchErrorCode(brandedFailure, {
   SOME_CODE: () => 409,
   _: () => 500,
 });
@@ -91,8 +91,8 @@ export const brandedStatus: number = matchError(brandedFailure, {
 export function misspelledStatusOf<E extends EmailTaken | RateLimited>(
   error: E,
 ): number {
-  // @ts-expect-error matchError rejects an unknown code also for a generic error
-  return matchError(error, { EMAIL_TAKN: () => 409, _: () => 500 });
+  // @ts-expect-error matchErrorCode rejects an unknown code also for a generic error
+  return matchErrorCode(error, { EMAIL_TAKN: () => 409, _: () => 500 });
 }
 
 const AuthzErrors = defineErrors(

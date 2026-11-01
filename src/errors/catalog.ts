@@ -208,7 +208,7 @@ type KeyCases<
 } & { _?: (error: E) => unknown };
 
 type CatchAllKeyRule =
-  "match is unavailable: the key _ is also the catch-all; rename the key, or use matchError";
+  "match is unavailable: the key _ is also the catch-all; rename the key, or use matchErrorCode";
 
 /**
  * Rejects a key that the catalog does not define. Without a `_` catch-all,
@@ -255,7 +255,7 @@ export type Catalog<
   ): value is CatalogErrorOf<Catalog<T, P>, K>;
   /**
    * Exhaustively dispatch on the key of an error of this catalog, with type
-   * narrowing. `matchError` with handlers named by key: it checks no
+   * narrowing. `matchErrorCode` with handlers named by key: it checks no
    * provenance, and it throws when no case matches and no `_` catch-all
    * exists.
    */
@@ -270,7 +270,7 @@ export type Catalog<
 
 /**
  * The union of every error type a catalog can produce. Pass this closed set to
- * {@link matchError}. `meta` is excluded automatically.
+ * {@link matchErrorCode}. `meta` is excluded automatically.
  *
  * @example
  * ```ts
@@ -580,7 +580,7 @@ export function defineErrors(
     ): unknown {
       if (keyIsCatchAll) {
         throw new Error(
-          'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchError',
+          'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchErrorCode',
         );
       }
       const key = keyByCode.get(error.code);

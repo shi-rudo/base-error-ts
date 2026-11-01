@@ -82,7 +82,7 @@ export const AuthzErrors = defineErrors(
 ```
 
 Definitions of two areas need two prefixes, so they belong in two catalogs.
-Match a union of two catalogs with `matchError`. It dispatches on the code. A
+Match a union of two catalogs with `matchErrorCode`. It dispatches on the code. A
 quoted code is a valid key of an object literal, so it needs no brackets:
 
 ```ts
@@ -90,7 +90,7 @@ type AccessError =
   CatalogError<typeof AuthzErrors> | CatalogError<typeof StorageErrors>;
 
 function toStatus(error: AccessError): number {
-  return matchError(error, {
+  return matchErrorCode(error, {
     "restaurant.authz.not_a_member": () => 403,
     "restaurant.authz.missing_role": () => 403,
     "restaurant.storage.not_found": () => 404,

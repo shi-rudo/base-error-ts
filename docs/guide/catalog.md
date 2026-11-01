@@ -51,7 +51,7 @@ The catalog records local provenance for every generated instance:
 ```ts
 if (AppErrors.is(error)) {
   // CatalogError<typeof AppErrors>
-  return matchError(error, {
+  return matchErrorCode(error, {
     USER_NOT_FOUND: () => 404,
     RATE_LIMITED: () => 429,
   });
@@ -139,7 +139,7 @@ type UserNotFound = CatalogErrorOf<typeof AppErrors, "USER_NOT_FOUND">;
 ```
 
 `AppErrors.codes` is an immutable runtime list of the finite code set. Adding a
-code changes `CatalogError`, so every exhaustive `matchError` call must handle
+code changes `CatalogError`, so every exhaustive `matchErrorCode` call must handle
 the new member before the application compiles again.
 
 ## Codes with a prefix
@@ -220,12 +220,12 @@ function describe(error: AuthzError): string {
 }
 ```
 
-`match` follows the exhaustiveness rules of `matchError`. It rejects a key that
+`match` follows the exhaustiveness rules of `matchErrorCode`. It rejects a key that
 the catalog does not define. A key of the catalog that a narrowed error cannot
 have still compiles, because `match` checks the keys of the catalog, not the
 codes of the error. `match` checks no provenance,
 so narrow a caught value with `AuthzErrors.is(value)` first. Every catalog has
-`match`. Without a prefix, it dispatches as `matchError` does. A catalog with
+`match`. Without a prefix, it dispatches as `matchErrorCode` does. A catalog with
 the key `_` cannot use `match`, because `_` is the catch-all. The compiler
 rejects the call, and `match` throws at runtime.
 

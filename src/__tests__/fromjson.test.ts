@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   StructuredAggregateError,
   StructuredError,
-  matchError,
+  matchErrorCode,
 } from "../index.js";
 import { MAX_CAUSE_DEPTH } from "../errors/walker-bounds.js";
 import { wideArrayLike } from "./hostile-values.fixture.js";
@@ -433,14 +433,14 @@ describe("StructuredError.fromJSON", () => {
   });
 
   describe("composition", () => {
-    it("a reconstructed error composes with matchError", () => {
+    it("a reconstructed error composes with matchErrorCode", () => {
       const restored = StructuredError.fromJSON({
         code: "RATE_LIMITED",
         category: "RATE_LIMIT",
         retryable: true,
         message: "x",
       });
-      const status = matchError(restored, {
+      const status = matchErrorCode(restored, {
         RATE_LIMITED: () => 429,
         _: () => 500,
       });

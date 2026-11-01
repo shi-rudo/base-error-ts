@@ -2,12 +2,13 @@
 
 ## v9 to v10
 
-v10 has three breaking changes. It ships one ES module build (proposal 0019):
+v10 has four breaking changes. It ships one ES module build (proposal 0019):
 the CommonJS build is gone, and `require()` loads the ES module build on
 Node.js 24, so `import` and `require` load the same classes. A redaction policy
 in a catalog definition is a floor (proposal 0021): a policy on a single error
-adds to it and no longer replaces it. `matchError` rejects a handler for a code
-that the union does not contain. The other changes of v10 add features
+adds to it and no longer replaces it. `matchError` is now `matchErrorCode`,
+without an alias. It rejects a handler for a code that the union does not
+contain. The other changes of v10 add features
 and keep the behavior of v9: `logObjectOf`, the subpaths
 `@shirudo/base-error/pino` and `@shirudo/base-error/sentry`, and the `prefix`
 and `match` of a catalog.
@@ -51,7 +52,15 @@ applies the per-instance policy first and the catalog policy after it.
 - Per-instance calls keep last-wins among themselves. An error without a
   catalog policy behaves as before.
 
-### `matchError` rejects a code outside the union
+### `matchError` is now `matchErrorCode`
+
+Replace each import and call of `matchError` with `matchErrorCode`. The
+signature, the compile-time checks and the runtime stay the same. A test or a
+log query that matched the runtime message of an unhandled code reads
+`matchErrorCode: unhandled error code` now. Proposal 0022 records the reason:
+`@shirudo/result` uses `matchError` for the error side of a result.
+
+### `matchErrorCode` rejects a code outside the union
 
 Before v10, a handler table with a `_` catch-all accepted any extra handler,
 and so did a table with a handler for every code. A misspelled code compiled,
@@ -69,7 +78,7 @@ and its errors reached `_`.
   object literal, or type it with the codes of the union.
 - An error whose code type is a bare type parameter names no code. An example
   is `StructuredError<Code>` in a generic function. For such an error,
-  `matchError` takes only a table with a single `_` handler. To name other
+  `matchErrorCode` takes only a table with a single `_` handler. To name other
   handlers, assign the error to a variable typed with the union of its codes,
   or with `StructuredError<string>`, and match that variable.
 - The runtime is unchanged. A wide `StructuredError<string>`, a branded code

@@ -43,7 +43,7 @@ export function ownCase<H>(
 }
 
 type CatchAllCodeRule =
-  "matchError is unavailable: the code _ is also the catch-all; rename the code";
+  "matchErrorCode is unavailable: the code _ is also the catch-all; rename the code";
 
 /**
  * The names of a handler table. A numeric object key such as `404` has the
@@ -137,7 +137,7 @@ type NamedHandlerTable<
  *
  * @example
  * ```ts
- * const status = matchError(err, {
+ * const status = matchErrorCode(err, {
  *   USER_NOT_FOUND: () => 404,
  *   EMAIL_TAKEN: () => 409,
  *   RATE_LIMITED: (e) => (e.retryable ? 429 : 503),
@@ -147,13 +147,13 @@ type NamedHandlerTable<
  * @example
  * ```ts
  * // Partial handling with a catch-all
- * matchError(err, {
+ * matchErrorCode(err, {
  *   USER_NOT_FOUND: () => render404(),
  *   _: (e) => renderGeneric(e.code),
  * });
  * ```
  */
-export function matchError<
+export function matchErrorCode<
   E extends StructuredError<string, string>,
   const C extends Cases<E>,
   // The compiler infers `Code` from the apparent type of the error. For an
@@ -173,7 +173,7 @@ export function matchError<
 
   if (!handler) {
     throw new Error(
-      `matchError: unhandled error code "${error.code}" (no matching case and no "_" catch-all)`,
+      `matchErrorCode: unhandled error code "${error.code}" (no matching case and no "_" catch-all)`,
     );
   }
 

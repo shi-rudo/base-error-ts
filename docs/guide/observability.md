@@ -438,7 +438,7 @@ serialized shape.
 
 ```ts
 const err = StructuredError.fromJSON(payload); // payload: unknown
-matchError(err, { PARSE_FAILED: () => retry(), _: (e) => report(e) });
+matchErrorCode(err, { PARSE_FAILED: () => retry(), _: (e) => report(e) });
 ```
 
 It is for reconstruction **within one trust/bounded-context boundary**:
@@ -482,7 +482,7 @@ on `code`, not on `_tag`/`instanceof`.
 ::: warning Across services, translate. Don't trust
 `fromJSON` rebuilds _shape_, not authority: whoever produced the payload can
 forge `code`/`retryable`. Don't use reconstructed fields for authorization, and
-don't `matchError` on another service's codes as if they were yours.
+don't `matchErrorCode` on another service's codes as if they were yours.
 Reconstruct, then translate through an Anti-Corruption Layer into your own
 model. The inter-service contract should be a safe projection (a versioned DTO),
 not the log shape.

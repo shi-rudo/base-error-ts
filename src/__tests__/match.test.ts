@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { matchError, StructuredError } from "../index.js";
+import { matchErrorCode, StructuredError } from "../index.js";
+import * as rootEntry from "../index.js";
 
 // A closed union of distinct structured error types, each with a literal code
 // and its own details shape (the shape a catalog produces).
@@ -35,10 +36,10 @@ function rateLimited(retryAfter: number): RateLimited {
   });
 }
 
-describe("matchError", () => {
+describe("matchErrorCode", () => {
   it("dispatches to the handler for the matching code", () => {
     const status = (err: AppError) =>
-      matchError(err, {
+      matchErrorCode(err, {
         USER_NOT_FOUND: () => 404,
         RATE_LIMITED: () => 429,
       });
@@ -48,12 +49,12 @@ describe("matchError", () => {
   });
 
   it("infers the result type from the handler return types", () => {
-    // Typed bindings: if matchError regressed to `unknown`, typecheck fails.
-    const n: number = matchError(userNotFound("1") as AppError, {
+    // Typed bindings: if matchErrorCode regressed to `unknown`, typecheck fails.
+    const n: number = matchErrorCode(userNotFound("1") as AppError, {
       USER_NOT_FOUND: () => 404,
       RATE_LIMITED: () => 429,
     });
-    const s: string = matchError(rateLimited(1) as AppError, {
+    const s: string = matchErrorCode(rateLimited(1) as AppError, {
       USER_NOT_FOUND: () => "a",
       _: (e) => e.code,
     });
@@ -63,7 +64,7 @@ describe("matchError", () => {
 
   it("narrows the error to its case so per-code details are typed", () => {
     const describeError = (err: AppError) =>
-      matchError(err, {
+      matchErrorCode(err, {
         // e.details is { userId: string } | undefined here
         USER_NOT_FOUND: (e) => `missing:${e.details?.userId}`,
         // e.details is { retryAfter: number } | undefined here
@@ -76,7 +77,7 @@ describe("matchError", () => {
 
   it("uses the `_` catch-all for unhandled codes", () => {
     const result = (err: AppError) =>
-      matchError(err, {
+      matchErrorCode(err, {
         USER_NOT_FOUND: () => "handled",
         _: (e) => `fallback:${e.code}`,
       });
@@ -89,7 +90,7 @@ describe("matchError", () => {
     // Force the runtime path by handing it a code outside the provided cases.
     const err = rateLimited(1);
     expect(() =>
-      matchError(err as unknown as UserNotFound, {
+      matchErrorCode(err as unknown as UserNotFound, {
         USER_NOT_FOUND: () => "only this",
       }),
     ).toThrow(/unhandled error code "RATE_LIMITED"/);
@@ -113,7 +114,7 @@ describe("matchError", () => {
       });
 
       // Exact handler wins.
-      const exact = matchError(
+      const exact = matchErrorCode(
         err as StructuredError<typeof code, "CAT">,
         {
           [code]: (e) => `handled:${e.code}`,
@@ -122,14 +123,14 @@ describe("matchError", () => {
       expect(exact).toBe(`handled:${code}`);
 
       // With only a catch-all, the `_` handler must be used (not an inherited method).
-      const fallback = matchError(err, {
+      const fallback = matchErrorCode(err, {
         _: (e) => `fallback:${e.code}`,
       });
       expect(fallback).toBe(`fallback:${code}`);
 
       // With no matching case and no `_`, it must throw the clear error.
       expect(() =>
-        matchError(err as unknown as StructuredError<"OTHER", "CAT">, {
+        matchErrorCode(err as unknown as StructuredError<"OTHER", "CAT">, {
           OTHER: () => "nope",
         }),
       ).toThrow(/unhandled error code/);
@@ -144,11 +145,37 @@ describe("matchError", () => {
       message: "x",
     });
 
-    const out = matchError(err, {
+    const out = matchErrorCode(err, {
       A: (e) => e.code,
       B: (e) => e.code,
     });
 
     expect(out).toBe("A");
+  });
+});
+
+describe("the name matchErrorCode", () => {
+  it("is the export of the root entry, without the old name matchError", () => {
+    const names = Object.keys(rootEntry);
+
+    expect(names).toContain("matchErrorCode");
+    expect(names).not.toContain("matchError");
+  });
+
+  it("starts the runtime message of an unhandled code", () => {
+    const error = new StructuredError({
+      code: "RATE_LIMITED",
+      category: "RATE_LIMIT",
+      retryable: true,
+      message: "slow down",
+    });
+    const bypass = matchErrorCode as (
+      error: StructuredError<string, string>,
+      cases: Record<string, () => unknown>,
+    ) => unknown;
+
+    expect(() => bypass(error, {})).toThrow(
+      'matchErrorCode: unhandled error code "RATE_LIMITED"',
+    );
   });
 });
