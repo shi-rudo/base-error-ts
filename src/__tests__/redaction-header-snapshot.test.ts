@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { BaseError } from "../index.js";
+import { MAX_DATA_WIDTH } from "../errors/walker-bounds.js";
 
 function customCause(fields: Record<string, unknown>) {
   class WithDecisions extends BaseError<"WithDecisions"> {
@@ -21,9 +22,12 @@ it("does not read cause-array indices again to mask stack headers", () => {
     },
   });
   const log = customCause({ errors }).redact(["message"]).toLogObject();
-  expect(reads).toBe(60_000);
+  // The copy takes the first entries up to the width cap and reads each once.
+  expect(reads).toBe(MAX_DATA_WIDTH);
   expect(log).toMatchObject({ code: 0, retryable: false });
-  expect((log.cause as Record<string, unknown>).errors).toHaveLength(60_000);
+  expect((log.cause as Record<string, unknown>).errors).toHaveLength(
+    MAX_DATA_WIDTH + 1,
+  );
 });
 
 it("masks the stack value that was copied even when its getter changes later", () => {

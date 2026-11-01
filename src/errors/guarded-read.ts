@@ -107,6 +107,19 @@ export function readOwnProperty(value: unknown, key: string): unknown {
 }
 
 /**
+ * The number of own keys of `value`, symbols and non-enumerable keys
+ * included, or `undefined` when the enumeration throws. It reads no
+ * descriptor.
+ */
+export function readOwnKeyCount(value: object): number | undefined {
+  try {
+    return Reflect.ownKeys(value).length;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Reads at most `limit` own descriptors and yields the enumerable string keys.
  * Symbols and non-enumerable keys consume the limit. Key enumeration itself
  * remains eager, because JavaScript has no lazy own-key operation.

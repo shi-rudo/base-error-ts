@@ -24,6 +24,22 @@ export function moreAggregatedErrorsMarker(dropped: number): string {
   return `[${dropped} more aggregated errors]`;
 }
 
+/** The tail of a data array cut at the width cap. */
+export function moreItemsMarker(dropped: number): string {
+  return `[${dropped} more items]`;
+}
+
+/**
+ * The key that holds the number of keys a data object dropped at the width
+ * cap. A key, not an entry, because an object has no tail.
+ */
+export const MORE_KEYS_KEY = "[more keys]";
+
+/** Binary data, written as its type and its size instead of its entries. */
+export function binaryDataMarker(type: string, size: number): string {
+  return `[${type}(${size})]`;
+}
+
 /** Work omitted because the shared log-build allowance is exhausted. */
 export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 

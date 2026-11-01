@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../index.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 describe("redaction of unreadable or oversized cause policy output", () => {
   it.each([[], {}])(
@@ -76,7 +77,10 @@ describe("redaction of unreadable or oversized cause policy output", () => {
 
   it("writes cause policy output beyond the log budget as the size marker", () => {
     const inner = new BaseError("inner").redactWith(() => ({
-      errors: { ids: Array(120_000).fill(0), name: "private data name" },
+      errors: {
+        ids: leavesInChunks(120_000, () => 0),
+        name: "private data name",
+      },
       cause: { name: "Error", message: "leaf diagnosis", retryable: false },
       message: "inner diagnosis",
     }));

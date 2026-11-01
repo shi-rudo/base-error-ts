@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { BaseError, StructuredError } from "../index.js";
 
 import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
+import { keysInChunks, leavesInChunks } from "./chunked-data.fixture.js";
 
 type Log = Record<string, unknown>;
 
@@ -29,10 +30,7 @@ function detailsAtRootAndAsCause(details: unknown): [unknown, unknown] {
 function causeChainBeyondTheLogBudget(): unknown {
   let cause: unknown;
   for (let i = 0; i < 60; i++) {
-    cause = paymentFailure(
-      { samples: Array.from({ length: 2_000 }, () => i) },
-      cause,
-    );
+    cause = paymentFailure({ samples: leavesInChunks(2_000, () => i) }, cause);
   }
   return cause;
 }
@@ -118,7 +116,7 @@ describe("root details are copied as log data, as on a cause", () => {
 
 describe("root details within the log budget", () => {
   it("writes the cause chain before oversized root details", () => {
-    const details = { samples: Array.from({ length: 150_000 }, (_, i) => i) };
+    const details = { samples: leavesInChunks(150_000, (i) => i) };
     const error = paymentFailure(details, new Error("db down"));
 
     const log = error.toLogObject();
@@ -143,7 +141,7 @@ describe("root details within the log budget", () => {
   });
 
   it("writes root details beyond the budget as the size marker of a cause", () => {
-    const details = { samples: Array.from({ length: 150_000 }, (_, i) => i) };
+    const details = { samples: leavesInChunks(150_000, (i) => i) };
 
     const [atRoot, asCause] = detailsAtRootAndAsCause(details);
 
@@ -152,16 +150,19 @@ describe("root details within the log budget", () => {
   });
 
   it("reads a wide root details object only within the log budget", () => {
-    const wide = Object.fromEntries(
-      Array.from({ length: 150_000 }, (_, i) => [`k${i}`, i]),
-    );
     let reads = 0;
-    const counted = new Proxy(wide, {
+    const counting: ProxyHandler<object> = {
       get(target, key, receiver) {
         reads++;
         return Reflect.get(target, key, receiver);
       },
-    });
+    };
+    const counted = Object.fromEntries(
+      Object.entries(keysInChunks(150_000)).map(([name, chunk]) => [
+        name,
+        new Proxy(chunk, counting),
+      ]),
+    );
 
     const log = paymentFailure(counted).toLogObject();
 

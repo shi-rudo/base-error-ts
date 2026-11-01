@@ -5,6 +5,7 @@ import {
   detailsType,
   logObjectOf,
 } from "../index.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 const AccountErrors = defineErrors({
   LOGIN_FAILED: {
@@ -215,7 +216,7 @@ describe("a catalog redaction policy as a floor", () => {
   });
 
   it("keeps the size marker at a cause position when the copy of the custom output exceeds the budget", () => {
-    const blob = Array.from({ length: 99_990 }, (_, index) => index);
+    const blob = leavesInChunks(99_990, (index) => index);
     const cause = AccountErrors.create
       .LOGIN_FAILED("login for u1 failed", {
         details: { ...loginDetails, blob } as typeof loginDetails,
@@ -252,7 +253,7 @@ describe("a catalog redaction policy as a floor", () => {
   });
 
   it("logs a large detail in full under redactWith and a floor", () => {
-    const blob = Array.from({ length: 60_000 }, (_, index) => index);
+    const blob = leavesInChunks(60_000, (index) => index);
     const error = AccountErrors.create
       .LOGIN_FAILED("login for u1 failed", {
         details: { ...loginDetails, blob } as typeof loginDetails,
@@ -264,19 +265,19 @@ describe("a catalog redaction policy as a floor", () => {
 
     expect(log.code).toBe("LOGIN_FAILED");
     expect(details.password).toBe("[REDACTED]");
-    expect((details.blob as unknown[]).length).toBe(60_000);
+    expect((details.blob as unknown[][]).flat()).toHaveLength(60_000);
   });
 
   it("copies the output of redactWith for errors inside details on the budget of the enclosing log", () => {
     let indexReads = 0;
-    const big = new Proxy(
-      Array.from({ length: 60_000 }, (_, index) => index),
-      {
-        get(target, key, receiver) {
-          if (typeof key === "string" && /^\d+$/.test(key)) indexReads += 1;
-          return Reflect.get(target, key, receiver);
-        },
-      },
+    const big = leavesInChunks(60_000, (index) => index).map(
+      (chunk) =>
+        new Proxy(chunk, {
+          get(target, key, receiver) {
+            if (typeof key === "string" && /^\d+$/.test(key)) indexReads += 1;
+            return Reflect.get(target, key, receiver);
+          },
+        }),
     );
     const inners = [1, 2, 3].map(() =>
       AccountErrors.create

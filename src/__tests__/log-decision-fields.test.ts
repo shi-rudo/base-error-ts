@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError, StructuredError } from "../index.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 function exhaustedCause(): StructuredError<"DO_NOT_RETRY", "VALIDATION"> {
   const cause = new StructuredError({
@@ -8,7 +9,7 @@ function exhaustedCause(): StructuredError<"DO_NOT_RETRY", "VALIDATION"> {
     retryable: false,
     message: "failed",
   });
-  Object.defineProperty(cause, "name", { value: Array(100_001).fill(1) });
+  Object.defineProperty(cause, "name", { value: leavesInChunks() });
   return cause;
 }
 
@@ -37,7 +38,7 @@ describe("decision fields after a size cut", () => {
       code: 0,
       retryable: false,
     });
-    Object.defineProperty(cause, "stack", { value: Array(100_001).fill(1) });
+    Object.defineProperty(cause, "stack", { value: leavesInChunks() });
     const log = new BaseError(
       "outer",
       new AggregateError([cause], "aggregate"),
@@ -66,7 +67,7 @@ describe("decision fields after a size cut", () => {
       category: hostile,
       retryable: hostile,
     });
-    Object.defineProperty(cause, "stack", { value: Array(100_001).fill(1) });
+    Object.defineProperty(cause, "stack", { value: leavesInChunks() });
 
     const log = new BaseError("outer", cause).toLogObject();
 
@@ -82,7 +83,7 @@ describe("decision fields after a size cut", () => {
       readonly retryable = false;
     }
     const cause = Object.assign(new Error("native"), {
-      details: Array(100_001).fill(1),
+      details: leavesInChunks(),
     });
 
     const log = new Broken("outer", cause).toLogObject();

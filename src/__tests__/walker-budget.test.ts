@@ -13,6 +13,7 @@ import { project } from "../public-error/project.js";
 
 import { causeWithRawDetails } from "./raw-log-data.fixture.js";
 import { toProblem } from "../public-error/toProblem.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 /**
  * A small object graph with shared (non-circular) references that expands
@@ -215,9 +216,13 @@ describe("walker bounds agree across surfaces", () => {
 });
 
 describe("walker node budget counts every value", () => {
-  const ids = Array.from({ length: 120_000 }, (_, index) => index);
+  const ids = leavesInChunks(120_000, (index) => index);
 
-  class WideError extends StructuredError<"WIDE", "TEST", { ids: number[] }> {
+  class WideError extends StructuredError<
+    "WIDE",
+    "TEST",
+    { ids: unknown[][] }
+  > {
     constructor() {
       super({
         code: "WIDE",
@@ -257,6 +262,6 @@ describe("walker node budget counts every value", () => {
 
     expect(log.details).toBe("[Max log size exceeded]");
     expect(error.details?.ids).toBe(ids);
-    expect(ids).toHaveLength(120_000);
+    expect(ids.flat()).toHaveLength(120_000);
   });
 });

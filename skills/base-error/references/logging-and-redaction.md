@@ -128,8 +128,11 @@ converted explicitly. Keep payloads out; this is for identifiers.
 
 The log build never throws and stays bounded. A failed read leaves
 `[Unserializable value]`, a shared cause reads `[Shared cause]` at its second
-position, and an exhausted size budget leaves `[Max log size exceeded]`. These
-are values in the log, not errors to handle.
+position, and an exhausted size budget leaves `[Max log size exceeded]`. An
+array in log data keeps at most 1000 entries and ends with
+`[N more items]`; an object keeps at most 1000 keys and gets the key
+`[more keys]`; binary data reads as its type and size, such as
+`[Uint8Array(1000000)]`. These are values in the log, not errors to handle.
 
 ## Reconstructing: `StructuredError.fromJSON`
 

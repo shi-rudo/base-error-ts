@@ -45,6 +45,18 @@ The error writes its cause chain before its own `details`, so oversized details
 cannot cut the chain that explains the failure. Details beyond the log budget of
 100,000 nodes become `[Max log size exceeded]`.
 
+One wide value cannot spend that budget alone:
+
+- The copy takes at most 1000 entries of an array. The array then ends with a
+  count marker, such as `"[199000 more items]"`.
+- The copy takes at most 1000 keys of an object. The key `[more keys]` then
+  holds the number of own keys past the cut.
+- A typed array, a `Buffer`, a `DataView` or an `ArrayBuffer` is written as its
+  type and size, such as `"[Uint8Array(1000000)]"`. Its entries are not log
+  data.
+
+A sibling such as `orderId` stays in the log. Proposal 0023 records the caps.
+
 ### Aggregate causes
 
 When a cause carries an `errors` array (a native `AggregateError` from

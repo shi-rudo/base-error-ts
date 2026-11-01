@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../index.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 type Log = Record<string, unknown>;
 
@@ -191,7 +192,7 @@ describe("log data serialization failures stay local", () => {
     let laterReads = 0;
     const payload = {
       failed: throwingToJSON(),
-      wide: Array(200_000).fill(1),
+      wide: leavesInChunks(200_000),
       get later() {
         laterReads++;
         return "must not be read";

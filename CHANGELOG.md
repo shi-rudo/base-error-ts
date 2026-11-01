@@ -28,6 +28,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Changed
 
+- **One wide value no longer costs all of `details`.** The log-data copy spent one node of the build budget per entry, so `Buffer.alloc(1_000_000)` or an array of 200 000 entries in `details` spent the whole budget, and `details` became `[Max log size exceeded]` with every sibling, such as `orderId`. Now the copy takes at most 1000 entries of an array, which then ends with a marker such as `[199000 more items]`, and at most 1000 keys of an object, which then gets the key `[more keys]` with the number of own keys past the cut. A typed array, a `Buffer`, a `DataView` and an `ArrayBuffer` read as their type and size, such as `[Uint8Array(1000000)]`; before, a `Uint8Array` logged as an object keyed by index, and a `Buffer` as its `toJSON` output. See `proposals/0023-log-object-size-caps.md`.
+
 - **The definition errors of `defineErrors` name the key.** With a prefix, a key is no longer always the code. The messages now read `keys must be strings`, `keys must not be empty`, `invalid definition for key "…"` and `unknown definition field "…" for key "…"`. A second argument that is not a plain object now throws. Before, `defineErrors` ignored it.
 
 ### Fixed

@@ -161,6 +161,7 @@ bounded:
 | A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws leaves `[Unserializable value]` at its own key |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
 | Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Cause depth counts separately |
+| Data width is limited to 1000 entries per array and 1000 keys per object | An array ends with `[N more items]`, and an object gets the key `[more keys]` with the number of own keys past the cut. Binary data reads as its type and size |
 
 Rejected keys, failed hooks, and width cuts remain silent in production. Each library-owned build
 shares a 100,000-visit budget across causes, data values, and own-key inspections

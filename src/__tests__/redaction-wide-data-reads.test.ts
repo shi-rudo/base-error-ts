@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../index.js";
 import { MAX_DATA_NODES } from "../errors/walker-bounds.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 type Counts = {
   descriptors: number;
@@ -143,14 +144,16 @@ describe.each<Mode>(["allow", "deny"])(
   (mode) => {
     it("bounds index reads of a cause policy's list and keeps the root decisions", () => {
       let reads = 0;
-      const errors = Array.from({ length: 100_010 }, (_, index) => index);
-      for (let index = 0; index < errors.length; index++) {
-        Object.defineProperty(errors, index, {
-          get() {
-            reads++;
-            return null;
-          },
-        });
+      const errors = leavesInChunks(100_010, (index) => index);
+      for (const chunk of errors) {
+        for (let index = 0; index < chunk.length; index++) {
+          Object.defineProperty(chunk, index, {
+            get() {
+              reads++;
+              return null;
+            },
+          });
+        }
       }
       class WithDecisions extends BaseError<"WithDecisions"> {
         readonly code = 0;
