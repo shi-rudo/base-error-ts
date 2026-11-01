@@ -145,15 +145,14 @@ class PaymentDeclinedError extends BaseError<"PaymentDeclinedError"> {
 A deny-listed `"name"` or `"message"` is also masked in log stack headers on
 the root, causes, and aggregate members. Recognized headers reuse the masked
 fields and keep the frames; other stacks are masked as a whole.
-`toString()` masks a deny-listed message only in part, and two common sinks stay
-raw:
+`toString()` masks only a deny-listed message, and two common sinks stay raw:
 
 ```ts
 err.redact(["message", "apiKey"]);
 
 JSON.stringify(err); // ✓ redacted, stack headers included
 console.log(logObjectOf(err)); // ✓ the same log object
-`${err}`; // ⚠ own message masked, the message of a cause is not
+`${err}`; // ✓ the message of the error and of each cause masked
 err.stack; // ✗ the property keeps the raw message in its header
 console.log(err); // ✗ prints the error itself, with raw values
 ```
@@ -164,8 +163,9 @@ the raw message and every own field with its raw value, such as `details`. It
 also holds the cause and the members of an aggregate, with their raw values.
 Treat the output of every console as raw.
 
-`toString()` applies the message policy of each error to that error only. The
-policy of the outer error does not reach the message of a cause.
+`toString()` applies a deny-list on `"message"` to the message of the error and
+of every cause and aggregate member below it, as the log object does. It does
+not apply `redactWith`, and it renders no `details`.
 
 When redaction matters, log `logObjectOf(err)`, or use a logger setup that calls
 it, such as the [pino setup](./logging-with-pino). A plain pino logger reads the

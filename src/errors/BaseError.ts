@@ -6,7 +6,11 @@ import {
 import { serializeLogData, normalizeLogNumber } from "./log-data.js";
 import type { LogRegion } from "./log-position.js";
 import { allowListRedaction, denyListRedaction } from "./log-redaction.js";
-import { renderCauseChain, renderValue } from "./cause-chain-render.js";
+import {
+  renderCauseChain,
+  renderValue,
+  type MessageFilter,
+} from "./cause-chain-render.js";
 import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
 import { isNativeError } from "./native-error.js";
 import {
@@ -239,8 +243,9 @@ export class BaseError<T extends string> extends Error {
    * `name: message` header, the redaction rewrites that header with the
    * masked fields and keeps the frames. If a stack does not start with that
    * header, the redaction hands the whole stack to the mask. The
-   * {@link toString} render masks a deny-listed technical message of this
-   * error as well, but not the message of a cause.
+   * {@link toString} render masks a deny-listed technical message as well:
+   * the message of this error and of every cause and aggregate member below
+   * it.
    * The log states the time in two keys, `timestamp` and `timestampIso`; to
    * hide it, deny both. The `err.stack` property stays unredacted.
    * `console.log(err)` prints the error itself, not the log object: every own
@@ -835,16 +840,22 @@ export class BaseError<T extends string> extends Error {
    * renders the same cause nodes, and past the cap the chain ends with the
    * same depth marker.
    * A plain-object cause carries its data fields in the log object. This
-   * render follows its `cause` links and ends them at the cap. Honors a
-   * deny-listed `"message"` of the instance and of a redaction floor (see
-   * {@link redact}) per BaseError in the chain; other redaction shapes
-   * rewrite only the log object. The render writes at most
+   * render follows its `cause` links and ends them at the cap. A deny-list
+   * on `"message"` of an instance or of a redaction floor (see
+   * {@link redact}) masks the message of its error and of every node below
+   * it, in the order of the log object: the policy of the node first, the
+   * outermost policy last. Other redaction shapes rewrite only the log
+   * object. The render writes at most
    * 100,000 lines, and the next line is the size marker of the log object.
    */
   public override toString(): string {
     return renderCauseChain(this, (node) =>
       node instanceof BaseError
-        ? `[${renderValue(node.name, "Error")}] ${node.#renderMessage()}`
+        ? {
+            messageFilter: node.#messageFilter(),
+            line: (renderMessage) =>
+              `[${renderValue(node.name, "Error")}] ${renderMessage(node.message)}`,
+          }
         : undefined,
     );
   }
@@ -854,29 +865,24 @@ export class BaseError<T extends string> extends Error {
   // ----------------------------------------------------------------
 
   /**
-   * The message as {@link toString} renders it: masked by a deny-list of the
-   * instance and then by a deny-list of the floor that covers `"message"`,
-   * verbatim without either. Fail-closed: a throwing function mask yields the
-   * default marker, never the raw message.
+   * What the policies of this error do to a message in {@link toString}: the
+   * deny-list of the instance, then the deny-list of the floor, each only if
+   * it covers `"message"`. `undefined` without either.
    */
-  /*#__PURE__*/ #renderMessage(): string {
+  /*#__PURE__*/ #messageFilter(): MessageFilter | undefined {
     const instanceMask = this.#messageMask;
     const floorMask = this.#floor?.messageMask;
-    if (instanceMask === undefined && floorMask === undefined) {
-      return renderValue(this.message, "");
-    }
-    try {
-      let value: unknown = this.message;
+    if (instanceMask === undefined && floorMask === undefined) return undefined;
+    return (message) => {
+      let value = message;
       if (instanceMask !== undefined) {
         value = BaseError.#applyMask(instanceMask, value, "message");
       }
       if (floorMask !== undefined) {
         value = BaseError.#applyMask(floorMask, value, "message");
       }
-      return renderValue(value, "[REDACTED]");
-    } catch {
-      return "[REDACTED]";
-    }
+      return value;
+    };
   }
 
   /**

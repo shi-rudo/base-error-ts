@@ -28,16 +28,32 @@ import {
 } from "./walker-bounds.js";
 
 /**
- * The line of a node that the caller renders itself, such as a `BaseError`
- * with a masked message, or `undefined` for the default line.
+ * What a redaction policy does to a message. A function mask is consumer
+ * code, so the filter can throw.
  */
-export type OwnNodeLine = (node: unknown) => string | undefined;
+export type MessageFilter = (message: unknown) => unknown;
+
+/**
+ * A node that the caller renders itself, such as a `BaseError`.
+ * `messageFilter` applies to the message of the node and to the message of
+ * every node below it, as the policy of the node applies to its subtree in
+ * the log object. `line` writes the line of the node and renders its message
+ * with `renderMessage`. The render reads the filter before it calls `line`,
+ * so a `line` that throws keeps the filter for the nodes below.
+ */
+export type OwnNode = {
+  readonly messageFilter: MessageFilter | undefined;
+  readonly line: (renderMessage: (message: unknown) => string) => string;
+};
+
+/** The own form of a node, or `undefined` for the default line. */
+export type OwnNodeOf = (node: unknown) => OwnNode | undefined;
 
 /** One render: its cause walk, its line budget, and its output. */
 type ChainRender = CauseWalk & {
   readonly budget: { nodes: number; readonly limit: number };
   readonly lines: string[];
-  readonly ownNodeLine: OwnNodeLine;
+  readonly ownNodeOf: OwnNodeOf;
   cut: boolean;
 };
 
@@ -46,19 +62,16 @@ type ChainRender = CauseWalk & {
  * {@link MAX_LOG_NODES} lines, and the next line is the size marker of the
  * log object.
  */
-export function renderCauseChain(
-  root: unknown,
-  ownNodeLine: OwnNodeLine,
-): string {
+export function renderCauseChain(root: unknown, ownNodeOf: OwnNodeOf): string {
   const render: ChainRender = {
     seen: new Set<unknown>(),
     path: new Set<unknown>(),
     budget: { nodes: 0, limit: MAX_LOG_NODES },
     lines: [],
-    ownNodeLine,
+    ownNodeOf,
     cut: false,
   };
-  renderChain(root, render, "", "", 0, 0);
+  renderChain(root, render, "", "", 0, 0, undefined);
   return render.lines.join("\n");
 }
 
@@ -106,6 +119,11 @@ function renderLine(
  * spends its allowance on data, and the render spends one unit per line.
  * For a plain-object cause, the serializer also copies its data fields and
  * cuts deep containers without a marker.
+ *
+ * `inherited` is the message filter of the nodes above `start`. Each node
+ * passes its own filter, then the inherited one, to its cause and its
+ * members. So a message goes through the policy of its own node first and
+ * through the policy of the outermost node last, as in the log object.
  */
 function renderChain(
   start: unknown,
@@ -114,6 +132,7 @@ function renderChain(
   indent: string,
   depth: number,
   causeDepth: number,
+  inherited: MessageFilter | undefined,
 ): void {
   // Aggregates recurse, and a string render must never throw. This check
   // bounds the nesting with the same cap the log serializer uses. A
@@ -127,6 +146,7 @@ function renderChain(
   let current: unknown = start;
   let prefix = head;
   let nextCauseDepth = causeDepth;
+  let filter = inherited;
   // Each spine node of this chain is an ancestor of the nodes after it.
   const entered: object[] = [];
   try {
@@ -150,8 +170,8 @@ function renderChain(
       const aggregate = readMembers(current, MAX_AGGREGATE_MEMBERS);
       const total = aggregate === undefined ? 0 : aggregate.total;
       const suffix = total > 0 ? ` (+${total} aggregated)` : "";
-      const node = `${renderNode(current, render.ownNodeLine)}${suffix}`;
-      if (!renderLine(render, prefix, node)) return;
+      const node = renderNode(current, render.ownNodeOf, filter);
+      if (!renderLine(render, prefix, `${node.text}${suffix}`)) return;
 
       const shown = aggregate === undefined ? [] : aggregate.members;
       for (const member of shown) {
@@ -170,6 +190,7 @@ function renderChain(
           `${indent}    `,
           nextCauseDepth,
           nextCauseDepth + 1,
+          node.below,
         );
         if (render.cut) return;
       }
@@ -196,30 +217,60 @@ function renderChain(
       current = cause;
       prefix = `${indent}Caused by: `;
       nextCauseDepth++;
+      filter = node.below;
     }
   } finally {
     for (const node of entered) render.path.delete(node);
   }
 }
 
+/** One node as a single line, and the message filter of the nodes below it. */
+type NodeRender = {
+  readonly text: string;
+  readonly below: MessageFilter | undefined;
+};
+
 /**
- * One node as a single line. The caller's own line wins, which honors a
+ * One node as a single line. The caller's own form wins, which honors a
  * deny-listed `message` of a `BaseError`. A native error and an error-shaped
- * plain object (string `name` and `message`) render as `name: message`. A
+ * plain object (string `name` and `message`) render as `name: message`. The
+ * message of every node goes through the filter of the nodes above it. A
  * string render runs in catch paths and must not throw. A foreign
  * `name`/`message` that throws, or whose tag cannot be read, falls back to
  * the `Error.prototype` defaults. Any other value renders through
  * {@link renderValue}. A value whose tag cannot be read (a revoked Proxy)
  * renders as a marker.
  */
-function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
+function renderNode(
+  node: unknown,
+  ownNodeOf: OwnNodeOf,
+  inherited: MessageFilter | undefined,
+): NodeRender {
+  let own: OwnNode | undefined;
   try {
-    const own = ownNodeLine(node);
-    if (own !== undefined) return own;
+    own = ownNodeOf(node);
+  } catch {
+    return { text: UNRENDERABLE_CAUSE_MARKER, below: inherited };
+  }
+  if (own !== undefined) {
+    const below = composeFilters(own.messageFilter, inherited);
+    try {
+      return {
+        text: own.line((message) => renderMessage(message, below)),
+        below,
+      };
+    } catch {
+      return { text: UNRENDERABLE_CAUSE_MARKER, below };
+    }
+  }
+  try {
     if (isNativeError(node)) {
       const name = readProperty(node, "name") ?? "Error";
       const message = readProperty(node, "message") ?? "";
-      return `${renderValue(name, "Error")}: ${renderValue(message, "")}`;
+      return {
+        text: `${renderValue(name, "Error")}: ${renderMessage(message, inherited)}`,
+        below: inherited,
+      };
     }
     // A plain object shaped like an error reads as its name and message, not
     // as "[object Object]". An example is a revived or cloned error at a
@@ -227,12 +278,53 @@ function renderNode(node: unknown, ownNodeLine: OwnNodeLine): string {
     const name = readProperty(node, "name");
     const message = readProperty(node, "message");
     if (typeof name === "string" && typeof message === "string") {
-      return `${name}: ${message}`;
+      return {
+        text: `${name}: ${renderMessage(message, inherited)}`,
+        below: inherited,
+      };
     }
-    return renderValue(node, UNRENDERABLE_CAUSE_MARKER);
+    return {
+      text: renderValue(node, UNRENDERABLE_CAUSE_MARKER),
+      below: inherited,
+    };
   } catch {
-    return UNRENDERABLE_CAUSE_MARKER;
+    return { text: UNRENDERABLE_CAUSE_MARKER, below: inherited };
   }
+}
+
+/**
+ * `first`, then `then`: the filter of a node, then the filters above it. The
+ * output of a function mask is consumer data, so `then` receives it as text.
+ */
+function composeFilters(
+  first: MessageFilter | undefined,
+  then: MessageFilter | undefined,
+): MessageFilter | undefined {
+  if (first === undefined) return then;
+  if (then === undefined) return first;
+  return (message) => then(asText(first(message)));
+}
+
+/**
+ * The text of a message after `filter`. A foreign message can be any value,
+ * so the filter receives it as text and never runs on the value itself.
+ * Fail-closed: a filter that throws yields the default mask, never the raw
+ * message.
+ */
+function renderMessage(
+  message: unknown,
+  filter: MessageFilter | undefined,
+): string {
+  if (filter === undefined) return renderValue(message, "");
+  try {
+    return renderValue(filter(asText(message)), "[REDACTED]");
+  } catch {
+    return "[REDACTED]";
+  }
+}
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value : renderValue(value, "");
 }
 
 /**
