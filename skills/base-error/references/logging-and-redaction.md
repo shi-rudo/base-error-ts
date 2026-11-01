@@ -104,9 +104,9 @@ const failure = AccountErrors.create.PROFILE_UPDATE_FAILED("update failed", {
   print the error itself, not the log object. That output holds every own
   field with its raw value, the cause and the members of an aggregate. Never
   pass a redacted error to `console.log`; log `logObjectOf(err)` instead.
-- Interpolating the error into a string uses `toString()`. It masks the denied
-  message of each error by that error's own policy only, so the message of a
-  cause can stay raw.
+- Interpolating the error into a string uses `toString()`. A deny-list on
+  `"message"` masks the message of the error and of every cause below it, as
+  in the log. `redactWith` does not reach `toString()`.
 - `redactWith` output is trusted as returned. Without a catalog policy, the
   library does not mask or validate it again. With a catalog policy, the log
   copies the output as log data and the catalog policy masks the copy; a

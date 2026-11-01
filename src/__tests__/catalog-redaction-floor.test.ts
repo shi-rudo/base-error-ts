@@ -232,6 +232,17 @@ describe("a catalog redaction policy as a floor", () => {
     expect(outer.toLogObject().cause).toBe("[Max log size exceeded]");
   });
 
+  it("masks the message of a cause in toString when the catalog denies the message", () => {
+    const error = AccountErrors.create.SESSION_FAILED("session expired", {
+      cause: new Error("token for ada@example.com rejected"),
+    });
+
+    expect(error.toString()).not.toContain("ada@example.com");
+    expect((error.toLogObject().cause as Record<string, unknown>).message).toBe(
+      "[REDACTED]",
+    );
+  });
+
   it("keeps a floor deny-list on the message in toString under an instance message mask", () => {
     const error = AccountErrors.create
       .SESSION_FAILED("session for ada@example.com expired")

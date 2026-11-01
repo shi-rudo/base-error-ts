@@ -387,9 +387,10 @@ The library cannot interrupt arbitrary callback work or contain later exceptions
   and a stack that does not start with that header is masked as a whole.
   The header uses each field's mask result without calling the mask again.
   If a result cannot convert to text, the stack becomes `"[REDACTED]"`.
-  `toString()` masks the message of each error by the policy of that error
-  only, so the message of a cause follows only its own policy. The `err.stack`
-  property (whose header carries the raw message) stays unredacted.
+  `toString()` applies a deny-list on `"message"` to the message of the error
+  and of every cause and aggregate member below it, as the log object does.
+  The `err.stack` property (whose header carries the raw message) stays
+  unredacted.
   `console.log(err)` and `util.inspect` print the error itself, not the log
   object. That output holds every own field with its raw value, the cause and
   the members of an aggregate. When redaction matters, log `logObjectOf(err)` or
