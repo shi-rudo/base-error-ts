@@ -14,7 +14,8 @@ export type ValidationIssue = {
    */
   readonly message: string;
   /** Path to the offending value (Standard Schema form). */
-  readonly path?: ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>;
+  readonly path?:
+    ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined;
 };
 
 /** The fixed, client-safe shape an issue takes on the wire. */
