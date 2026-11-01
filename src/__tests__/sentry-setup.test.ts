@@ -24,6 +24,7 @@ type Capture = { readonly body: string; readonly event: ErrorEvent };
 type Setup = {
   readonly beforeSend?: typeof beforeSend;
   readonly integrations: Integration[];
+  readonly maxValueLength?: number;
 };
 
 const SENTRY_SETUP: Setup = {
@@ -48,6 +49,9 @@ async function sentCapture(
     dsn: "https://public@sentry.example/1",
     integrations: [linkedErrorsIntegration(), ...setup.integrations],
     beforeSend: setup.beforeSend,
+    ...(setup.maxValueLength !== undefined && {
+      maxValueLength: setup.maxValueLength,
+    }),
     stackParser: createStackParser(nodeStackLineParser()),
     sendClientReports: false,
     transport: (transportOptions) =>
@@ -74,6 +78,23 @@ async function sentCapture(
 function exceptionsOf(event: ErrorEvent): Exception[] {
   return event.exception?.values ?? [];
 }
+
+function namesAndValuesOf(
+  event: ErrorEvent,
+): Pick<Exception, "type" | "value">[] {
+  return exceptionsOf(event).map(({ type, value }) => ({ type, value }));
+}
+
+/** An integration of the application that removes email addresses from the exception values. */
+const scrubEmails: Integration = {
+  name: "ScrubEmails",
+  processEvent(event) {
+    for (const exception of event.exception?.values ?? []) {
+      exception.value = exception.value?.replaceAll(SECRET_EMAIL, "[email]");
+    }
+    return event;
+  },
+};
 
 function withCause(error: Error, cause: unknown): Error {
   Object.defineProperty(error, "cause", { value: cause, configurable: true });
@@ -171,6 +192,60 @@ describe("the Sentry setup", () => {
     expect(event.contexts?.error).toMatchObject({
       details: { row: "[Object]" },
     });
+  });
+
+  it("keeps a value that an integration scrubbed, for an error without a policy", async () => {
+    const error = new StructuredError({
+      code: "MAIL_FAILED",
+      category: "INTERNAL",
+      retryable: true,
+      message: "sending mail failed",
+      cause: new Error(`mailbox ${SECRET_EMAIL} unavailable`),
+    });
+
+    const { event } = await sentCapture(
+      (scope) => scope.captureException(error),
+      {
+        beforeSend,
+        integrations: [scrubEmails],
+      },
+    );
+
+    expect(namesAndValuesOf(event)).toEqual([
+      { type: "Error", value: "mailbox [email] unavailable" },
+      { type: "MAIL_FAILED", value: "sending mail failed" },
+    ]);
+  });
+
+  it("writes the masked message over a value that an integration changed", async () => {
+    const { event } = await sentCapture(
+      (scope) => scope.captureException(redactedLookupError()),
+      { beforeSend, integrations: [scrubEmails] },
+    );
+
+    expect(namesAndValuesOf(event)).toEqual([
+      { type: "Error", value: "[REDACTED]" },
+      { type: "USER_NOT_FOUND", value: "[REDACTED]" },
+    ]);
+  });
+
+  it("sends the names and values of Sentry for an error without a policy, cut at maxValueLength", async () => {
+    // Sentry captures one error object once, so each capture gets its own.
+    const longNative = () =>
+      withCause(new Error("x".repeat(400)), new Error("timeout"));
+
+    const withSetup = await sentCapture(
+      (scope) => scope.captureException(longNative()),
+      { ...SENTRY_SETUP, maxValueLength: 50 },
+    );
+    const withoutSetup = await sentCapture(
+      (scope) => scope.captureException(longNative()),
+      { ...NO_SETUP, maxValueLength: 50 },
+    );
+
+    expect(namesAndValuesOf(withSetup.event)).toEqual(
+      namesAndValuesOf(withoutSetup.event),
+    );
   });
 
   it("keeps the messages of a native error and its cause chain", async () => {
