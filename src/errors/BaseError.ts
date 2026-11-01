@@ -3,7 +3,12 @@ import {
   createLogBuildContext,
   type LogBuildContext,
 } from "./log-build-context.js";
-import { serializeLogData, normalizeLogNumber } from "./log-data.js";
+import {
+  capLogStack,
+  capLogString,
+  normalizeLogNumber,
+  serializeLogData,
+} from "./log-data.js";
 import type { LogRegion } from "./log-position.js";
 import { allowListRedaction, denyListRedaction } from "./log-redaction.js";
 import {
@@ -406,12 +411,18 @@ export class BaseError<T extends string> extends Error {
       ["message", message],
       ["timestamp", timestamp],
       ["timestampIso", toTimestampIso(timestamp)],
-      ["stack", readStack(this, name, message)],
     ];
     for (const [key, read] of envelope) {
       const value = BaseError.#serializeEnvelopeField(read, context);
       if (value !== undefined) json[key] = value;
     }
+    const stack = BaseError.#serializeStack(
+      readStack(this, name, message),
+      { name, message },
+      json,
+      context,
+    );
+    if (stack !== undefined) json.stack = stack;
     // The cause and the members get a walk each, so a node in both stays in
     // full in the members, where fromJSON rebuilds it.
     json.cause = BaseError.#serializeCause(
@@ -1002,11 +1013,13 @@ export class BaseError<T extends string> extends Error {
     const serialized: Record<string, unknown> = {
       name: BaseError.#serializeEnvelopeField(name, context),
       message: BaseError.#serializeEnvelopeField(message, context),
-      stack: BaseError.#serializeEnvelopeField(
-        readStack(cause, name, message),
-        context,
-      ),
     };
+    serialized.stack = BaseError.#serializeStack(
+      readStack(cause, name, message),
+      { name, message },
+      serialized,
+      context,
+    );
 
     // Preserve StructuredError fields if present (duck-typing). This is the
     // only route for a foreign cause. A plain `Error` that carries these
@@ -1066,6 +1079,27 @@ export class BaseError<T extends string> extends Error {
       : serialized;
   }
 
+  /**
+   * The stack of a node, with the header of the name and the message that the
+   * node writes (see `capLogStack`). A stack that is no string is copied as
+   * an envelope field.
+   */
+  static #serializeStack(
+    stack: unknown,
+    header: { readonly name: unknown; readonly message: unknown },
+    node: Record<string, unknown>,
+    context: LogBuildContext,
+  ): unknown {
+    return typeof stack === "string"
+      ? capLogStack(
+          stack,
+          header,
+          { name: node.name, message: node.message },
+          context,
+        )
+      : BaseError.#serializeEnvelopeField(stack, context);
+  }
+
   /** The fixed envelope must never turn a scalar decision into a size marker. */
   static #serializeEnvelopeField(
     value: unknown,
@@ -1073,12 +1107,8 @@ export class BaseError<T extends string> extends Error {
   ): unknown {
     if (context.budget.nodes >= context.budget.limit) {
       if (typeof value === "number") return normalizeLogNumber(value);
-      if (
-        value === null ||
-        typeof value === "string" ||
-        typeof value === "boolean"
-      )
-        return value;
+      if (typeof value === "string") return capLogString(value, context);
+      if (value === null || typeof value === "boolean") return value;
       // An exhausted envelope omits other values instead of forging a scalar.
       return undefined;
     }

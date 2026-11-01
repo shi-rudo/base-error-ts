@@ -223,6 +223,7 @@ describe("log data serialization", () => {
   it("shares one allowance across independent data fields", () => {
     const context = {
       budget: { nodes: 0, limit: 12 },
+      characters: { used: 0, limit: 1_000_000 },
       dataError: () => undefined,
     };
     let reads = 0;
@@ -244,6 +245,7 @@ describe("log data serialization", () => {
   it("bounds non-enumerable descriptor inspections", () => {
     const context = {
       budget: { nodes: 0, limit: 12 },
+      characters: { used: 0, limit: 1_000_000 },
       dataError: () => undefined,
     };
     const target = Object.fromEntries(

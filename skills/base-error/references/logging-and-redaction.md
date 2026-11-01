@@ -132,7 +132,10 @@ position, and an exhausted size budget leaves `[Max log size exceeded]`. An
 array in log data keeps at most 1000 entries and ends with
 `[N more items]`; an object keeps at most 1000 keys and gets the key
 `[more keys]`; binary data reads as its type and size, such as
-`[Uint8Array(1000000)]`. These are values in the log, not errors to handle.
+`[Uint8Array(1000000)]`. A string holds at most 10,000 characters and then
+ends with `[N more characters]`; the stack keeps its frames, and one log
+object spends at most 1,000,000 characters. These are values in the log, not
+errors to handle.
 
 ## Reconstructing: `StructuredError.fromJSON`
 

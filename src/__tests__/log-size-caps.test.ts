@@ -89,3 +89,81 @@ describe("the summary of binary data", () => {
     },
   );
 });
+
+function longMessageError(message: string, cause?: unknown) {
+  return new StructuredError({
+    code: "IMPORT_FAILED",
+    category: "IO",
+    retryable: false,
+    message,
+    ...(cause !== undefined && { cause }),
+  });
+}
+
+describe("the length cap of a string", () => {
+  it("cuts a long message at 10 000 characters and names the dropped ones", () => {
+    const log = longMessageError("m".repeat(1_000_000)).toLogObject();
+
+    expect(log.message).toBe(`${"m".repeat(10_000)}[990000 more characters]`);
+  });
+
+  it("writes the stack header with the cut message and keeps the frames", () => {
+    const log = longMessageError("m".repeat(1_000_000)).toLogObject();
+
+    const stack = log.stack as string;
+    expect(stack.startsWith(`IMPORT_FAILED: ${String(log.message)}\n`)).toBe(
+      true,
+    );
+    expect(stack).toContain("\n    at ");
+    expect(stack.length).toBeLessThan(25_000);
+  });
+
+  it("masks the header of a cut message under a message deny-list and keeps the frames", () => {
+    const log = longMessageError("m".repeat(1_000_000))
+      .redact(["message"])
+      .toLogObject();
+
+    const stack = log.stack as string;
+    expect(log.message).toBe("[REDACTED]");
+    expect(stack.startsWith("IMPORT_FAILED: [REDACTED]\n")).toBe(true);
+    expect(stack).toContain("\n    at ");
+  });
+
+  it("cuts a long string in details and keeps its sibling", () => {
+    const details = detailsLog({ orderId: 42, payload: "x".repeat(50_000) });
+
+    expect(details).toEqual({
+      orderId: 42,
+      payload: `${"x".repeat(10_000)}[40000 more characters]`,
+    });
+  });
+
+  it("cuts the message of a cause", () => {
+    const cause = new Error("c".repeat(20_000));
+
+    const log = longMessageError("outer", cause).toLogObject();
+
+    expect((log.cause as LogRecord).message).toBe(
+      `${"c".repeat(10_000)}[10000 more characters]`,
+    );
+  });
+
+  it("does not split a surrogate pair at the cut", () => {
+    const log = longMessageError(
+      `${"a".repeat(9_999)}😀${"b".repeat(100)}`,
+    ).toLogObject();
+
+    expect(log.message).toBe(`${"a".repeat(9_999)}[102 more characters]`);
+  });
+
+  it("spends at most 1 000 000 characters on the strings of one log object", () => {
+    const strings = Array.from({ length: 200 }, () => "s".repeat(10_000));
+
+    const details = detailsLog({ strings });
+
+    const logged = details.strings as string[];
+    expect(JSON.stringify(logged).length).toBeGreaterThan(900_000);
+    expect(JSON.stringify(logged).length).toBeLessThan(1_010_000);
+    expect(logged[logged.length - 1]).toBe("[Max log size exceeded]");
+  });
+});

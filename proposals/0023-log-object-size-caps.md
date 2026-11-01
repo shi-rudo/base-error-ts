@@ -1,6 +1,6 @@
 # Size caps for the log object
 
-Status: accepted; release: 10.0.0.
+Status: implemented; release: 10.0.0.
 Tracking: `base-error-ts-ci1` (container width), `base-error-ts-s0v` (string length).
 
 ## Decision
@@ -13,12 +13,13 @@ The log object caps the width of a data container and the length of a string, an
 | Keys of one object in log data | 1000 | the key `[more keys]` holds the number of dropped keys |
 | Typed array, `Buffer`, `DataView`, `ArrayBuffer` | no entries | `[Uint8Array(1000000)]`, with the constructor name and the length in elements or bytes |
 | Characters of one string | 10 000 | the string ends with `[990000 more characters]` |
-| Characters of one log object | 1 000 000 | a string past the budget is `[Max log size exceeded]` |
+| Characters of one log object | 1 000 000 | a string past the budget is `[Max log size exceeded]`; a string at the edge keeps what fits and ends with the count marker |
 
 - The caps sit in `src/errors/walker-bounds.ts`, and the marker texts in `src/errors/serializer-markers.ts`.
 - The width cap and the binary summary apply where the log-data copier walks: `details`, the own fields of a subclass, a plain-object cause, and the output of a custom policy that the log copies.
 - The string cap applies to every string that the log object writes: the envelope (`name`, `message`, `code`, `category`) and log data. The `stack` gets its own rule.
 - The `stack` repeats `name: message` in its header. The log writes the header with the cut message and keeps the frames. The frames get their own allowance of 10 000 characters. So a long message costs the stack no frame, and the redaction recognizes the header as before.
+- A cut never splits a surrogate pair. The markers that the serializer writes do not count against the character budget.
 - The output of `redactWith` at the root of an error without a catalog floor stays as the callback returns it. The consumer owns it, and the log does not copy it (proposal 0021). Everywhere else, the log copies custom output, so the caps apply.
 
 ## Problem

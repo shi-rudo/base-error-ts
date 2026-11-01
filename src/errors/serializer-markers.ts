@@ -40,6 +40,11 @@ export function binaryDataMarker(type: string, size: number): string {
   return `[${type}(${size})]`;
 }
 
+/** The tail of a string cut at the length cap. */
+export function moreCharactersMarker(dropped: number): string {
+  return `[${dropped} more characters]`;
+}
+
 /** Work omitted because the shared log-build allowance is exhausted. */
 export const MAX_LOG_SIZE_MARKER = "[Max log size exceeded]";
 
