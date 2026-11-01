@@ -161,7 +161,11 @@ export function matchError<
   // the table, and the call would accept no table.
   Code extends string = E["code"],
 >(
-  error: E & { readonly code: Code },
+  // For a union of codes that are not literal types, such as `"A" & Brand`,
+  // the compiler infers `Code` from one member only. The union with `E`
+  // keeps the error assignable then; `E & { code }` is only the inference
+  // site of `Code`.
+  error: E | (E & { readonly code: Code }),
   cases: Exhaustive<E, Code, C>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;

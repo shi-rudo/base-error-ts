@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { hostileProxy } from "./hostile-values.fixture.js";
-import { StructuredError, BaseError } from "../index.js";
+import {
+  StructuredError,
+  BaseError,
+  StructuredAggregateError,
+} from "../index.js";
 import {
   causeWithRawDetails,
   errorWithRawDetails,
@@ -670,6 +674,142 @@ describe("log redaction", () => {
     it("redactAllow keeps the message in toString() (message is envelope)", () => {
       const err = makeError().redactAllow(["userId"]);
       expect(String(err)).toContain("update failed");
+    });
+
+    it("masks the message of every cause under an outer deny-list on the message, as the log does", () => {
+      const nativeCause = new Error("native secret");
+      Object.defineProperty(nativeCause, "cause", {
+        value: { name: "Plain", message: "plain secret" },
+        configurable: true,
+      });
+      const outer = new StructuredError({
+        code: "OUTER",
+        category: "X",
+        retryable: false,
+        message: "outer secret",
+        cause: new StructuredError({
+          code: "INNER",
+          category: "X",
+          retryable: false,
+          message: "inner secret",
+          cause: nativeCause,
+        }),
+      }).redact(["message"]);
+
+      expect(String(outer)).toBe(
+        [
+          "[OUTER] [REDACTED]",
+          "Caused by: [INNER] [REDACTED]",
+          "Caused by: Error: [REDACTED]",
+          "Caused by: Plain: [REDACTED]",
+        ].join("\n"),
+      );
+    });
+
+    it("masks the message of every aggregate member under an outer deny-list on the message", () => {
+      const aggregate = new StructuredAggregateError({
+        code: "BATCH",
+        category: "X",
+        retryable: false,
+        message: "batch secret",
+        errors: [
+          new Error("member secret"),
+          new BaseError("base member secret"),
+        ],
+      }).redact(["message"]);
+
+      expect(String(aggregate)).toBe(
+        [
+          "[BATCH] [REDACTED] (+2 aggregated)",
+          "  - Error: [REDACTED]",
+          "  - [BaseError] [REDACTED]",
+        ].join("\n"),
+      );
+    });
+
+    it("masks the message of a cause with its own policy first and the outer policy after it, as the log does", () => {
+      const inner = new BaseError("m").redact(["message"], {
+        mask: (value) => `inner(${String(value)})`,
+      });
+      const outer = new BaseError("m", inner).redact(["message"], {
+        mask: (value) => `outer(${String(value)})`,
+      });
+
+      expect(String(outer)).toBe(
+        "[BaseError] outer(m)\nCaused by: [BaseError] outer(inner(m))",
+      );
+      expect(
+        (outer.toLogObject().cause as Record<string, unknown>).message,
+      ).toBe("outer(inner(m))");
+    });
+
+    it("renders the message of a cause as the default mask when an outer function mask throws", () => {
+      const outer = new BaseError("outer", new Error("cause secret")).redact(
+        ["message"],
+        {
+          mask: () => {
+            throw new Error("mask bug");
+          },
+        },
+      );
+
+      expect(String(outer)).toBe(
+        "[BaseError] [REDACTED]\nCaused by: Error: [REDACTED]",
+      );
+    });
+
+    it("keeps the message policy of a cause for the nodes below it when its message getter throws", () => {
+      const inner = new BaseError("inner", new Error("native secret")).redact([
+        "message",
+      ]);
+      Object.defineProperty(inner, "message", {
+        get() {
+          throw new Error("hostile getter");
+        },
+        configurable: true,
+      });
+      const outer = new BaseError("outer", inner);
+
+      expect(String(outer)).not.toContain("native secret");
+      expect(String(outer)).toContain("Caused by: Error: [REDACTED]");
+    });
+
+    it("hands a function mask the message of a foreign cause as text", () => {
+      const cause = new Error("x");
+      Object.defineProperty(cause, "message", {
+        value: ["a", "b"],
+        configurable: true,
+      });
+      const outer = new BaseError("outer", cause).redact(["message"], {
+        mask: (value) => typeof value,
+      });
+
+      expect(String(outer)).toBe(
+        "[BaseError] string\nCaused by: Error: string",
+      );
+    });
+
+    it("hands an outer function mask the output of an inner mask as text", () => {
+      const inner = new BaseError("inner").redact(["message"], {
+        mask: () => ({ masked: true }),
+      });
+      const outer = new BaseError("outer", inner).redact(["message"], {
+        mask: (value) => typeof value,
+      });
+
+      expect(String(outer)).toBe(
+        "[BaseError] string\nCaused by: [BaseError] string",
+      );
+    });
+
+    it("keeps the message of a cause under an outer deny-list without the message", () => {
+      const outer = new BaseError("outer", new Error("cause text")).redact([
+        "ssn",
+      ]);
+
+      expect(String(outer)).toBe(
+        "[BaseError] outer\nCaused by: Error: cause text",
+      );
     });
   });
 

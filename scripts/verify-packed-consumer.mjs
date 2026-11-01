@@ -5,8 +5,8 @@
  *
  * - `packed-consumer/consumer.ts` compiles for each TypeScript version and
  *   module-resolution mode, as an ES module and as a CommonJS module. The
- *   fixture uses `lib: ES2020` and no `skipLibCheck`, so the declarations
- *   must hold at the documented floors.
+ *   fixture uses `lib: ES2020`, `exactOptionalPropertyTypes` and no
+ *   `skipLibCheck`, so the declarations must hold at the documented floors.
  * - A generated parity file lists the runtime exports of each entry point.
  *   It does not compile when a declared value export is missing at runtime,
  *   or when a runtime export has no declaration.
@@ -53,6 +53,9 @@ const ENTRIES = {
 
 const COMMON_OPTIONS = {
   strict: true,
+  // The strictest consumer: an optional property does not accept `undefined`
+  // unless its type names it.
+  exactOptionalPropertyTypes: true,
   noEmit: true,
   target: "ES2020",
   lib: ["ES2020"],
