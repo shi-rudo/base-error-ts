@@ -163,8 +163,24 @@ export function matchError<
 >(
   error: E & { readonly code: Code },
   cases: Exhaustive<E, Code, C>,
-): HandlerResult<C> {
-  const table = cases as Record<string, ((error: E) => unknown) | undefined>;
+): HandlerResult<C>;
+/**
+ * The same matcher for a union whose codes the compiler cannot infer as one
+ * type, such as `StructuredError<"A" & Brand> | StructuredError<"B" & Brand>`.
+ * The inference of the first signature takes the code of one member only.
+ */
+export function matchError<
+  E extends StructuredError<string, string>,
+  const C extends Cases<E>,
+>(error: E, cases: Exhaustive<E, E["code"], C>): HandlerResult<C>;
+export function matchError(
+  error: StructuredError<string, string>,
+  cases: object,
+): unknown {
+  const table = cases as Record<
+    string,
+    ((error: StructuredError<string, string>) => unknown) | undefined
+  >;
   const handler = ownCase(table, error.code) ?? table._;
 
   if (!handler) {
@@ -173,5 +189,5 @@ export function matchError<
     );
   }
 
-  return handler(error) as HandlerResult<C>;
+  return handler(error);
 }

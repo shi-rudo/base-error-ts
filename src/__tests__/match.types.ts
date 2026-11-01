@@ -125,6 +125,29 @@ const brandedCodeWithCatchAll: number = matchError(brandedCodeError, {
   _: () => 2,
 });
 
+type CodeBrand = { readonly __brand: "ErrorCode" };
+declare const brandedLiteralsError:
+  | StructuredError<"A" & CodeBrand, string>
+  | StructuredError<"B" & CodeBrand, string>;
+
+const brandedLiteralsComplete: number = matchError(brandedLiteralsError, {
+  A: () => 1,
+  B: () => 2,
+});
+
+const brandedLiteralsCatchAll: number = matchError(brandedLiteralsError, {
+  _: () => 2,
+});
+
+declare const literalAndBrandedError:
+  | StructuredError<"KNOWN", string>
+  | StructuredError<string & CodeBrand, string>;
+
+const literalAndBrandedWithCatchAll: number = matchError(
+  literalAndBrandedError,
+  { KNOWN: () => 1, OTHER_CODE: () => 2, _: () => 3 },
+);
+
 declare const openCodeError: StructuredError<"KNOWN" | (string & {}), string>;
 
 const openCodeWithCatchAll: number = matchError(openCodeError, {
@@ -201,6 +224,9 @@ void namedHandlerOfBareCode;
 void statusOfAnnotatedCode;
 void brandedCodeWithCatchAll;
 void openCodeWithCatchAll;
+void brandedLiteralsComplete;
+void brandedLiteralsCatchAll;
+void literalAndBrandedWithCatchAll;
 void underscorePrefixedCode;
 void numericKeyWithCatchAll;
 void numericKeysComplete;
