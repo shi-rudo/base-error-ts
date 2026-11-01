@@ -44,7 +44,7 @@ describe("logObjectOf", () => {
     });
   });
 
-  it("writes a library error whose own toLogObject is no function, with its redaction policy", () => {
+  it("writes the triage record of a library error whose own toLogObject is no function", () => {
     const error = Object.assign(
       redactedLookupError(),
       JSON.parse('{"toLogObject":1}') as object,
@@ -52,30 +52,37 @@ describe("logObjectOf", () => {
 
     const node = logObjectOf(error);
 
-    expect(node).toMatchObject({
+    expect(node).toEqual({
+      name: "USER_NOT_FOUND",
       code: "USER_NOT_FOUND",
-      message: "[REDACTED]",
-      details: { email: "[REDACTED]", userId: "123" },
+      category: "NOT_FOUND",
+      retryable: false,
+      timestamp: error.timestamp,
+      timestampIso: expect.any(String) as unknown,
+      message: "[log redaction failed]",
     });
   });
 
-  it("writes a library error whose toLogObject override throws, with its redaction policy", () => {
-    class BrokenLogError extends BaseError<"BrokenLogError"> {
+  it("drops the details of a library error whose scrubbing toLogObject override throws", () => {
+    class ScrubbingLogError extends StructuredError<"LOOKUP", "NOT_FOUND"> {
       override toLogObject(): Record<string, unknown> {
-        throw new Error("broken override");
+        throw new Error("scrubber failed");
       }
     }
-    const error = new BrokenLogError(
-      `lookup for ${SECRET_EMAIL} failed`,
-      undefined,
-      {
-        name: "BrokenLogError",
-      },
-    ).redact(["message"]);
+    const error = new ScrubbingLogError({
+      code: "LOOKUP",
+      category: "NOT_FOUND",
+      retryable: false,
+      message: "lookup failed",
+      details: { email: SECRET_EMAIL },
+    });
 
-    expect(logObjectOf(error)).toMatchObject({
-      name: "BrokenLogError",
-      message: "[REDACTED]",
+    const node = logObjectOf(error);
+
+    expect(JSON.stringify(node)).not.toContain(SECRET_EMAIL);
+    expect(node).toMatchObject({
+      code: "LOOKUP",
+      message: "[log redaction failed]",
     });
   });
 

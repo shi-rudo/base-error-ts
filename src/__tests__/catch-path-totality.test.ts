@@ -38,15 +38,18 @@ function wrap(cause: unknown): BaseError<"Outer"> {
 }
 
 describe("totality in catch paths: a library error whose toLogObject is no function", () => {
-  it("keeps toJSON and JSON.stringify total, with the redaction policy", () => {
+  it("keeps toJSON and JSON.stringify total, with the triage record", () => {
     const error = Object.assign(
       new BaseError("lookup for ada@example.com failed").redact(["message"]),
       JSON.parse('{"toLogObject":1}') as object,
     );
 
-    expect(JSON.parse(JSON.stringify(error))).toMatchObject({
+    const json = JSON.stringify(error);
+
+    expect(json).not.toContain("ada@example.com");
+    expect(JSON.parse(json)).toMatchObject({
       name: "BaseError",
-      message: "[REDACTED]",
+      message: "[log redaction failed]",
     });
   });
 });

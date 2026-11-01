@@ -491,8 +491,9 @@ export class BaseError<T extends string> extends Error {
   /**
    * The log object of `error` through `toLogObject`, which an override or an
    * own property can replace. If that call throws, for example because the
-   * own property is no function, the log object of this class takes its
-   * place, with the policies of the error.
+   * own property is no function, the triage record takes its place, as for a
+   * custom policy that throws. A full log object would be fail-open: the
+   * override can be the step that scrubs a field.
    */
   /*#__PURE__*/ static #dispatchedLogObject(
     error: BaseError<string>,
@@ -500,7 +501,10 @@ export class BaseError<T extends string> extends Error {
     try {
       return error.toLogObject();
     } catch {
-      return error.#ownLogObject();
+      return BaseError.#triageRecord(
+        error.#ownLogObject(),
+        error.#floor?.denied,
+      );
     }
   }
 
@@ -809,8 +813,9 @@ export class BaseError<T extends string> extends Error {
    * JSON serialization for logging-oriented consumers. Alias of
    * {@link toLogObject}. It returns the same **log** shape: technical message,
    * stack, cause chain and full `details`. If `toLogObject` throws, `toJSON`
-   * returns the log object that `BaseError` builds, so `JSON.stringify(err)`
-   * does not throw.
+   * returns the triage record (`name`, `code`, `category`, `retryable`, the
+   * timestamps, and `[log redaction failed]` as the message), so
+   * `JSON.stringify(err)` does not throw.
    *
    * ⚠️ `JSON.stringify(err)`, `res.json(err)`, `Response.json(err)` and
    * `return err` all route through `toJSON`. So an error sent down any of those
@@ -1238,12 +1243,13 @@ export class BaseError<T extends string> extends Error {
  *
  * A `BaseError` of this realm returns its {@link BaseError.toLogObject},
  * with its redaction policy. If that call throws, for example because an own
- * property `toLogObject` is no function, the function returns the log object
- * that `BaseError` builds, with the same policy. Any other error returns the
- * node that the log object of a `BaseError` holds for it as a cause. That
- * node holds the name, message and stack of the error, its structured
- * fields, its members and its cause chain. A `BaseError` in that chain keeps
- * its policy. Any other value returns as a copy of log data.
+ * property `toLogObject` is no function, the function returns the triage
+ * record of the error, with `[log redaction failed]` as the message. Any
+ * other error returns the node that the log object of a `BaseError` holds
+ * for it as a cause. That node holds the name, message and stack of the
+ * error, its structured fields, its members and its cause chain. A
+ * `BaseError` in that chain keeps its policy. Any other value returns as a
+ * copy of log data.
  *
  * Whatever a foreign value holds, the function does not throw, and its work
  * stays bounded. It writes a foreign error from its fields, so a
