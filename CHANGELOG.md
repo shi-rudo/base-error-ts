@@ -30,7 +30,7 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Fixed
 
-- **`ValidationError` takes the readonly issues of a Standard Schema result.** `ValidationErrorOptions.issues` and `addIssues` declared a mutable `ValidationIssue[]`, and Standard Schema types the issues of a failure result as a `ReadonlyArray`. So `new ValidationError(message, { issues: result.issues })` failed with TS4104 for Zod, Valibot or ArkType, as the guide shows it. Both now accept `readonly ValidationIssue[]`. A readonly parameter accepts every array that the old one accepted.
+- **`ValidationError` takes the readonly issues of a Standard Schema result.** `ValidationErrorOptions.issues` and `addIssues` declared a mutable `ValidationIssue[]`, and Standard Schema types the issues of a failure result as a `ReadonlyArray`. So `new ValidationError(message, { issues: result.issues })` failed with TS4104 for Zod, Valibot or ArkType, as the guide shows it. Both now accept `readonly ValidationIssue[]`. A readonly parameter accepts every array that the old one accepted. `ValidationIssue.path` now names `undefined`, as the `Issue` of Standard Schema does. So the issues also pass with `exactOptionalPropertyTypes`.
 
 ### Documentation
 
