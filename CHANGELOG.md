@@ -52,6 +52,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **The guide says what `console.log` prints for a redacted error.** The _Pitfalls_ page and the observability guide said that `console.log(err)` shows the raw message. It prints the error itself, not the log object. So it also shows every own field with its raw value, the cause and the members of an aggregate. `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` still prints it. The guide now says to log `logObjectOf(err)` or to use the pino setup. It no longer names `logger.error({ err })` as safe, because a plain pino logger reads the error itself. The README, the JSDoc of `redact`, `redactAllow` and `redactWith`, and the skill also say that `console.log` prints the error itself.
 
+- **The guide names a limit of TypeScript before 5.4 for `matchErrorCode`.** A handler for a code named like a member of `Object.prototype`, such as `toString`, is typed against that member there. The guide and the skill say to use TypeScript 5.4 or later, or to handle such a code in `_`. The runtime dispatch is correct.
+
 ## 9.0.1 - 2026-10-23
 
 Documentation release. The README now says what the library does for a user, and the release workflow publishes to JSR as well. The code is unchanged.
