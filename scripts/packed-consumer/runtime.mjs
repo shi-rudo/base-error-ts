@@ -35,8 +35,9 @@ const event = beforeSend(
   { exception: { values: [{ type: "Error", value: "raw" }] } },
   { originalException: error },
 );
-assert.equal(event.exception.values[0].type, "EMAIL_TAKEN");
-assert.equal(event.exception.values[0].value, "email taken");
+// Without a policy, the event keeps what Sentry wrote.
+assert.equal(event.exception.values[0].type, "Error");
+assert.equal(event.exception.values[0].value, "raw");
 const masked = new StructuredError({
   code: "EMAIL_TAKEN",
   category: "CONFLICT",

@@ -43,14 +43,19 @@ The setup has two parts:
 
 - **The `beforeSend` hook.** Sentry calls it last, after its integrations. It
   writes the log object of the error with
-  [`logObjectOf()`](./observability#any-thrown-value-logobjectof). Then it
-  gives each exception the name and the message of its node in the log object.
-  Sentry marks a linked exception with its parent (`parent_id`) and its link
-  (`source`, which is `cause` or `errors[i]`), so the hook finds the node. A
-  masked message stays masked. A marker of the log object, such as
-  `[Circular cause chain]`, becomes the message. An exception without a node
-  keeps no name and no message. An event without an original error, for
-  example from `captureEvent`, has no policy to keep and stays as it is.
+  [`logObjectOf()`](./observability#any-thrown-value-logobjectof). Sentry
+  marks a linked exception with its parent (`parent_id`) and its link
+  (`source`, which is `cause` or `errors[i]`), so the hook finds the node of
+  each exception and the error that it comes from. Where a policy masked the
+  name or the message, the exception gets the masked text of the node. A
+  text that a policy masks only in part can still hold a value that an
+  integration removed. A marker of the log object, such as
+  `[Circular cause chain]`, becomes the message. Every other exception keeps
+  what Sentry and your integrations wrote, such as a scrubbed or a cut value.
+  An exception without a node keeps no name and no message. If several
+  exceptions carry no `exception_id`, each gets the name and the message of
+  the node of the error. An event without an original error, for example
+  from `captureEvent`, has no policy to keep and stays as it is.
 - **The `LogObjectContext` integration.** It adds the log object of the error
   as the `error` context, with `code`, `category`, `retryable` and `details`.
   Sentry runs it before it normalizes the event, so `normalizeDepth` (3 by
@@ -117,8 +122,13 @@ For an error that denies `message` and `email`, the event holds this (shortened)
 - An error that a worker posts with `postMessage` arrives as a plain `Error`,
   without its class and its policy. Post `error.toJSON()` instead, and rebuild
   the error with `StructuredError.fromJSON` before you capture it.
-- Sentry cuts a message to `maxValueLength` before the hook runs. The hook
-  writes the message of the log object, so it does not apply that limit.
+- If you set `maxValueLength`, Sentry cuts a message before the hook runs. A
+  message without a policy keeps the cut value. A masked message is the mask,
+  which the hook writes as it is.
+- For an error without a policy, the `error` context holds its raw message
+  and stack. An integration that scrubs the exception values does not reach
+  the context. If you scrub messages in an integration, scrub the `error`
+  context too, or leave the `LogObjectContext` integration out.
 - The hook knows the links `cause` and `errors[i]`. If you pass another `key`
   to `linkedErrorsIntegration`, the exceptions that Sentry links through that
   key keep no name and no message.
