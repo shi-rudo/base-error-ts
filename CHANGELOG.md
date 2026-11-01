@@ -1,6 +1,6 @@
 # Changelog
 
-## 10.0.0 - 2026-10-31
+## 10.0.0 - 2026-11-01
 
 Major release. The package ships one ES module build, so `import` and `require` load the same classes. A TypeScript project that compiles to CommonJS with `module: node16` must switch to `module: nodenext` or `module: node20`. A redaction policy in a catalog definition is now a floor: a policy on a single error adds to it and no longer replaces it. `matchError` is now `matchErrorCode`, without an alias, and it rejects a handler for a code that the union does not contain. `logObjectOf(value)` returns the log form of any thrown value. Two new subpaths keep the redaction policy of an error at pino and at Sentry, and they add no dependency. The observability guide no longer recommends a Sentry call that sent the raw message of an error, and the README no longer says that a client never sees the `message`. The guide says that `console.log` prints the raw values of a redacted error. The package ships an agent skill for AI coding assistants. See `MIGRATION.md`.
 
