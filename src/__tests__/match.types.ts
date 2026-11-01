@@ -145,8 +145,37 @@ declare const literalAndBrandedError:
 
 const literalAndBrandedWithCatchAll: number = matchError(
   literalAndBrandedError,
-  { KNOWN: () => 1, OTHER_CODE: () => 2, _: () => 3 },
+  { KNOWN: () => 1, _: () => 2 },
 );
+
+class EmailTakenError extends StructuredError<"EMAIL_TAKEN", "CONFLICT"> {
+  constructor() {
+    super({
+      code: "EMAIL_TAKEN",
+      category: "CONFLICT",
+      retryable: false,
+      message: "email taken",
+    });
+  }
+}
+
+class RateLimitedError extends StructuredError<"RATE_LIMITED", "LIMIT"> {
+  constructor() {
+    super({
+      code: "RATE_LIMITED",
+      category: "LIMIT",
+      retryable: true,
+      message: "rate limited",
+    });
+  }
+}
+
+function misspelledInGenericClassUnion<
+  E extends EmailTakenError | RateLimitedError,
+>(error: E): number {
+  // @ts-expect-error a code that the union does not contain is rejected in a generic caller of a class union
+  return matchError(error, { EMAIL_TAKN: () => 409, _: () => 500 });
+}
 
 declare const openCodeError: StructuredError<"KNOWN" | (string & {}), string>;
 
@@ -227,6 +256,7 @@ void openCodeWithCatchAll;
 void brandedLiteralsComplete;
 void brandedLiteralsCatchAll;
 void literalAndBrandedWithCatchAll;
+void misspelledInGenericClassUnion;
 void underscorePrefixedCode;
 void numericKeyWithCatchAll;
 void numericKeysComplete;
