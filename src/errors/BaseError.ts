@@ -825,10 +825,9 @@ export class BaseError<T extends string> extends Error {
     return renderCauseChain(this, (node) =>
       node instanceof BaseError
         ? {
-            message: node.message,
             messageFilter: node.#messageFilter(),
-            line: (message) =>
-              `[${renderValue(node.name, "Error")}] ${message}`,
+            line: (renderMessage) =>
+              `[${renderValue(node.name, "Error")}] ${renderMessage(node.message)}`,
           }
         : undefined,
     );

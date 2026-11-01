@@ -34,15 +34,16 @@ import {
 export type MessageFilter = (message: unknown) => unknown;
 
 /**
- * A node that the caller renders itself, such as a `BaseError`. `line` wraps
- * the rendered message. `messageFilter` applies to the message of the node
- * and to the message of every node below it, as the policy of the node
- * applies to its subtree in the log object.
+ * A node that the caller renders itself, such as a `BaseError`.
+ * `messageFilter` applies to the message of the node and to the message of
+ * every node below it, as the policy of the node applies to its subtree in
+ * the log object. `line` writes the line of the node and renders its message
+ * with `renderMessage`. The render reads the filter before it calls `line`,
+ * so a `line` that throws keeps the filter for the nodes below.
  */
 export type OwnNode = {
-  readonly message: unknown;
   readonly messageFilter: MessageFilter | undefined;
-  readonly line: (message: string) => string;
+  readonly line: (renderMessage: (message: unknown) => string) => string;
 };
 
 /** The own form of a node, or `undefined` for the default line. */
@@ -245,12 +246,24 @@ function renderNode(
   ownNodeOf: OwnNodeOf,
   inherited: MessageFilter | undefined,
 ): NodeRender {
+  let own: OwnNode | undefined;
   try {
-    const own = ownNodeOf(node);
-    if (own !== undefined) {
-      const below = composeFilters(own.messageFilter, inherited);
-      return { text: own.line(renderMessage(own.message, below)), below };
+    own = ownNodeOf(node);
+  } catch {
+    return { text: UNRENDERABLE_CAUSE_MARKER, below: inherited };
+  }
+  if (own !== undefined) {
+    const below = composeFilters(own.messageFilter, inherited);
+    try {
+      return {
+        text: own.line((message) => renderMessage(message, below)),
+        below,
+      };
+    } catch {
+      return { text: UNRENDERABLE_CAUSE_MARKER, below };
     }
+  }
+  try {
     if (isNativeError(node)) {
       const name = readProperty(node, "name") ?? "Error";
       const message = readProperty(node, "message") ?? "";
@@ -279,19 +292,24 @@ function renderNode(
   }
 }
 
-/** `first`, then `then`: the filter of a node, then the filters above it. */
+/**
+ * `first`, then `then`: the filter of a node, then the filters above it. The
+ * output of a function mask is consumer data, so `then` receives it as text.
+ */
 function composeFilters(
   first: MessageFilter | undefined,
   then: MessageFilter | undefined,
 ): MessageFilter | undefined {
   if (first === undefined) return then;
   if (then === undefined) return first;
-  return (message) => then(first(message));
+  return (message) => then(asText(first(message)));
 }
 
 /**
- * The text of a message after `filter`. Fail-closed: a filter that throws
- * yields the default mask, never the raw message.
+ * The text of a message after `filter`. A foreign message can be any value,
+ * so the filter receives it as text and never runs on the value itself.
+ * Fail-closed: a filter that throws yields the default mask, never the raw
+ * message.
  */
 function renderMessage(
   message: unknown,
@@ -299,10 +317,14 @@ function renderMessage(
 ): string {
   if (filter === undefined) return renderValue(message, "");
   try {
-    return renderValue(filter(message), "[REDACTED]");
+    return renderValue(filter(asText(message)), "[REDACTED]");
   } catch {
     return "[REDACTED]";
   }
+}
+
+function asText(value: unknown): string {
+  return typeof value === "string" ? value : renderValue(value, "");
 }
 
 /**

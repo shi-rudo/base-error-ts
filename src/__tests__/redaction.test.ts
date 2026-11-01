@@ -758,6 +758,50 @@ describe("log redaction", () => {
       );
     });
 
+    it("keeps the message policy of a cause for the nodes below it when its message getter throws", () => {
+      const inner = new BaseError("inner", new Error("native secret")).redact([
+        "message",
+      ]);
+      Object.defineProperty(inner, "message", {
+        get() {
+          throw new Error("hostile getter");
+        },
+        configurable: true,
+      });
+      const outer = new BaseError("outer", inner);
+
+      expect(String(outer)).not.toContain("native secret");
+      expect(String(outer)).toContain("Caused by: Error: [REDACTED]");
+    });
+
+    it("hands a function mask the message of a foreign cause as text", () => {
+      const cause = new Error("x");
+      Object.defineProperty(cause, "message", {
+        value: ["a", "b"],
+        configurable: true,
+      });
+      const outer = new BaseError("outer", cause).redact(["message"], {
+        mask: (value) => typeof value,
+      });
+
+      expect(String(outer)).toBe(
+        "[BaseError] string\nCaused by: Error: string",
+      );
+    });
+
+    it("hands an outer function mask the output of an inner mask as text", () => {
+      const inner = new BaseError("inner").redact(["message"], {
+        mask: () => ({ masked: true }),
+      });
+      const outer = new BaseError("outer", inner).redact(["message"], {
+        mask: (value) => typeof value,
+      });
+
+      expect(String(outer)).toBe(
+        "[BaseError] string\nCaused by: [BaseError] string",
+      );
+    });
+
     it("keeps the message of a cause under an outer deny-list without the message", () => {
       const outer = new BaseError("outer", new Error("cause text")).redact([
         "ssn",
