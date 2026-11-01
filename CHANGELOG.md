@@ -32,7 +32,11 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Fixed
 
+- **`toJSON()` does not throw when `toLogObject` throws.** `toJSON()` called `toLogObject()` through the instance. A subclass override that threw, or an own property `toLogObject` that was no function, made `JSON.stringify(err)` throw. A logger that serializes an error in a `catch` block then replaced the original error with that exception. Now the triage record takes its place, as for a custom policy that throws: `name`, `code`, `category`, `retryable` and the timestamps, with `[log redaction failed]` as the message. The full log object would be fail-open, because the override can be the step that scrubs a field. `logObjectOf` does the same for a `BaseError`.
+
 - **`ValidationError` takes the readonly issues of a Standard Schema result.** `ValidationErrorOptions.issues` and `addIssues` declared a mutable `ValidationIssue[]`, and Standard Schema types the issues of a failure result as a `ReadonlyArray`. So `new ValidationError(message, { issues: result.issues })` failed with TS4104 for Zod, Valibot or ArkType, as the guide shows it. Both now accept `readonly ValidationIssue[]`. A readonly parameter accepts every array that the old one accepted. `ValidationIssue.path` now names `undefined`, as the `Issue` of Standard Schema does. So the issues also pass with `exactOptionalPropertyTypes`.
+
+- **`toString()` masks the message of a cause under the policy of an outer error.** A deny-list on `"message"` masked the message of every cause and aggregate member in the log object. `toString()` applied it to the message of its own error only. So `${err}` printed the raw message of a cause, such as `Caused by: [INNER] inner secret`. Now `toString()` applies the deny-list of each error and of its catalog floor to the messages below it. It keeps the order of the log object: the policy of the node first, the outermost policy last. A function mask that throws renders `[REDACTED]`.
 
 ### Documentation
 
@@ -46,7 +50,7 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **The npm and JSR packages ship an agent skill.** `skills/base-error/` teaches an AI coding assistant the catalogs, the guards and matchers, the log path with redaction and the setups for pino and Sentry, the public-error pipeline, and the migration from older majors. Copy the folder into the skill directory of your project, such as `.claude/skills/` or `.agents/skills/`.
 
-- **The guide says what `console.log` prints for a redacted error.** The _Pitfalls_ page and the observability guide said that `console.log(err)` shows the raw message. It prints the error itself, not the log object. So it also shows every own field with its raw value, the cause and the members of an aggregate. `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` still prints it. The guide now says to log `logObjectOf(err)` or to use the pino setup. It no longer names `logger.error({ err })` as safe, because a plain pino logger reads the error itself. It also says that `toString()` masks the message of a cause only by the policy of that cause. The README, the JSDoc of `redact`, `redactAllow` and `redactWith`, and the skill also say that `console.log` prints the error itself.
+- **The guide says what `console.log` prints for a redacted error.** The _Pitfalls_ page and the observability guide said that `console.log(err)` shows the raw message. It prints the error itself, not the log object. So it also shows every own field with its raw value, the cause and the members of an aggregate. `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` still prints it. The guide now says to log `logObjectOf(err)` or to use the pino setup. It no longer names `logger.error({ err })` as safe, because a plain pino logger reads the error itself. The README, the JSDoc of `redact`, `redactAllow` and `redactWith`, and the skill also say that `console.log` prints the error itself.
 
 ## 9.0.1 - 2026-10-23
 

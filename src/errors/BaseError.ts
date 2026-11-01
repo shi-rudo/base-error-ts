@@ -6,7 +6,11 @@ import {
 import { serializeLogData, normalizeLogNumber } from "./log-data.js";
 import type { LogRegion } from "./log-position.js";
 import { allowListRedaction, denyListRedaction } from "./log-redaction.js";
-import { renderCauseChain, renderValue } from "./cause-chain-render.js";
+import {
+  renderCauseChain,
+  renderValue,
+  type MessageFilter,
+} from "./cause-chain-render.js";
 import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
 import { isNativeError } from "./native-error.js";
 import {
@@ -239,8 +243,9 @@ export class BaseError<T extends string> extends Error {
    * `name: message` header, the redaction rewrites that header with the
    * masked fields and keeps the frames. If a stack does not start with that
    * header, the redaction hands the whole stack to the mask. The
-   * {@link toString} render masks a deny-listed technical message of this
-   * error as well, but not the message of a cause.
+   * {@link toString} render masks a deny-listed technical message as well:
+   * the message of this error and of every cause and aggregate member below
+   * it.
    * The log states the time in two keys, `timestamp` and `timestampIso`; to
    * hide it, deny both. The `err.stack` property stays unredacted.
    * `console.log(err)` prints the error itself, not the log object: every own
@@ -478,10 +483,34 @@ export class BaseError<T extends string> extends Error {
    * an allow-listed, message-free public view.
    */
   public toLogObject(): Record<string, unknown> {
+    return this.#ownLogObject();
+  }
+
+  #ownLogObject(): Record<string, unknown> {
     const context = BaseError.#newLogContext();
     const raw = this.#baseLogObject(context);
     Object.assign(raw, BaseError.#nodeOwnFields(this, context));
     return this.#policyRecord(raw, context, "root");
+  }
+
+  /**
+   * The log object of `error` through `toLogObject`, which an override or an
+   * own property can replace. If that call throws, for example because the
+   * own property is no function, the triage record takes its place, as for a
+   * custom policy that throws. A full log object would be fail-open: the
+   * override can be the step that scrubs a field.
+   */
+  /*#__PURE__*/ static #dispatchedLogObject(
+    error: BaseError<string>,
+  ): Record<string, unknown> {
+    try {
+      return error.toLogObject();
+    } catch {
+      return BaseError.#triageRecord(
+        error.#ownLogObject(),
+        error.#floor?.denied,
+      );
+    }
   }
 
   /**
@@ -563,7 +592,7 @@ export class BaseError<T extends string> extends Error {
   static {
     writeLogObjectOf = (value) =>
       BaseError.#sameRealm(value)
-        ? value.toLogObject()
+        ? BaseError.#dispatchedLogObject(value)
         : BaseError.#serializeCause(
             value,
             { seen: new Set(), path: new Set() },
@@ -788,7 +817,10 @@ export class BaseError<T extends string> extends Error {
   /**
    * JSON serialization for logging-oriented consumers. Alias of
    * {@link toLogObject}. It returns the same **log** shape: technical message,
-   * stack, cause chain and full `details`.
+   * stack, cause chain and full `details`. If `toLogObject` throws, `toJSON`
+   * returns the triage record (`name`, `code`, `category`, `retryable`, the
+   * timestamps, and `[log redaction failed]` as the message), so
+   * `JSON.stringify(err)` does not throw.
    *
    * ⚠️ `JSON.stringify(err)`, `res.json(err)`, `Response.json(err)` and
    * `return err` all route through `toJSON`. So an error sent down any of those
@@ -799,7 +831,7 @@ export class BaseError<T extends string> extends Error {
    * intentionally retains the stack and cause chain.
    */
   public toJSON(): Record<string, unknown> {
-    return this.toLogObject();
+    return BaseError.#dispatchedLogObject(this);
   }
 
   /**
@@ -808,16 +840,22 @@ export class BaseError<T extends string> extends Error {
    * renders the same cause nodes, and past the cap the chain ends with the
    * same depth marker.
    * A plain-object cause carries its data fields in the log object. This
-   * render follows its `cause` links and ends them at the cap. Honors a
-   * deny-listed `"message"` of the instance and of a redaction floor (see
-   * {@link redact}) per BaseError in the chain; other redaction shapes
-   * rewrite only the log object. The render writes at most
+   * render follows its `cause` links and ends them at the cap. A deny-list
+   * on `"message"` of an instance or of a redaction floor (see
+   * {@link redact}) masks the message of its error and of every node below
+   * it, in the order of the log object: the policy of the node first, the
+   * outermost policy last. Other redaction shapes rewrite only the log
+   * object. The render writes at most
    * 100,000 lines, and the next line is the size marker of the log object.
    */
   public override toString(): string {
     return renderCauseChain(this, (node) =>
       node instanceof BaseError
-        ? `[${renderValue(node.name, "Error")}] ${node.#renderMessage()}`
+        ? {
+            messageFilter: node.#messageFilter(),
+            line: (renderMessage) =>
+              `[${renderValue(node.name, "Error")}] ${renderMessage(node.message)}`,
+          }
         : undefined,
     );
   }
@@ -827,29 +865,24 @@ export class BaseError<T extends string> extends Error {
   // ----------------------------------------------------------------
 
   /**
-   * The message as {@link toString} renders it: masked by a deny-list of the
-   * instance and then by a deny-list of the floor that covers `"message"`,
-   * verbatim without either. Fail-closed: a throwing function mask yields the
-   * default marker, never the raw message.
+   * What the policies of this error do to a message in {@link toString}: the
+   * deny-list of the instance, then the deny-list of the floor, each only if
+   * it covers `"message"`. `undefined` without either.
    */
-  /*#__PURE__*/ #renderMessage(): string {
+  /*#__PURE__*/ #messageFilter(): MessageFilter | undefined {
     const instanceMask = this.#messageMask;
     const floorMask = this.#floor?.messageMask;
-    if (instanceMask === undefined && floorMask === undefined) {
-      return renderValue(this.message, "");
-    }
-    try {
-      let value: unknown = this.message;
+    if (instanceMask === undefined && floorMask === undefined) return undefined;
+    return (message) => {
+      let value = message;
       if (instanceMask !== undefined) {
         value = BaseError.#applyMask(instanceMask, value, "message");
       }
       if (floorMask !== undefined) {
         value = BaseError.#applyMask(floorMask, value, "message");
       }
-      return renderValue(value, "[REDACTED]");
-    } catch {
-      return "[REDACTED]";
-    }
+      return value;
+    };
   }
 
   /**
@@ -1215,11 +1248,14 @@ export class BaseError<T extends string> extends Error {
  * The log form of any value, for a logger that receives a thrown value.
  *
  * A `BaseError` of this realm returns its {@link BaseError.toLogObject},
- * with its redaction policy. Any other error returns the node that the log
- * object of a `BaseError` holds for it as a cause. That node holds the name,
- * message and stack of the error, its structured fields, its members and its
- * cause chain. A `BaseError` in that chain keeps its policy. Any other value
- * returns as a copy of log data.
+ * with its redaction policy. If that call throws, for example because an own
+ * property `toLogObject` is no function, the function returns the triage
+ * record of the error, with `[log redaction failed]` as the message. Any
+ * other error returns the node that the log object of a `BaseError` holds
+ * for it as a cause. That node holds the name, message and stack of the
+ * error, its structured fields, its members and its cause chain. A
+ * `BaseError` in that chain keeps its policy. Any other value returns as a
+ * copy of log data.
  *
  * Whatever a foreign value holds, the function does not throw, and its work
  * stays bounded. It writes a foreign error from its fields, so a
