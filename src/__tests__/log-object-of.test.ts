@@ -44,6 +44,48 @@ describe("logObjectOf", () => {
     });
   });
 
+  it("writes the triage record of a library error whose own toLogObject is no function", () => {
+    const error = Object.assign(
+      redactedLookupError(),
+      JSON.parse('{"toLogObject":1}') as object,
+    );
+
+    const node = logObjectOf(error);
+
+    expect(node).toEqual({
+      name: "USER_NOT_FOUND",
+      code: "USER_NOT_FOUND",
+      category: "NOT_FOUND",
+      retryable: false,
+      timestamp: error.timestamp,
+      timestampIso: expect.any(String) as unknown,
+      message: "[log redaction failed]",
+    });
+  });
+
+  it("drops the details of a library error whose scrubbing toLogObject override throws", () => {
+    class ScrubbingLogError extends StructuredError<"LOOKUP", "NOT_FOUND"> {
+      override toLogObject(): Record<string, unknown> {
+        throw new Error("scrubber failed");
+      }
+    }
+    const error = new ScrubbingLogError({
+      code: "LOOKUP",
+      category: "NOT_FOUND",
+      retryable: false,
+      message: "lookup failed",
+      details: { email: SECRET_EMAIL },
+    });
+
+    const node = logObjectOf(error);
+
+    expect(JSON.stringify(node)).not.toContain(SECRET_EMAIL);
+    expect(node).toMatchObject({
+      code: "LOOKUP",
+      message: "[log redaction failed]",
+    });
+  });
+
   it("writes a native error with its own name, message and cause chain, without a wrapper", () => {
     const native = withCause(
       new Error("upstream failed"),
