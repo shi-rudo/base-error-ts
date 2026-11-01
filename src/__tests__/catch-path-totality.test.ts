@@ -37,6 +37,20 @@ function wrap(cause: unknown): BaseError<"Outer"> {
   return new BaseError<"Outer">("outer failed", cause, { name: "Outer" });
 }
 
+describe("totality in catch paths: a library error whose toLogObject is no function", () => {
+  it("keeps toJSON and JSON.stringify total, with the redaction policy", () => {
+    const error = Object.assign(
+      new BaseError("lookup for ada@example.com failed").redact(["message"]),
+      JSON.parse('{"toLogObject":1}') as object,
+    );
+
+    expect(JSON.parse(JSON.stringify(error))).toMatchObject({
+      name: "BaseError",
+      message: "[REDACTED]",
+    });
+  });
+});
+
 describe("totality in catch paths: a throwing getter on a cause", () => {
   for (const key of ["stack", "message", "name", "code", "details", "cause"]) {
     it(`keeps toLogObject, toJSON and JSON.stringify total when \`${key}\` throws`, () => {

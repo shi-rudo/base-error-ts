@@ -30,6 +30,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Fixed
 
+- **`toJSON()` does not throw when `toLogObject` throws.** `toJSON()` called `toLogObject()` through the instance. A subclass override that threw, or an own property `toLogObject` that was no function, made `JSON.stringify(err)` throw. A logger that serializes an error in a `catch` block then replaced the original error with that exception. Now the log object that `BaseError` builds takes its place, with the policies of the error. `logObjectOf` does the same for a `BaseError`.
+
 - **`ValidationError` takes the readonly issues of a Standard Schema result.** `ValidationErrorOptions.issues` and `addIssues` declared a mutable `ValidationIssue[]`, and Standard Schema types the issues of a failure result as a `ReadonlyArray`. So `new ValidationError(message, { issues: result.issues })` failed with TS4104 for Zod, Valibot or ArkType, as the guide shows it. Both now accept `readonly ValidationIssue[]`. A readonly parameter accepts every array that the old one accepted.
 
 ### Documentation

@@ -44,6 +44,41 @@ describe("logObjectOf", () => {
     });
   });
 
+  it("writes a library error whose own toLogObject is no function, with its redaction policy", () => {
+    const error = Object.assign(
+      redactedLookupError(),
+      JSON.parse('{"toLogObject":1}') as object,
+    );
+
+    const node = logObjectOf(error);
+
+    expect(node).toMatchObject({
+      code: "USER_NOT_FOUND",
+      message: "[REDACTED]",
+      details: { email: "[REDACTED]", userId: "123" },
+    });
+  });
+
+  it("writes a library error whose toLogObject override throws, with its redaction policy", () => {
+    class BrokenLogError extends BaseError<"BrokenLogError"> {
+      override toLogObject(): Record<string, unknown> {
+        throw new Error("broken override");
+      }
+    }
+    const error = new BrokenLogError(
+      `lookup for ${SECRET_EMAIL} failed`,
+      undefined,
+      {
+        name: "BrokenLogError",
+      },
+    ).redact(["message"]);
+
+    expect(logObjectOf(error)).toMatchObject({
+      name: "BrokenLogError",
+      message: "[REDACTED]",
+    });
+  });
+
   it("writes a native error with its own name, message and cause chain, without a wrapper", () => {
     const native = withCause(
       new Error("upstream failed"),
