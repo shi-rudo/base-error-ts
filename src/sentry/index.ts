@@ -12,7 +12,11 @@
  * that builds on `@sentry/core`.
  */
 import { logObjectOf } from "../index.js";
-import { readOwnEnumerableKeys, readProperty } from "../errors/guarded-read.js";
+import {
+  isArrayValue,
+  readOwnEnumerableKeys,
+  readProperty,
+} from "../errors/guarded-read.js";
 import { isNativeError } from "../errors/native-error.js";
 import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
 
@@ -33,6 +37,12 @@ type SentryEvent = {
 type SentryHint = { originalException?: unknown };
 
 type LogNode = Record<string, unknown>;
+
+/**
+ * One exception of the event: its node in the log object, and the error that
+ * Sentry wrote the exception from.
+ */
+type Position = { readonly node: unknown; readonly error: unknown };
 
 /** `isNativeError` reads the prototype first, and a Proxy can throw there. */
 function isErrorValue(value: unknown): value is Error {
@@ -68,29 +78,32 @@ function textOf(value: unknown): string | undefined {
 }
 
 /**
- * The node under the key that `source` names on its parent: `cause`, or a
- * member `errors[i]` of an aggregate. Any other key finds no node.
+ * The value under the key that `source` names on its parent: `cause`, or a
+ * member `errors[i]` of an aggregate. Any other key finds nothing. The same
+ * links lead through the log object and through the errors, and every read
+ * is guarded, because an error is a foreign value.
  */
-function childOf(node: unknown, source: string | undefined): unknown {
-  if (!isLogNode(node)) return undefined;
-  if (source === "cause") return node.cause;
+function childOf(parent: unknown, source: string | undefined): unknown {
+  if (source === "cause") return readProperty(parent, "cause");
   const member = /^errors\[(\d+)\]$/.exec(source ?? "");
-  if (member === null || !Array.isArray(node.errors)) return undefined;
-  return node.errors[Number(member[1])];
+  if (member === null) return undefined;
+  const errors = readProperty(parent, "errors");
+  if (!isArrayValue(errors)) return undefined;
+  return readProperty(errors, String(Number(member[1])));
 }
 
 /**
- * The log node of each linked exception, by its `exception_id`. Sentry links
+ * The position of each linked exception, by its `exception_id`. Sentry links
  * a cause and a member of an aggregate as an exception whose `mechanism`
  * names its parent (`parent_id`) and its link (`source`, `cause` or
  * `errors[i]`). A parent has a lower id than its children, so one pass in id
  * order meets each parent first. A link to a missing or later id finds no
- * node.
+ * node and no error.
  */
-function logNodesById(
+function positionsById(
   exceptions: readonly SentryException[],
-  logObject: LogNode,
-): Map<number, unknown> {
+  root: Position,
+): Map<number, Position> {
   const links: { id: number; parentId?: number; source?: string }[] = [];
   for (const { mechanism } of exceptions) {
     if (mechanism?.exception_id === undefined) continue;
@@ -101,23 +114,68 @@ function logNodesById(
     });
   }
   links.sort((first, second) => first.id - second.id);
-  const nodes = new Map<number, unknown>();
+  const positions = new Map<number, Position>();
   for (const { id, parentId, source } of links) {
-    const node =
-      parentId === undefined ? logObject : childOf(nodes.get(parentId), source);
-    nodes.set(id, node);
+    if (parentId === undefined) {
+      positions.set(id, root);
+      continue;
+    }
+    const parent = positions.get(parentId);
+    positions.set(id, {
+      node: childOf(parent?.node, source),
+      error: childOf(parent?.error, source),
+    });
   }
-  return nodes;
+  return positions;
 }
 
 /**
- * Replaces the name and the message of each exception with the ones of its
- * log node. An exception without a log node keeps no name and no message. A
- * marker of the log object, such as `[Shared cause]`, becomes the message.
- * An event without an error to report has no policy to keep and stays as it
- * is. Sentry calls `beforeSend` after all its integrations, so no integration
- * can add a raw message afterwards. Pass this function to `Sentry.init` as
- * the `beforeSend` option.
+ * Writes the name and the message of a log node into the exception. A marker
+ * that takes the place of a node, such as `[Shared cause]`, becomes the
+ * message, and no node leaves no name and no message.
+ */
+function writeNode(exception: SentryException, node: unknown): void {
+  exception.type = isLogNode(node) ? textOf(node.name) : undefined;
+  exception.value = isLogNode(node) ? textOf(node.message) : textOf(node);
+}
+
+/**
+ * Writes the name and the message of the log node into the exception where
+ * they differ from the raw name and message of the error: there a policy
+ * masked them, or the log object holds a marker. Elsewhere the exception
+ * keeps what Sentry and the integrations wrote, such as a scrubbed or a cut
+ * value.
+ */
+function writePolicyChanges(
+  exception: SentryException,
+  position: Position | undefined,
+): void {
+  const node = position?.node;
+  if (!isLogNode(node)) {
+    writeNode(exception, node);
+    return;
+  }
+  const name = textOf(node.name);
+  const message = textOf(node.message);
+  if (name !== textOf(readProperty(position?.error, "name"))) {
+    exception.type = name;
+  }
+  if (message !== textOf(readProperty(position?.error, "message"))) {
+    exception.value = message;
+  }
+}
+
+/**
+ * Keeps the redaction policy of the reported error in the exceptions of the
+ * event. Where a policy masked a name or a message, the exception gets the
+ * masked text of the log object. A text that a policy masks only in part
+ * can still hold a value that an integration removed. Every other exception
+ * keeps what Sentry and the integrations wrote. If several exceptions carry
+ * no `exception_id`, the hook cannot place them, and each gets the name and
+ * the message of the node of the error. An event without an error to report
+ * has no policy to keep and stays as it is. Sentry calls `beforeSend` after
+ * all its integrations, so no integration can add a raw message afterwards.
+ * Pass this function to `Sentry.init` as the `beforeSend` option.
  */
 export function beforeSend<E extends SentryEvent>(
   event: E,
@@ -128,12 +186,13 @@ export function beforeSend<E extends SentryEvent>(
   if (exceptions === undefined || error === undefined) return event;
   const logObject = logObjectOf(error);
   if (!isLogNode(logObject)) return event;
-  const nodes = logNodesById(exceptions, logObject);
+  const root: Position = { node: logObject, error };
+  const positions = positionsById(exceptions, root);
   for (const exception of exceptions) {
     const id = exception.mechanism?.exception_id;
-    const node = id === undefined ? logObject : nodes.get(id);
-    exception.type = isLogNode(node) ? textOf(node.name) : undefined;
-    exception.value = isLogNode(node) ? textOf(node.message) : textOf(node);
+    if (id !== undefined) writePolicyChanges(exception, positions.get(id));
+    else if (exceptions.length === 1) writePolicyChanges(exception, root);
+    else writeNode(exception, logObject);
   }
   return event;
 }
@@ -143,7 +202,9 @@ export function beforeSend<E extends SentryEvent>(
  * event.
  * Sentry runs `processEvent` before it normalizes the event, so
  * `normalizeDepth` bounds the context. An `error` context that the
- * application sets wins. Add it to the `integrations` of `Sentry.init`.
+ * application sets wins. For an error without a policy, the context holds its
+ * raw message and stack, and an integration that scrubs the exception values
+ * does not reach it. Add it to the `integrations` of `Sentry.init`.
  */
 export function logObjectContextIntegration(): {
   name: string;
