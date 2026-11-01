@@ -1,7 +1,8 @@
 # Proposal 0001: Error catalog & exhaustive `matchError`
 
 > Historical v5/v6 design. The catalog surface is superseded by Proposal 0009
-> for v7; the `matchError` decision remains current.
+> for v7. Proposal 0022 renames `matchError` to `matchErrorCode` in v10; the
+> design of the matcher remains current.
 
 Status: implemented; release: 5.0.0. Proposal 0009 replaced the catalog in 7.0.0.
 **Audience:** DDD and enterprise users modeling domain errors as a closed set.

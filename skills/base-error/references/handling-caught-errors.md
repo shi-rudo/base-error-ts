@@ -22,17 +22,17 @@ and they can be forged. Use them for classification, not to decide what to
 disclose or which domain behavior to run. All guards fail closed: a throwing
 getter or proxy reads as "no match".
 
-## Closed dispatch: `matchError`
+## Closed dispatch: `matchErrorCode`
 
 Exhaustive over a closed union of literal codes, with per-case narrowing of
 `details`. A missing code is a compile error unless a `_` case catches the
 rest:
 
 ```ts
-import { matchError } from "@shirudo/base-error";
+import { matchErrorCode } from "@shirudo/base-error";
 
 if (OrderErrors.is(e)) {
-  return matchError(e, {
+  return matchErrorCode(e, {
     ORDER_NOT_FOUND: (x) => notFound(x.details?.orderId),
     STOCK_RESERVATION_FAILED: () => retryLater(),
   });
@@ -51,13 +51,13 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
 - In a generic function, an error typed `StructuredError<Code>` with `Code` a
-  type parameter names no code. `matchError` takes only a `_`-only table for
+  type parameter names no code. `matchErrorCode` takes only a `_`-only table for
   it. To name handlers, assign the error to a variable typed with its codes
   or with `StructuredError<string>`, and match that variable.
 
 ## Closed dispatch by key: `Errors.match`
 
-Every catalog has `match`: `matchError` with handlers named by key. Use it for
+Every catalog has `match`: `matchErrorCode` with handlers named by key. Use it for
 a catalog with a prefix, where the code is dotted and the key is not:
 
 ```ts
@@ -74,13 +74,13 @@ throw e;
   a compile error, also next to `_`.
 - `match` checks no provenance. Narrow a caught value with `Errors.is` first.
 - A catalog with the key `_` cannot use `match`: `_` is the catch-all.
-- Match a union of several catalogs with `matchError` on the codes; a quoted
+- Match a union of several catalogs with `matchErrorCode` on the codes; a quoted
   code needs no brackets. Never split the union with `is`: `is` checks
   provenance, so an error rebuilt with `fromJSON` lands in the other branch,
   and that catalog's `match` throws.
 
 ```ts
-matchError(accessError, {
+matchErrorCode(accessError, {
   "restaurant.authz.not_a_member": () => 403,
   "restaurant.authz.missing_role": () => 403,
   "restaurant.storage.not_found": () => 404,

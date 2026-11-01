@@ -3,7 +3,7 @@ import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 import {
   detailsType,
   defineErrors,
-  matchError,
+  matchErrorCode,
   StructuredError,
   isStructuredError,
 } from "../index.js";
@@ -104,9 +104,9 @@ describe("defineErrors", () => {
     expect(status).toBe(404);
   });
 
-  it("produces a union that matchError handles exhaustively with narrowing", () => {
+  it("produces a union that matchErrorCode handles exhaustively with narrowing", () => {
     const toStatus = (err: AppError) =>
-      matchError(err, {
+      matchErrorCode(err, {
         USER_NOT_FOUND: (e) => ({ status: 404, user: e.details?.userId }),
         RATE_LIMITED: () => ({ status: 429, user: undefined }),
       });
@@ -903,7 +903,7 @@ describe("Catalog.match", () => {
     expect(() =>
       Underscore.match(error as never, { _: () => "catch-all" } as never),
     ).toThrow(
-      'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchError',
+      'match: the key "_" of this catalog is also the catch-all; rename the key, or use matchErrorCode',
     );
   });
 

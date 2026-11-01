@@ -4,16 +4,16 @@ The package supports three matching modes for different type models:
 
 | Matcher               | Input model                         | Completion                       |
 | --------------------- | ----------------------------------- | -------------------------------- |
-| `matchError`          | closed `StructuredError` code union | compile-time exhaustive          |
+| `matchErrorCode`          | closed `StructuredError` code union | compile-time exhaustive          |
 | `Catalog.match`       | errors of one catalog, by key       | compile-time exhaustive          |
 | `ErrorClassSet.match` | declared local Error-class set      | compile-time exhaustive          |
 | `matchThrown`         | open-world `unknown`                | explicit `.otherwise()` fallback |
 
-Use `matchError` when your application owns a closed error catalog. Use
+Use `matchErrorCode` when your application owns a closed error catalog. Use
 `matchThrown` at boundaries that receive native errors, third-party classes,
 Node.js-style error codes, or arbitrary thrown values.
 
-`Catalog.match` is `matchError` with handlers named by the key of a
+`Catalog.match` is `matchErrorCode` with handlers named by the key of a
 definition. A catalog with a [prefix](./catalog#codes-with-a-prefix) uses it,
 so that a dotted code needs no brackets.
 
@@ -145,16 +145,16 @@ If a runtime value matches no declared class, `match` throws. Use
 `matchThrown(value).otherwise(...)` instead when arbitrary or cross-realm
 values are expected and require a fallback.
 
-## Closed structured matching with `matchError`
+## Closed structured matching with `matchErrorCode`
 
-`matchError` dispatches on a structured error's `code` with **compile-time
+`matchErrorCode` dispatches on a structured error's `code` with **compile-time
 exhaustiveness** and per-case type narrowing, the ergonomic way to handle a
 closed set of domain errors as a tagged union.
 
 ```ts
-import { matchError } from "@shirudo/base-error";
+import { matchErrorCode } from "@shirudo/base-error";
 
-const status = matchError(err, {
+const status = matchErrorCode(err, {
   USER_NOT_FOUND: () => 404,
   EMAIL_TAKEN: () => 409,
   RATE_LIMITED: (e) => (e.retryable ? 429 : 503),
@@ -167,13 +167,13 @@ When `err`'s type is a closed union of error types, omitting a `code` is a
 **compile error**. Add the case, or opt out with a `_` catch-all:
 
 ```ts
-matchError(err, {
+matchErrorCode(err, {
   USER_NOT_FOUND: () => render404(),
   _: (e) => renderGeneric(e.code), // handles every other code
 });
 ```
 
-When a new error code is added to the union, every `matchError` without a `_`
+When a new error code is added to the union, every `matchErrorCode` without a `_`
 stops compiling until you handle it. That is the point: the compiler maintains
 your error-handling completeness.
 
@@ -182,7 +182,7 @@ contain, with or without `_`. So a misspelled code fails to compile and does
 not fall through to `_`:
 
 ```ts
-matchError(err, {
+matchErrorCode(err, {
   USER_NOT_FUND: () => render404(), // compile error: no such code
   _: (e) => renderGeneric(e.code),
 });
@@ -194,7 +194,7 @@ The compiler checks names only against known codes:
   it names every string. Write the table as an object literal.
 - An error whose code type is a bare type parameter names no code. An example
   is `StructuredError<Code>` in a generic function. For such an error,
-  `matchError` takes only a table with a single `_` handler. To name other
+  `matchErrorCode` takes only a table with a single `_` handler. To name other
   handlers, assign the error to a variable typed with its codes, or with
   `StructuredError<string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
@@ -218,7 +218,7 @@ type RateLimited = StructuredError<
 >;
 type AppError = UserNotFound | RateLimited;
 
-matchError(err as AppError, {
+matchErrorCode(err as AppError, {
   USER_NOT_FOUND: (e) => e.details?.userId, // { userId: string } | undefined
   RATE_LIMITED: (e) => e.details?.retryAfter, // { retryAfter: number } | undefined
 });
@@ -238,7 +238,7 @@ try {
   await doWork();
 } catch (e) {
   if (AppErrors.is(e)) {
-    return matchError(e, {
+    return matchErrorCode(e, {
       USER_NOT_FOUND: () => 404,
       RATE_LIMITED: () => 429,
     });

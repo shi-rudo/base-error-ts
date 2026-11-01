@@ -4,7 +4,7 @@ description: >
   Use @shirudo/base-error to model errors as typed values, log them with
   redaction, and turn them into safe client output. Covers BaseError,
   StructuredError, defineErrors (with a prefix for dotted codes), detailsType,
-  CatalogError, Catalog.match, matchError, matchThrown, defineErrorClassSet,
+  CatalogError, Catalog.match, matchErrorCode, matchThrown, defineErrorClassSet,
   guard, the type guards, toStructuredError, ValidationError,
   StructuredAggregateError, toLogObject, logObjectOf, redact, redactAllow,
   redactWith, the public-error subpath (definePublicErrors, project, localize, toProblem,
@@ -65,7 +65,7 @@ sends the stack when `NODE_ENV` is not `production`.
    for logs only.
 3. **Handle** a caught value: narrow it with `Errors.is(e)` or
    `Errors.is(e, "KEY")`, then dispatch with `Errors.match(e, { KEY: … })` or
-   `matchError`, which fail to compile when a case is missing. For values the
+   `matchErrorCode`, which fail to compile when a case is missing. For values the
    application does not own, use `matchThrown(e)…otherwise(…)`.
 4. **Log** through the setup of the sink: `pinoErrorOptions` from
    `@shirudo/base-error/pino`, `beforeSend` and
@@ -139,7 +139,7 @@ sends the stack when `NODE_ENV` is not `production`.
 | Reference | Read when |
 | --- | --- |
 | `references/catalogs-and-classes.md` | defining catalogs, dotted codes with a prefix, composing catalogs, subclassing `StructuredError`, `ValidationError`, aggregates |
-| `references/handling-caught-errors.md` | guards, `Catalog.match`, `matchError`, `matchThrown`, class sets, `toStructuredError`, cause chains, retryability |
+| `references/handling-caught-errors.md` | guards, `Catalog.match`, `matchErrorCode`, `matchThrown`, class sets, `toStructuredError`, cause chains, retryability |
 | `references/logging-and-redaction.md` | `toLogObject`, `logObjectOf`, the pino and Sentry setups, redaction, own log fields, `fromJSON` |
 | `references/public-error.md` | `definePublicErrors`, descriptors, `project`, `localize`, `toProblem`, typed public codes, server functions |
 | `references/migration.md` | code written against an older major, or an API this skill does not name |

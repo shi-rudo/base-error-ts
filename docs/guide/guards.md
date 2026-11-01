@@ -34,7 +34,7 @@ try {
   await doWork();
 } catch (e) {
   if (isStructuredError(e)) {
-    e.code; // typed; narrow further with matchError
+    e.code; // typed; narrow further with matchErrorCode
   } else if (isBaseError(e)) {
     e.timestamp; // BaseError fields available
   }

@@ -99,7 +99,7 @@ error handler, as step 4 shows.
 ### 2. Log and handle it
 
 ```ts
-import { matchError } from "@shirudo/base-error";
+import { matchErrorCode } from "@shirudo/base-error";
 
 const error = new UserNotFoundError("123", dbError);
 
@@ -109,7 +109,7 @@ logger.error(error.toLogObject());
 //   code: "USER_NOT_FOUND", category: "NOT_FOUND", retryable: false,
 //   details: { userId: "123" } }
 
-const user = matchError(error, {
+const user = matchErrorCode(error, {
   USER_NOT_FOUND: () => null, // a missing user is "no result" here
   _: (other) => {
     throw other;
@@ -181,7 +181,7 @@ of the request.
 
 **Handle errors**
 
-- `matchError` dispatches on `code`. The compiler makes sure that every code
+- `matchErrorCode` dispatches on `code`. The compiler makes sure that every code
   has a handler.
 - `defineErrorClassSet` does the same for a set of error classes.
 - `matchThrown` matches any caught value by class or by guard.
@@ -246,7 +246,7 @@ To read it locally, run `pnpm docs:dev`.
 - [StructuredError](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/structured-error.md)
 - [Error catalog (`defineErrors`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/catalog.md)
 - [Validation errors](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/validation.md)
-- [Matching errors (`matchError`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/matching.md)
+- [Matching errors (`matchErrorCode`)](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/matching.md)
 - [Cause chains](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/cause-chains.md)
 - [Type guards and assertions](https://github.com/shi-rudo/base-error-ts/blob/main/docs/guide/guards.md)
 

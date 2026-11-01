@@ -16,7 +16,7 @@ if (v.hasIssues()) throw v;
 
 It is a normal structured error (`code` `"VALIDATION_FAILED"`, `category`
 `"VALIDATION"`, stable `_tag`), so `instanceof StructuredError`, `code` and
-[`matchError`](./matching) all work.
+[`matchErrorCode`](./matching) all work.
 
 ## Runtime validation of catalog details
 
