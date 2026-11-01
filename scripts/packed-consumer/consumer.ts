@@ -145,6 +145,17 @@ export const invalid = new ValidationError("invalid").addIssue({
   path: ["email"],
 });
 
+/** The `Issue` of Standard Schema v1, as `@standard-schema/spec` declares it. */
+interface StandardSchemaIssue {
+  readonly message: string;
+  readonly path?:
+    ReadonlyArray<PropertyKey | { readonly key: PropertyKey }> | undefined;
+}
+declare const schemaIssues: ReadonlyArray<StandardSchemaIssue>;
+export const fromSchema = new ValidationError("invalid", {
+  issues: schemaIssues,
+}).addIssues(schemaIssues);
+
 export function codeOf(value: unknown): string | undefined {
   return isStructuredError(value) ? value.code : undefined;
 }
