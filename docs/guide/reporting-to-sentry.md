@@ -48,11 +48,14 @@ The setup has two parts:
   (`source`, which is `cause` or `errors[i]`), so the hook finds the node of
   each exception and the error that it comes from. Where a policy masked the
   name or the message, the exception gets the masked text of the node. A
-  marker of the log object, such as `[Circular cause chain]`, becomes the
-  message. Every other exception keeps what Sentry and your integrations
-  wrote, such as a scrubbed or a cut value. So the hook never sends more than
-  Sentry alone. An exception without a node keeps no name and no message. An event without an original error, for
-  example from `captureEvent`, has no policy to keep and stays as it is.
+  text that a policy masks only in part can still hold a value that an
+  integration removed. A marker of the log object, such as
+  `[Circular cause chain]`, becomes the message. Every other exception keeps
+  what Sentry and your integrations wrote, such as a scrubbed or a cut value.
+  An exception without a node keeps no name and no message. If several
+  exceptions carry no `exception_id`, each gets the name and the message of
+  the node of the error. An event without an original error, for example
+  from `captureEvent`, has no policy to keep and stays as it is.
 - **The `LogObjectContext` integration.** It adds the log object of the error
   as the `error` context, with `code`, `category`, `retryable` and `details`.
   Sentry runs it before it normalizes the event, so `normalizeDepth` (3 by

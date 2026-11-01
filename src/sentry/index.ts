@@ -130,13 +130,21 @@ function positionsById(
 }
 
 /**
+ * Writes the name and the message of a log node into the exception. A marker
+ * that takes the place of a node, such as `[Shared cause]`, becomes the
+ * message, and no node leaves no name and no message.
+ */
+function writeNode(exception: SentryException, node: unknown): void {
+  exception.type = isLogNode(node) ? textOf(node.name) : undefined;
+  exception.value = isLogNode(node) ? textOf(node.message) : textOf(node);
+}
+
+/**
  * Writes the name and the message of the log node into the exception where
  * they differ from the raw name and message of the error: there a policy
  * masked them, or the log object holds a marker. Elsewhere the exception
  * keeps what Sentry and the integrations wrote, such as a scrubbed or a cut
- * value. A marker that takes the place of a node, such as `[Shared cause]`,
- * becomes the message. An exception without a log node keeps no name and no
- * message.
+ * value.
  */
 function writePolicyChanges(
   exception: SentryException,
@@ -144,8 +152,7 @@ function writePolicyChanges(
 ): void {
   const node = position?.node;
   if (!isLogNode(node)) {
-    exception.type = undefined;
-    exception.value = textOf(node);
+    writeNode(exception, node);
     return;
   }
   const name = textOf(node.name);
@@ -161,12 +168,14 @@ function writePolicyChanges(
 /**
  * Keeps the redaction policy of the reported error in the exceptions of the
  * event. Where a policy masked a name or a message, the exception gets the
- * masked text of the log object. Every other exception keeps what Sentry and
- * the integrations wrote, so the hook never sends more than Sentry alone. An
- * event without an error to report has no policy to keep and stays as it
- * is. Sentry calls `beforeSend` after all its integrations, so no integration
- * can add a raw message afterwards. Pass this function to `Sentry.init` as
- * the `beforeSend` option.
+ * masked text of the log object. A text that a policy masks only in part
+ * can still hold a value that an integration removed. Every other exception
+ * keeps what Sentry and the integrations wrote. If several exceptions carry
+ * no `exception_id`, the hook cannot place them, and each gets the name and
+ * the message of the node of the error. An event without an error to report
+ * has no policy to keep and stays as it is. Sentry calls `beforeSend` after
+ * all its integrations, so no integration can add a raw message afterwards.
+ * Pass this function to `Sentry.init` as the `beforeSend` option.
  */
 export function beforeSend<E extends SentryEvent>(
   event: E,
@@ -181,7 +190,9 @@ export function beforeSend<E extends SentryEvent>(
   const positions = positionsById(exceptions, root);
   for (const exception of exceptions) {
     const id = exception.mechanism?.exception_id;
-    writePolicyChanges(exception, id === undefined ? root : positions.get(id));
+    if (id !== undefined) writePolicyChanges(exception, positions.get(id));
+    else if (exceptions.length === 1) writePolicyChanges(exception, root);
+    else writeNode(exception, logObject);
   }
   return event;
 }

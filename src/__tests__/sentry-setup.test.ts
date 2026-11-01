@@ -10,7 +10,7 @@ import {
 import { ServerRuntimeClient, nodeStackLineParser } from "@sentry/core/server";
 import { describe, expect, it } from "vitest";
 
-import { StructuredError } from "../index.js";
+import { BaseError, StructuredError } from "../index.js";
 import { CIRCULAR_CAUSE_CHAIN_MARKER } from "../errors/serializer-markers.js";
 import { hostileProxy, revokedProxy } from "./hostile-values.fixture.js";
 import { beforeSend, logObjectContextIntegration } from "../sentry/index.js";
@@ -246,6 +246,42 @@ describe("the Sentry setup", () => {
     expect(namesAndValuesOf(withSetup.event)).toEqual(
       namesAndValuesOf(withoutSetup.event),
     );
+  });
+
+  it("writes the node of the error over exceptions without an id when the event holds several", async () => {
+    const error = new StructuredError({
+      code: "SYNC_FAILED",
+      category: "INTERNAL",
+      retryable: true,
+      message: "sync failed",
+      cause: new BaseError(SECRET_CAUSE).redact(["message"]),
+    });
+
+    const { body, event } = await sentCapture((scope) =>
+      scope.captureEvent(
+        {
+          exception: {
+            values: [
+              { type: "BaseError", value: SECRET_CAUSE },
+              { type: "SYNC_FAILED", value: "sync failed" },
+            ],
+          },
+        },
+        { originalException: error },
+      ),
+    );
+
+    expect(body).not.toContain(SECRET_CAUSE);
+    const withoutId = exceptionsOf(event).filter(
+      (exception) => exception.mechanism?.exception_id === undefined,
+    );
+    expect(withoutId.length).toBeGreaterThan(0);
+    for (const exception of withoutId) {
+      expect(exception).toMatchObject({
+        type: "SYNC_FAILED",
+        value: "sync failed",
+      });
+    }
   });
 
   it("keeps the messages of a native error and its cause chain", async () => {
