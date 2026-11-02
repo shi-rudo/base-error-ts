@@ -66,6 +66,15 @@ export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 export const MAX_DATA_DEPTH = 100;
 
 /**
+ * Largest number of entries the log-data copy takes from one array, and of
+ * keys from one object. Depth and the node budget do not bound one wide
+ * container, so one array of 200 000 entries spent the budget of the whole
+ * build and cost its siblings. Past the cap, an array ends with a count
+ * marker and an object gets the key of the count marker (proposal 0023).
+ */
+export const MAX_DATA_WIDTH = 1000;
+
+/**
  * Total-node budget for one data copy or `cloneJsonSafe` call. Log data
  * shares its allowance with the whole build (MAX_LOG_NODES). The unit is
  * one visited value, a container or a leaf. Redaction walks the copy and

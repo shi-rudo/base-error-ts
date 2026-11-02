@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError, StructuredError } from "../index.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 type Log = Record<string, unknown>;
 class Fields extends BaseError<"Fields"> {
@@ -74,7 +75,7 @@ describe("review regressions", () => {
   });
   it("shares the data budget across own fields and cause nodes", () => {
     let reads = 0;
-    const wide = Array.from({ length: 20_000 }, () => ({
+    const wide = leavesInChunks(20_000, () => ({
       get value() {
         reads++;
         return 1;
@@ -90,7 +91,7 @@ describe("review regressions", () => {
   });
   it("distinguishes an oversized field from a cycle in later fields", () => {
     const log = new Fields({
-      large: Array(100_001).fill(1),
+      large: leavesInChunks(),
       small: "innocent",
     }).toLogObject();
     expect(log.large).toBe("[Max log size exceeded]");
@@ -110,7 +111,7 @@ describe("review regressions", () => {
       Object.defineProperty(error, "details", {
         get() {
           reads++;
-          return Array(20_000).fill(1);
+          return leavesInChunks(20_000);
         },
       });
     }
@@ -168,7 +169,7 @@ it("charges non-enumerable hook key inspections across aggregate branches", () =
 
 it("keeps aggregate size markers, emitted or equal by value, under a sticky allow-list", () => {
   const large = Object.assign(new Error("large"), {
-    details: Array(100_001).fill(1),
+    details: leavesInChunks(),
   });
   const nested = new BaseError(
     "middle",

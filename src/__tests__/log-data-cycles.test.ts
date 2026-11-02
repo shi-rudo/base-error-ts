@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError } from "../index.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 type Log = Record<string, unknown>;
 
@@ -170,7 +171,7 @@ describe("log data replaces only repeated ancestor references", () => {
     const graph = selfReferencingObject();
     const error = new DataError({
       payload: {
-        cycles: Array(100_001).fill(graph),
+        cycles: leavesInChunks(100_001, () => graph),
         get later() {
           laterReads++;
           return "must not be read";
@@ -191,7 +192,7 @@ describe("log data replaces only repeated ancestor references", () => {
     const error = new DataError({
       payload: {
         graph: selfReferencingObject(),
-        wide: Array(200_000).fill(1),
+        wide: leavesInChunks(200_000),
         get later() {
           laterReads++;
           return "must not be read";

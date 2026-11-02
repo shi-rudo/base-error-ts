@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BaseError, StructuredError } from "../index.js";
-import { MAX_LOG_NODES } from "../errors/walker-bounds.js";
+import { leavesInChunks } from "./chunked-data.fixture.js";
 
 class NumberFieldsError extends BaseError<string> {
   constructor(private readonly value: number) {
@@ -94,13 +94,10 @@ describe("numbers in copied log values", () => {
   it.each(cases)(
     "normalizes $label in a root envelope after budget exhaustion",
     ({ value, expected }) => {
-      const error = Object.assign(
-        new BaseError("outer", new Array(MAX_LOG_NODES).fill(1)),
-        {
-          code: value,
-          retryable: false,
-        },
-      );
+      const error = Object.assign(new BaseError("outer", leavesInChunks()), {
+        code: value,
+        retryable: false,
+      });
 
       const log = error.toLogObject();
 
@@ -114,7 +111,7 @@ describe("numbers in copied log values", () => {
     "normalizes $label in a cause envelope after budget exhaustion",
     ({ value, expected }) => {
       const cause = Object.assign(new Error("cause"), {
-        stack: new Array(MAX_LOG_NODES).fill(1),
+        stack: leavesInChunks(),
         code: value,
         retryable: false,
       });

@@ -11,6 +11,7 @@ import {
   readToJSON,
   UNREADABLE_TO_JSON,
   readOwnEnumerableKeys,
+  readOwnKeyCount,
   readProperty,
   readPropertyResult,
 } from "./guarded-read.js";
@@ -23,12 +24,16 @@ import {
 } from "./log-position.js";
 import {
   MAX_LOG_SIZE_MARKER,
+  MORE_KEYS_KEY,
   UNSERIALIZABLE_VALUE_MARKER,
+  binaryDataMarker,
   circularObjectMarker,
+  moreItemsMarker,
 } from "./serializer-markers.js";
 import {
   MAX_CAUSE_DEPTH,
   MAX_DATA_DEPTH,
+  MAX_DATA_WIDTH,
   MAX_LOG_NODES,
 } from "./walker-bounds.js";
 
@@ -92,6 +97,53 @@ const SLOTLESS_BUILT_IN_TAGS: ReadonlySet<string> = new Set(
     "AbortSignal",
   ].map((name) => `[object ${name}]`),
 );
+
+const ARRAY_BUFFER_TAGS: ReadonlySet<string> = new Set([
+  "[object ArrayBuffer]",
+  "[object SharedArrayBuffer]",
+]);
+
+/**
+ * The summary of binary data, or `undefined` for any other value. A typed
+ * array, a `Buffer`, a `DataView` and an `ArrayBuffer` hold bytes, not log
+ * data, and one of them can spend the node budget of the whole build. The
+ * summary names the type and the size: the element count of a typed array,
+ * the byte count of a `DataView` or a buffer. `ArrayBuffer.isView` reads an
+ * internal slot and runs no trap of a Proxy.
+ */
+function binarySummary(value: object): string | undefined {
+  const tag = readObjectTag(value);
+  const view = ArrayBuffer.isView(value);
+  if (!view && (tag === undefined || !ARRAY_BUFFER_TAGS.has(tag))) {
+    return undefined;
+  }
+  const size = readProperty(
+    value,
+    view && tag !== "[object DataView]" ? "length" : "byteLength",
+  );
+  const type =
+    readConstructorName(value) || (tag ?? "[object Object]").slice(8, -1);
+  return binaryDataMarker(
+    type,
+    typeof size === "number" && Number.isSafeInteger(size) && size >= 0
+      ? size
+      : 0,
+  );
+}
+
+/**
+ * The number of own keys of `value` past the first `taken`, or the
+ * unserializable-value marker when the keys cannot be counted. It counts
+ * from one enumeration of the keys and reads no descriptor, so the count
+ * costs no work that the budget of the build does not bound. A symbol or a
+ * non-enumerable key before the cut counts as dropped.
+ */
+function droppedKeyCount(value: object, taken: number): number | string {
+  const count = readOwnKeyCount(value);
+  return count === undefined
+    ? UNSERIALIZABLE_VALUE_MARKER
+    : Math.max(0, count - taken);
+}
 
 /**
  * JSON unboxes by internal brand; a consumer tag cannot grant or hide it. A
@@ -217,6 +269,12 @@ export function serializeLogData(
           if (pastDepthCap(position)) return {};
           item = errorView();
         } else {
+          // Binary data is summarized before its toJSON runs: the toJSON of
+          // a Buffer returns every byte.
+          if (item !== null && typeof item === "object") {
+            const summary = binarySummary(item);
+            if (summary !== undefined) return summary;
+          }
           const toJSON = readToJSON(item);
           if (toJSON === UNREADABLE_TO_JSON) return UNSERIALIZABLE_VALUE_MARKER;
           if (typeof toJSON === "function")
@@ -259,8 +317,9 @@ export function serializeLogData(
             length >= 0
               ? length
               : 0;
+          const shown = Math.min(count, MAX_DATA_WIDTH);
           const out: unknown[] = [];
-          for (let index = 0; index < count; index++) {
+          for (let index = 0; index < shown; index++) {
             if (budget.nodes >= budget.limit) throw SIZE_CUT;
             const field = readPropertyResult(item, String(index));
             out.push(
@@ -272,13 +331,20 @@ export function serializeLogData(
               ) ?? null,
             );
           }
+          if (count > shown) out.push(moreItemsMarker(count - shown));
           return out;
         }
         const out = Object.create(null) as Record<string, unknown>;
         const keys = readOwnEnumerableKeys(item, MAX_LOG_NODES, budget);
+        let taken = 0;
         let entry = keys.next();
         while (!entry.done) {
           if (budget.nodes >= budget.limit) throw SIZE_CUT;
+          if (taken === MAX_DATA_WIDTH) {
+            out[MORE_KEYS_KEY] = droppedKeyCount(item, taken);
+            return Object.setPrototypeOf(out, Object.prototype);
+          }
+          taken++;
           const key = entry.value;
           const read = readPropertyResult(item, key);
           // A failed diagnostic read must not manufacture a scalar decision.

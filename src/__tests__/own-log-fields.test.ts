@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { BaseError, StructuredError } from "../index.js";
+import { keysInChunks } from "./chunked-data.fixture.js";
 
 /** A subclass that contributes its own fields through the narrow hook. */
 class ConcurrencyConflictError extends StructuredError<
@@ -361,9 +362,7 @@ describe("the hook against the fields the library owns", () => {
   });
 
   it("does not let an oversized field mislabel its small siblings", () => {
-    const oversized: Record<string, unknown> = {};
-    for (let index = 0; index < 200_000; index++)
-      oversized[`k${index}`] = index;
+    const oversized = keysInChunks(200_000);
     class BigThenSmall extends BaseError<"BigThenSmall"> {
       protected override buildOwnLogFields(): Record<string, unknown> {
         return { big: oversized, small: { a: 1 } };
