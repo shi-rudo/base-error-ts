@@ -134,7 +134,9 @@ array in log data keeps at most 1000 entries and ends with
 `[more keys]`; binary data reads as its type and size, such as
 `[Uint8Array(1000000)]`. A string holds at most 10,000 characters and then
 ends with `[N more characters]`; the stack keeps its frames, and one log
-object spends at most 1,000,000 characters. These are values in the log, not
+object spends at most 1,000,000 characters. A container 100 levels deep in
+log data is `[Max data depth exceeded]`, and a cause chain ends with
+`[Max cause depth exceeded]` after 100 hops. These are values in the log, not
 errors to handle.
 
 ## Reconstructing: `StructuredError.fromJSON`

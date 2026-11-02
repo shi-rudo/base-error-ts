@@ -6,6 +6,8 @@ import { StructuredError } from "../errors/StructuredError.js";
 import { causeWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 
 const FAIL_CLOSED = "[log redaction failed]";
+const CAUSE_DEPTH_MARKER = "[Max cause depth exceeded]";
+const DATA_DEPTH_MARKER = "[Max data depth exceeded]";
 
 type Log = Record<string, unknown>;
 
@@ -150,8 +152,8 @@ describe("a redacted log caps the cause spine", () => {
 
     expect(log.message).toBe("outer");
     expect(typeof log.stack).toBe("string");
-    expect(spineHops(log)).toBeLessThanOrEqual(101);
-    expect(innermost(log)).toEqual({});
+    expect(spineHops(log)).toBe(100);
+    expect(innermost(log).cause).toBe(CAUSE_DEPTH_MARKER);
   });
 
   it("caps a deep cause object that a cause policy puts on the spine", () => {
@@ -162,8 +164,8 @@ describe("a redacted log caps the cause spine", () => {
     const log = error.toLogObject().cause as Log;
 
     expect(log.message).toBe("policy output");
-    expect(spineHops(log)).toBeLessThanOrEqual(101);
-    expect(innermost(log)).toEqual({});
+    expect(spineHops(log)).toBeLessThanOrEqual(100);
+    expect(innermost(log).cause).toBe(CAUSE_DEPTH_MARKER);
   });
 
   it("caps a deep chain hanging off an aggregate member on the spine", () => {
@@ -176,8 +178,8 @@ describe("a redacted log caps the cause spine", () => {
     expect(log.message).toBe("policy output");
     const members = log.errors as unknown[];
     expect(members).toHaveLength(2);
-    expect(spineHops(members[0] as Log)).toBeLessThanOrEqual(101);
-    expect(innermost(members[0] as Log)).toEqual({});
+    expect(spineHops(members[0] as Log)).toBeLessThanOrEqual(100);
+    expect(innermost(members[0] as Log).cause).toBe(CAUSE_DEPTH_MARKER);
   });
 
   it("keeps a cause chain within the cause depth in full", () => {
@@ -303,7 +305,7 @@ describe("a redacted log keeps a bounded diagnosis of hostile foreign fields", (
       expect(Array.isArray(terminal)).toBe(true);
       terminal = (terminal as unknown[])[0];
     }
-    expect(terminal).toEqual([]);
+    expect(terminal).toBe(DATA_DEPTH_MARKER);
   });
 
   it("logs a native cause whose stack is a cyclic object under an allow-list", () => {
@@ -340,7 +342,7 @@ describe("a redacted log keeps a bounded diagnosis of hostile foreign fields", (
       depth++;
     }
     expect(depth).toBeLessThanOrEqual(100);
-    expect(terminal).toEqual({});
+    expect(terminal).toEqual({ child: DATA_DEPTH_MARKER });
   });
 });
 
@@ -356,7 +358,7 @@ describe("a redacted log: what counts as a hop on the cause spine", () => {
     while (typeof terminal.errors === "object" && terminal.errors !== null) {
       terminal = terminal.errors as Log;
     }
-    expect(terminal).toEqual({});
+    expect(terminal).toEqual({ errors: DATA_DEPTH_MARKER });
   });
 
   it("does not drop the log for an errors object chain deeper than the host stack", () => {
@@ -373,7 +375,7 @@ describe("a redacted log: what counts as a hop on the cause spine", () => {
     while (typeof terminal.errors === "object" && terminal.errors !== null) {
       terminal = terminal.errors as Log;
     }
-    expect(terminal).toEqual({});
+    expect(terminal).toEqual({ errors: DATA_DEPTH_MARKER });
   });
 
   it("charges a cause that holds a list one hop per member, not two", () => {
@@ -395,7 +397,7 @@ describe("a redacted log: what counts as a hop on the cause spine", () => {
     const objectLog = objectLinked.toLogObject();
 
     expect(listSpineHops(listLog)).toBe(spineHops(objectLog));
-    expect(listSpineHops(listLog)).toBe(101);
+    expect(listSpineHops(listLog)).toBe(100);
     let terminal: unknown = listLog.cause;
     while (typeof terminal === "object" && terminal !== null) {
       const next: unknown = Array.isArray(terminal)
@@ -404,8 +406,8 @@ describe("a redacted log: what counts as a hop on the cause spine", () => {
       if (next === undefined) break;
       terminal = next;
     }
-    expect(terminal).toEqual({});
-    expect(innermost(objectLog)).toEqual({});
+    expect(terminal).toBe(CAUSE_DEPTH_MARKER);
+    expect(innermost(objectLog).cause).toBe(CAUSE_DEPTH_MARKER);
   });
 
   it("charges every nesting level of a list under cause one hop", () => {
@@ -423,7 +425,7 @@ describe("a redacted log: what counts as a hop on the cause spine", () => {
       node = node[0];
     }
     expect(depth).toBeLessThanOrEqual(101);
-    expect(node).toBeUndefined();
+    expect(node).toBe(CAUSE_DEPTH_MARKER);
   });
 
   it("charges an aggregate member one hop from the node that holds it", () => {

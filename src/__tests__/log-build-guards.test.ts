@@ -98,7 +98,7 @@ describe("log build guards", () => {
 
     expect(views).toBe(0);
     expect(JSON.stringify(log.data)).toBe(
-      '{"child":'.repeat(100) + "{}" + "}".repeat(100),
+      '{"child":'.repeat(100) + '"[Max data depth exceeded]"' + "}".repeat(100),
     );
   });
 

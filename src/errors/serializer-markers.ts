@@ -13,6 +13,9 @@ export const SHARED_CAUSE_MARKER = "[Shared cause]";
 /** A chain cut at the cause-depth cap. */
 export const MAX_CAUSE_DEPTH_MARKER = "[Max cause depth exceeded]";
 
+/** A data container cut at the data-depth cap. */
+export const MAX_DATA_DEPTH_MARKER = "[Max data depth exceeded]";
+
 /** A node that defeated serialization entirely (for example a hostile Proxy). */
 export const UNSERIALIZABLE_CAUSE_MARKER = "[Unserializable cause]";
 

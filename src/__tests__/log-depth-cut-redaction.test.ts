@@ -1,7 +1,9 @@
 import { expect, it } from "vitest";
 import { BaseError } from "../index.js";
 
-it("keeps the existing empty terminal of a serialized plain cause under redaction", () => {
+const CAUSE_DEPTH_MARKER = "[Max cause depth exceeded]";
+
+it("ends a plain cause chain with the cause depth marker with and without redaction", () => {
   let cause: unknown = { leaf: "secret" };
   for (let i = 0; i < 110; i++) cause = { cause };
   const plain = new BaseError("outer", cause).toLogObject();
@@ -12,11 +14,11 @@ it("keeps the existing empty terminal of a serialized plain cause under redactio
       node = node.cause as Record<string, unknown>;
     return node;
   }
-  expect(terminal(plain)).toEqual({});
-  expect(terminal(redacted)).toEqual({});
+  expect(terminal(plain)).toBe(CAUSE_DEPTH_MARKER);
+  expect(terminal(redacted)).toBe(CAUSE_DEPTH_MARKER);
 });
 
-it("keeps terminal provenance through an inner redaction copy", () => {
+it("keeps the cause depth marker through an inner redaction copy", () => {
   let cause: unknown = { leaf: "secret" };
   for (let i = 0; i < 110; i++) cause = { cause };
   const inner = new BaseError("inner", cause).redact([]);
@@ -25,10 +27,10 @@ it("keeps terminal provenance through an inner redaction copy", () => {
     .toLogObject();
   while (typeof node === "object" && node !== null && "cause" in node)
     node = (node as Record<string, unknown>).cause;
-  expect(node).toEqual({});
+  expect(node).toBe(CAUSE_DEPTH_MARKER);
 });
 
-it("does not pass data added to a serializer terminal through redaction", () => {
+it("masks data that a policy adds at the cut of a cause chain", () => {
   let cause: unknown = { leaf: "secret" };
   for (let i = 0; i < 110; i++) cause = { cause };
   const inner = new BaseError("inner", cause).redactWith((log) => {
@@ -43,5 +45,5 @@ it("does not pass data added to a serializer terminal through redaction", () => 
   let node: unknown = log;
   while (typeof node === "object" && node !== null && "cause" in node)
     node = (node as Record<string, unknown>).cause;
-  expect(node).toEqual({});
+  expect(node).toBe(CAUSE_DEPTH_MARKER);
 });

@@ -124,7 +124,7 @@ describe("log redaction", () => {
     // On a small isolate stack (Workers/edge) an unbounded walk could overflow
     // at a legitimate depth and fail-close the whole log. The log copies a
     // cause policy's output with the data-depth cap: shallow fields survive,
-    // the deep tail ends in an empty container, and nothing fails closed.
+    // the deep tail ends in the data depth marker, and nothing fails closed.
     let deep: Record<string, unknown> = { bottom: "x" };
     for (let i = 0; i < 5000; i++) deep = { child: deep };
     const err = new StructuredError({
@@ -144,7 +144,7 @@ describe("log redaction", () => {
     expect((rawDetailsOf(log) as Record<string, unknown>).ssn).toBe(
       "[REDACTED]",
     );
-    // The deep subtree ends in an empty container rather than overflowing.
+    // The deep subtree ends in the data depth marker rather than overflowing.
     let terminal = (rawDetailsOf(log) as Record<string, unknown>).nested as
       Record<string, unknown> | undefined;
     let depth = 0;
@@ -153,7 +153,7 @@ describe("log redaction", () => {
       depth++;
     }
     expect(depth).toBeLessThan(100);
-    expect(terminal).toEqual({});
+    expect(terminal).toEqual({ child: "[Max data depth exceeded]" });
   });
 
   it("does not let an own __proto__ detail key pollute the redacted clone", () => {

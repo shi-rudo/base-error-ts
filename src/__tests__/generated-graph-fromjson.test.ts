@@ -63,8 +63,7 @@ const payloadArb: fc.Arbitrary<DataSpec> = fc.oneof(dataArb, envelopeArb);
  * and the members of an aggregate, up to the cause-depth cap. A primitive on
  * that spine (a marker, a mask, a thrown string) comes back unchanged. So
  * does every decision field that the original log carries with its type.
- * Past the cap, the log and the reconstruction each write their own cut: a
- * plain-object cause ends in an empty container there, as data does. A tail
+ * Past the cap, the log and the reconstruction each write their own cut. A tail
  * of dropped members comes back as a tail, but a later log counts the
  * carried tail as one member, so its number is not compared.
  */

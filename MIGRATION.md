@@ -139,7 +139,7 @@ reads, and redaction walks only that copy.
 - The redaction walk writes no markers of its own. `[Max redaction depth
   exceeded]` and `[Max redaction size exceeded]` no longer appear. If a log
   query or an alert matches one of them, match the marker of the copy instead:
-  an empty container at the depth cap, and `[Max log size exceeded]`.
+  `[Max data depth exceeded]` at the depth cap, and `[Max log size exceeded]`.
 
 ### `timestampIso` is a log key only
 

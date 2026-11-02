@@ -6,6 +6,13 @@ import { errorWithRawDetails, rawDetailsOf } from "./raw-log-data.fixture.js";
 type Log = Record<string, unknown>;
 type Mode = "none" | "deny" | "allow";
 
+const DATA_DEPTH_MARKER = "[Max data depth exceeded]";
+
+/** The depth cut as a policy leaves it: an allow-list masks the marker as data. */
+function cutUnder(mode: Mode): string {
+  return mode === "allow" ? "[REDACTED]" : DATA_DEPTH_MARKER;
+}
+
 class DataError extends BaseError<"DataError"> {
   constructor(private readonly data: unknown) {
     super("data error");
@@ -43,6 +50,16 @@ function endOf(value: unknown): { edges: number; terminal: unknown } {
     edges++;
   }
   return { edges, terminal };
+}
+
+/** The last container on the path that `endOf` follows. */
+function lastContainerOf(value: unknown): Log | unknown[] {
+  let container = value as Log | unknown[];
+  for (;;) {
+    const next = Array.isArray(container) ? container[0] : container.nest;
+    if (typeof next !== "object" || next === null) return container;
+    container = next as Log | unknown[];
+  }
 }
 
 function apply(error: BaseError<string>, mode: Mode): BaseError<string> {
@@ -94,24 +111,24 @@ const routes = [
 
 describe.each(routes)("copied data depth: $name", ({ build, read }) => {
   it.each<Mode>(["none", "deny", "allow"])(
-    "retains 100 object edges with an empty serializer cut under %s policy",
+    "retains 100 object edges and then the depth cut under %s policy",
     (mode) => {
       const error = apply(build(objects(130)), mode);
 
       const data = read(error.toLogObject());
 
-      expect(endOf(data)).toEqual({ edges: 100, terminal: {} });
+      expect(endOf(data)).toEqual({ edges: 100, terminal: cutUnder(mode) });
     },
   );
 
   it.each<Mode>(["none", "deny", "allow"])(
-    "retains 100 array edges with an empty serializer cut under %s policy",
+    "retains 100 array edges and then the depth cut under %s policy",
     (mode) => {
       const error = apply(build(arrays(130)), mode);
 
       const data = read(error.toLogObject());
 
-      expect(endOf(data)).toEqual({ edges: 100, terminal: [] });
+      expect(endOf(data)).toEqual({ edges: 100, terminal: cutUnder(mode) });
     },
   );
 
@@ -140,7 +157,7 @@ describe("the details of a custom cause policy keep the data depth bound", () =>
 
       const data = rawDetailsOf(error.toLogObject());
 
-      expect(endOf(data)).toEqual({ edges: 100, terminal: {} });
+      expect(endOf(data)).toEqual({ edges: 100, terminal: cutUnder(mode) });
     },
   );
 
@@ -160,14 +177,17 @@ describe("the details of a custom cause policy keep the data depth bound", () =>
 
     const result = rawDetailsOf(error.toLogObject());
 
-    expect(endOf(result)).toEqual({ edges: 100, terminal: {} });
+    expect(endOf(result)).toEqual({
+      edges: 100,
+      terminal: DATA_DEPTH_MARKER,
+    });
     expect(reads).toBe(100);
   });
 });
 
 describe("serializer data cuts through successive policies", () => {
   it.each(["deny", "allow"] as const)(
-    "keeps the empty object cut after an inner %s policy and outer allow policy",
+    "masks the depth cut after an inner %s policy and an outer allow policy",
     (mode) => {
       const inner = apply(new DataError(objects(130)), mode);
       const error = new BaseError("outer", inner).redactAllow([]);
@@ -176,26 +196,26 @@ describe("serializer data cuts through successive policies", () => {
 
       expect(endOf((log.cause as Log).data)).toEqual({
         edges: 100,
-        terminal: {},
+        terminal: "[REDACTED]",
       });
     },
   );
 
   it.each(["object", "array"])(
-    "does not expose data inserted into a serializer %s terminal after an inner policy",
+    "masks data that a policy writes in place of the depth cut of an %s",
     (shape) => {
       const inner = new DataError(
         shape === "object" ? objects(130) : arrays(130),
       ).redact([]);
-      let inserted = false;
+      let replaced: unknown;
       const middle = new BaseError("middle", inner).redactWith((log) => {
-        const { terminal } = endOf((log.cause as Log).data);
-        if (Array.isArray(terminal)) {
-          terminal.push("INSERTED-PRIVATE");
-          inserted = true;
-        } else if (typeof terminal === "object" && terminal !== null) {
-          (terminal as Log).secret = "INSERTED-PRIVATE";
-          inserted = true;
+        const container = lastContainerOf((log.cause as Log).data);
+        if (Array.isArray(container)) {
+          replaced = container[0];
+          container[0] = "INSERTED-PRIVATE";
+        } else {
+          replaced = container.nest;
+          container.nest = "INSERTED-PRIVATE";
         }
         return log;
       });
@@ -203,12 +223,9 @@ describe("serializer data cuts through successive policies", () => {
 
       const log = error.toLogObject();
 
-      expect(inserted).toBe(true);
+      expect(replaced).toBe(DATA_DEPTH_MARKER);
       const data = ((log.cause as Log).cause as Log).data;
-      expect(endOf(data)).toEqual({
-        edges: 100,
-        terminal: shape === "object" ? {} : [],
-      });
+      expect(endOf(data)).toEqual({ edges: 100, terminal: "[REDACTED]" });
       expect(JSON.stringify(log)).not.toContain("INSERTED-PRIVATE");
     },
   );
