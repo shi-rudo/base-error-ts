@@ -231,9 +231,23 @@ const literalResult: 401 | 403 = AuthzErrors.match(authzError, {
   not_a_member: () => 401 as const,
   missing_role: () => 403 as const,
 });
+const restOfKeys: "restaurant.authz.not_a_member" = AuthzErrors.match(
+  authzError,
+  {
+    missing_role: () => "restaurant.authz.not_a_member" as const,
+    _: (error) => error.code,
+  },
+);
+
+AuthzErrors.match(authzError, {
+  missing_role: () => false,
+  // @ts-expect-error the catch-all never receives the code of a key that has a handler
+  _: (error) => error.code === "restaurant.authz.missing_role",
+});
 void exhaustiveResult;
 void catchAllResult;
 void literalResult;
+void restOfKeys;
 
 declare const onlyMissingRole: MissingRole;
 const partOfUnion: string | undefined = AuthzErrors.match(onlyMissingRole, {

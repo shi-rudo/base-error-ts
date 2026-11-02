@@ -220,7 +220,8 @@ function describe(error: AuthzError): string {
 }
 ```
 
-`match` follows the exhaustiveness rules of `matchErrorCode`. It rejects a key that
+`match` follows the exhaustiveness rules of `matchErrorCode`. Its `_` catch-all
+receives the errors whose key has no handler. It rejects a key that
 the catalog does not define. A key of the catalog that a narrowed error cannot
 have still compiles, because `match` checks the keys of the catalog, not the
 codes of the error. `match` checks no provenance,

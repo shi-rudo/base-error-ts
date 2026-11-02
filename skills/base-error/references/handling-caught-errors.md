@@ -50,6 +50,9 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   `_`.
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`.
+- `_` receives the members of the union whose code has no handler, also in
+  `Catalog.match`. In `_`, a comparison with a handled code is a compile
+  error.
 - A union with the code `_` cannot name a handler next to `_`: `_` is the
   catch-all. A table with only `_` compiles.
 - A table typed `Record<string, …>` does not pass for a closed union. Write

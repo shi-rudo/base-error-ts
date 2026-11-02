@@ -173,6 +173,12 @@ matchErrorCode(err, {
 });
 ```
 
+The `_` handler receives the members of the union whose code has no handler.
+In this example, `e` never has the code `USER_NOT_FOUND`, so a comparison of
+`e.code` with `"USER_NOT_FOUND"` is a compile error. A single
+`StructuredError<"A" | "B">` is not a union of members, so `_` receives it
+unchanged.
+
 When a new error code is added to the union, every `matchErrorCode` without a `_`
 stops compiling until you handle it. That is the point: the compiler maintains
 your error-handling completeness.

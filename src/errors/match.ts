@@ -15,12 +15,46 @@ type CaseArg<E extends StructuredError<string, string>, K extends string> = [
   : Extract<E, { code: K }>;
 
 /**
+ * The errors that reach the `_` catch-all: the members of `E` whose code is
+ * not `Handled`. When `E` is a single `StructuredError<"A" | "B">`, there is
+ * nothing to narrow, so it stays `E`, as in `CaseArg`.
+ */
+type CatchAllArg<
+  E extends StructuredError<string, string>,
+  Handled extends string,
+> = Exclude<E, { code: Handled }>;
+
+/** The handler names among the keys `Names` of a table, without `_`. */
+export type HandledNames<Names extends PropertyKey> = Exclude<
+  `${Extract<Names, string | number>}`,
+  "_"
+>;
+
+/**
  * All handlers, each optional, plus an optional `_` catch-all. Return types are
  * left open so the concrete handler object can drive the result type.
+ * `CatchAll` types the catch-all. It stays in this type, so a table of
+ * misspelled names and `_` still overlaps it and is checked by name.
  */
 type Cases<E extends StructuredError<string, string>> = {
   [K in E["code"]]?: (error: CaseArg<E, K>) => unknown;
-} & { _?: (error: E) => unknown };
+} & { _?: unknown };
+
+/**
+ * The optional `_` catch-all, typed with the errors whose code has no
+ * handler. `Names` holds the keys of the table, and `Handled` the codes that
+ * they handle. The compiler infers `Names` from the keys alone, so the type
+ * of the catch-all does not depend on the handler table: a type parameter in
+ * the parameter type of a handler is fixed when the handler is checked, and
+ * the table must stay open until every handler is checked.
+ */
+export type CatchAll<
+  E extends StructuredError<string, string>,
+  Names extends PropertyKey,
+  Handled extends string = HandledNames<Names>,
+> = { readonly [N in Names]: unknown } & {
+  readonly _?: (error: CatchAllArg<E, Handled>) => unknown;
+};
 
 /** The union of every handler's return type. This is the result of a matcher. */
 export type HandlerResult<C> = {
@@ -122,8 +156,9 @@ type NamedHandlerTable<
  * parameter, only a table with a single `_` handler passes. A union with the
  * code `_` cannot name a handler next to `_`, because `_` is the catch-all.
  * Each handler receives the error narrowed to its case, so `details` is the
- * precise per-code type. The return type is the union of the handler return
- * types.
+ * precise per-code type. The `_` catch-all receives the members of the union
+ * whose code has no handler. The return type is the union of the handler
+ * return types.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive
@@ -146,7 +181,7 @@ type NamedHandlerTable<
  *
  * @example
  * ```ts
- * // Partial handling with a catch-all
+ * // Partial handling with a catch-all: e is every error but USER_NOT_FOUND
  * matchErrorCode(err, {
  *   USER_NOT_FOUND: () => render404(),
  *   _: (e) => renderGeneric(e.code),
@@ -160,13 +195,14 @@ export function matchErrorCode<
   // error typed by a type parameter, `E["code"]` would defer every check of
   // the table, and the call would accept no table.
   Code extends string = E["code"],
+  Names extends PropertyKey = never,
 >(
   // For a union of codes that are not literal types, such as `"A" & Brand`,
   // the compiler infers `Code` from one member only. The union with `E`
   // keeps the error assignable then; `E & { code }` is only the inference
   // site of `Code`.
   error: E | (E & { readonly code: Code }),
-  cases: Exhaustive<E, Code, C>,
+  cases: Exhaustive<E, Code, C> & CatchAll<E, Names>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;
