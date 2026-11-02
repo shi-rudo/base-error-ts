@@ -327,7 +327,7 @@ describe("the Sentry setup", () => {
     );
   });
 
-  it("writes no name and no message for an exception whose parent link is broken", async () => {
+  it("writes the placeholder value for an exception whose parent link is broken", async () => {
     const selfLinked: Exception = {
       type: "Error",
       value: SECRET_CAUSE,
@@ -356,13 +356,13 @@ describe("the Sentry setup", () => {
     expect(body).not.toContain(SECRET_CAUSE);
     expect(body).not.toContain(SECRET_MESSAGE);
     expect(exceptionsOf(event)).toMatchObject([
-      { mechanism: { exception_id: 1 } },
+      { mechanism: { exception_id: 1 }, value: "[No log node]" },
       { type: "USER_NOT_FOUND", value: "[REDACTED]" },
     ]);
-    expect(exceptionsOf(event)[0]).not.toHaveProperty("value");
+    expect(exceptionsOf(event)[0]).not.toHaveProperty("type");
   });
 
-  it("writes no name and no message for an exception linked through another key", async () => {
+  it("writes the placeholder value for an exception linked through another key", async () => {
     const linked: Exception = {
       type: "Error",
       value: SECRET_CAUSE,
@@ -379,7 +379,7 @@ describe("the Sentry setup", () => {
       mechanism: { type: "generic", exception_id: 0 },
     };
 
-    const { body } = await sentCapture((scope) =>
+    const { body, event } = await sentCapture((scope) =>
       scope.captureEvent(
         { exception: { values: [linked, root] } },
         {
@@ -395,6 +395,7 @@ describe("the Sentry setup", () => {
 
     expect(body).not.toContain(SECRET_CAUSE);
     expect(body).not.toContain(SECRET_MESSAGE);
+    expect(exceptionsOf(event)[0]).toMatchObject({ value: "[No log node]" });
   });
 
   it("keeps the event of a captured value that holds no error, and adds no context", async () => {

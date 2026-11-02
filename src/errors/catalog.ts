@@ -128,6 +128,11 @@ type ValidCatalogDefinition<T extends ErrorCatalogDefinition> = [
         : never
       : never;
 
+/**
+ * A prefix type argument without `undefined`, given explicitly or inferred,
+ * requires the `prefix` option. Without it, the typed codes would carry a
+ * prefix that the runtime codes do not have.
+ */
 type CatalogArgs<
   T extends ErrorCatalogDefinition,
   P extends string | undefined,
@@ -135,7 +140,13 @@ type CatalogArgs<
   ? [invalidCatalog: never]
   : "" extends keyof T
     ? [invalidCatalog: never]
-    : [options?: CatalogOptions<PrefixFor<T, P>>];
+    : undefined extends P
+      ? [options?: CatalogOptions<PrefixFor<T, P>>]
+      : [
+          options: CatalogOptions<PrefixFor<T, P>> & {
+            readonly prefix: PrefixFor<T, P>;
+          },
+        ];
 
 type CategoryOf<S> = S extends { category: infer C extends string }
   ? C
