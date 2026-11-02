@@ -1,5 +1,6 @@
 import { isInstanceOf } from "./guarded-read.js";
 import type { ErrorClass } from "./guards.js";
+import type { UnknownNameRule } from "./match.js";
 
 /** A keyed set of local Error constructors. */
 export type ErrorClassMap = Readonly<Record<string, ErrorClass>>;
@@ -9,12 +10,15 @@ type ErrorClassHandlers<TClasses extends ErrorClassMap> = {
 };
 
 /**
- * Rejects a handler key that names no class of the set, with a string literal
- * type and not `never`, so the compiler names the reason in its error.
+ * Rejects a handler key that names no class of the set, with `UnknownNameRule`.
  */
 type UnknownClassKeys<TClasses extends ErrorClassMap, THandlers> = {
   [K in Exclude<keyof THandlers, keyof TClasses>]: K extends string | number
-    ? `match: ${K} is not a key of this error class set`
+    ? UnknownNameRule<
+        THandlers,
+        `${K}`,
+        `match: ${K} is not a key of this error class set`
+      >
     : never;
 };
 

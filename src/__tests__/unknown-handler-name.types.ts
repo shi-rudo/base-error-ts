@@ -113,8 +113,84 @@ type UnknownClassKeyNamesReason = Assert<
   >
 >;
 
-void UserErrors;
-void StorageErrors;
+declare const userError: UserError;
+declare const thrown: unknown;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- these tests pin how the types treat any
+type AnyHandler = any;
+declare const anyHandler: AnyHandler;
+declare const anyHandlerByString: Record<string, AnyHandler>;
+declare const anyHandlerByNumber: Record<number, AnyHandler>;
+
+matchErrorCode(userError, {
+  USER_NOT_FOUND: () => 1,
+  // @ts-expect-error a handler typed any under an unknown code does not stand in for a missing code
+  RATE_LIMITTED: anyHandler,
+});
+
+matchErrorCode(userError, {
+  // @ts-expect-error a handler typed any under an unknown code is rejected next to a catch-all
+  USER_NOT_FUND: anyHandler,
+  _: () => 1,
+});
+
+matchErrorCode(userError, {
+  // @ts-expect-error a handler typed any under a numeric key is rejected next to a catch-all
+  404: anyHandler,
+  _: () => 1,
+});
+
+// @ts-expect-error a table of handlers typed any names every string, so it does not pass for a closed union
+matchErrorCode(userError, anyHandlerByString);
+
+// @ts-expect-error a table of handlers typed any names every number, so it does not pass for a closed union
+matchErrorCode(userError, anyHandlerByNumber);
+
+matchErrorCode(userError, {
+  USER_NOT_FOUND: anyHandler,
+  RATE_LIMITED: anyHandler,
+});
+
+UserErrors.match(userError, {
+  USER_NOT_FOUND: () => 1,
+  // @ts-expect-error a handler typed any under an unknown key does not stand in for a missing key
+  RATE_LIMITTED: anyHandler,
+});
+
+UserErrors.match(userError, {
+  // @ts-expect-error a handler typed any under an unknown key is rejected next to a catch-all
+  USER_NOT_FUND: anyHandler,
+  _: () => 1,
+});
+
+UserErrors.match(userError, {
+  // @ts-expect-error a handler typed any under a numeric key is rejected next to a catch-all
+  404: anyHandler,
+  _: () => 1,
+});
+
+// @ts-expect-error a table of handlers typed any names every string, so it does not pass for a catalog
+UserErrors.match(userError, anyHandlerByString);
+
+// @ts-expect-error a table of handlers typed any names every number, so it does not pass for a catalog
+UserErrors.match(userError, anyHandlerByNumber);
+
+UserErrors.match(userError, {
+  USER_NOT_FOUND: anyHandler,
+  RATE_LIMITED: anyHandler,
+});
+
+StorageErrors.match(thrown, {
+  FileError: () => 1,
+  DatabaseError: () => 2,
+  // @ts-expect-error a handler typed any under an unknown key is rejected
+  NetworkError: anyHandler,
+});
+
+StorageErrors.match(thrown, {
+  FileError: anyHandler,
+  DatabaseError: anyHandler,
+});
+
 void (null as unknown as UnknownCodeNextToCatchAllNamesReason);
 void (null as unknown as KnownCodeNamesNoReason);
 void (null as unknown as UnknownCodeInCompleteTableNamesReason);

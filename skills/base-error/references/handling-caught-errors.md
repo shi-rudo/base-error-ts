@@ -114,6 +114,9 @@ const action = NetworkErrors.match(e, {
 });
 ```
 
+A key that names no class of the set is a compile error. The error reads
+`match: <key> is not a key of this error class set`.
+
 Every key needs exactly one handler. `match` throws when the value is none of
 the classes; list subclasses before their base classes.
 
