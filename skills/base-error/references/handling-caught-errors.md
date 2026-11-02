@@ -44,6 +44,10 @@ Narrow from `unknown` first; exhaustiveness needs the union type. Per-case
 `details` narrowing needs a union of distinct error types, which a catalog
 gives; a single `StructuredError<"A" | "B">` narrows only the code.
 
+- On TypeScript before 5.4, a handler for a code or key named like an
+  `Object.prototype` member (`toString`, `valueOf`, `constructor`) is typed
+  against that member. Use TypeScript 5.4 or later, or handle such a code in
+  `_`.
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`.
 - A union with the code `_` cannot name a handler next to `_`: `_` is the
@@ -54,6 +58,9 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   type parameter names no code. `matchErrorCode` takes only a `_`-only table for
   it. To name handlers, assign the error to a variable typed with its codes
   or with `StructuredError<string>`, and match that variable.
+- In a function generic over the error (`E extends A | B`), a handler that
+  reads its parameter does not compile. Assign the error to a variable typed
+  `A | B` and match that variable.
 
 ## Closed dispatch by key: `Errors.match`
 

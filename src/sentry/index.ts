@@ -130,13 +130,24 @@ function positionsById(
 }
 
 /**
+ * The value of an exception that the hook cannot fill from a log node. Sentry
+ * discards an exception without `type` and `value`, and its stack frames with
+ * it.
+ */
+const NO_LOG_NODE_VALUE = "[No log node]";
+
+/**
  * Writes the name and the message of a log node into the exception. A marker
  * that takes the place of a node, such as `[Shared cause]`, becomes the
- * message, and no node leaves no name and no message.
+ * message. Without a name and a message, the exception gets the placeholder
+ * value, so Sentry keeps it.
  */
 function writeNode(exception: SentryException, node: unknown): void {
   exception.type = isLogNode(node) ? textOf(node.name) : undefined;
   exception.value = isLogNode(node) ? textOf(node.message) : textOf(node);
+  if (exception.type === undefined && exception.value === undefined) {
+    exception.value = NO_LOG_NODE_VALUE;
+  }
 }
 
 /**
