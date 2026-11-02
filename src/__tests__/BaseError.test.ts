@@ -405,6 +405,25 @@ describe("BaseError", () => {
         (error as { stack?: string }).stack = "CUSTOM-LATE";
         expect(error.stack).toBe("CUSTOM-LATE");
       });
+
+      it.each([
+        ["frozen", Object.freeze],
+        ["sealed", Object.seal],
+      ])("reads the stack of a %s error without a throw", (_kind, lock) => {
+        const error = lock(new TestError("locked"));
+
+        expect(error.stack).toContain("TestError: locked");
+        expect(error.stack).toBe(error.stack);
+        expect(error.toLogObject().stack).toContain("TestError: locked");
+      });
+
+      it("takes a custom stack on a sealed error before the first read", () => {
+        const error = Object.seal(new TestError("sealed-assign"));
+
+        (error as { stack?: string }).stack = "CUSTOM-SEALED";
+
+        expect(error.stack).toBe("CUSTOM-SEALED");
+      });
     });
   });
 
