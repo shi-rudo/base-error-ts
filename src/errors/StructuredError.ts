@@ -25,6 +25,50 @@ type StructuredFieldReads = {
 };
 
 /**
+ * The fields of a payload root, each read once. A field is `undefined` when
+ * the payload has no value of its type. `details` is a shallow copy, and
+ * `cause` is the reconstructed cause chain.
+ */
+export type PayloadRootFields = {
+  readonly code: string | undefined;
+  readonly category: string | undefined;
+  readonly retryable: boolean | undefined;
+  readonly message: string | undefined;
+  readonly details: Record<string, unknown> | undefined;
+  readonly cause: unknown;
+};
+
+/** A structured error with any code, category and details. */
+export type AnyStructuredError = StructuredError<
+  string,
+  string,
+  Record<string, unknown>
+>;
+
+/** Builds the error of a payload root, or returns `undefined` to reject it. */
+export type PayloadRootBuilder = (
+  fields: PayloadRootFields,
+) => AnyStructuredError | undefined;
+
+let rebuildPayload: (
+  json: unknown,
+  build: PayloadRootBuilder,
+) => AnyStructuredError | undefined;
+
+/**
+ * Reconstructs a serialized payload as `StructuredError.fromJSON` does, with
+ * `build` in place of the constructor at the root. The stack, the time and
+ * the members of an aggregate of the payload go onto the built error. If
+ * `build` rejects the root, the result is `undefined`.
+ */
+export function rebuildFromJSON(
+  json: unknown,
+  build: PayloadRootBuilder,
+): AnyStructuredError | undefined {
+  return rebuildPayload(json, build);
+}
+
+/**
  * A structured error class that extends BaseError with enhanced error metadata.
  *
  * StructuredError provides a standardized way to create errors with:
@@ -173,29 +217,56 @@ export class StructuredError<
     depth: number,
     budget: { nodes: number },
   ): StructuredError<string, string> {
+    return StructuredError.#rebuild(
+      json,
+      depth,
+      budget,
+      StructuredError.#construct,
+    ) as StructuredError<string, string>;
+  }
+
+  /** The base error of a payload root, with the fallback envelope. */
+  static #construct(fields: PayloadRootFields): AnyStructuredError {
+    const { details, cause } = fields;
+    return new StructuredError({
+      code: fields.code ?? UNKNOWN_ERROR_DEFAULTS.code,
+      category: fields.category ?? UNKNOWN_ERROR_DEFAULTS.category,
+      retryable: fields.retryable ?? UNKNOWN_ERROR_DEFAULTS.retryable,
+      message: fields.message ?? UNKNOWN_ERROR_DEFAULTS.message,
+      ...(details !== undefined && { details }),
+      ...(cause !== undefined && { cause }),
+    });
+  }
+
+  static {
+    rebuildPayload = (json, build) =>
+      StructuredError.#rebuild(
+        json,
+        0,
+        { nodes: MAX_RECONSTRUCTED_CAUSE_NODES },
+        build,
+      );
+  }
+
+  /**
+   * `depth` is the cause hop of `json` itself: 0 for the root. `build`
+   * creates the error of the root from the fields that this reads once.
+   */
+  static #rebuild(
+    json: unknown,
+    depth: number,
+    budget: { nodes: number },
+    build: PayloadRootBuilder,
+  ): AnyStructuredError | undefined {
     // Every payload field is a foreign read. The documented contract is that
-    // malformed input yields the fallback envelope and never a throw. An
-    // in-process payload can carry throwing getters.
+    // malformed input never throws. An in-process payload can carry throwing
+    // getters.
     const obj: unknown = typeof json === "object" && json !== null ? json : {};
 
     const rawCode = readProperty(obj, "code");
-    const code =
-      typeof rawCode === "string" ? rawCode : UNKNOWN_ERROR_DEFAULTS.code;
     const rawCategory = readProperty(obj, "category");
-    const category =
-      typeof rawCategory === "string"
-        ? rawCategory
-        : UNKNOWN_ERROR_DEFAULTS.category;
     const rawRetryable = readProperty(obj, "retryable");
-    const retryable =
-      typeof rawRetryable === "boolean"
-        ? rawRetryable
-        : UNKNOWN_ERROR_DEFAULTS.retryable;
     const rawMessage = readProperty(obj, "message");
-    const message =
-      typeof rawMessage === "string"
-        ? rawMessage
-        : UNKNOWN_ERROR_DEFAULTS.message;
     // Shallow copy: decouples the error's top-level details from the input
     // payload, so mutating the payload afterwards cannot change the error.
     // Values nested deeper stay shared; a freshly JSON.parsed payload is not
@@ -207,14 +278,15 @@ export class StructuredError<
       budget,
     );
 
-    const error = new StructuredError({
-      code,
-      category,
-      retryable,
-      message,
-      ...(details !== undefined && { details }),
-      ...(cause !== undefined && { cause }),
+    const error = build({
+      code: typeof rawCode === "string" ? rawCode : undefined,
+      category: typeof rawCategory === "string" ? rawCategory : undefined,
+      retryable: typeof rawRetryable === "boolean" ? rawRetryable : undefined,
+      message: typeof rawMessage === "string" ? rawMessage : undefined,
+      details,
+      cause,
     });
+    if (error === undefined) return undefined;
 
     // Rehydrate the original identity rather than the freshly generated values.
     StructuredError.#rehydrate(
@@ -244,7 +316,7 @@ export class StructuredError<
       });
     }
 
-    return error as StructuredError<string, string>;
+    return error;
   }
 
   /**

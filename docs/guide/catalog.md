@@ -40,7 +40,8 @@ throw AppErrors.create.USER_NOT_FOUND("user 123 missing", {
 throw AppErrors.create.RATE_LIMITED("too many requests");
 ```
 
-`details` is required only when its definition declares `detailsType<T>()`.
+`details` is required only when its definition declares `detailsType<T>()`
+or a details schema (see [Restoring an error from JSON](#restoring-an-error-from-json)).
 Every generated value is a `StructuredError` discriminated by its literal
 `code`.
 
@@ -63,10 +64,71 @@ if (AppErrors.is(error, "USER_NOT_FOUND")) {
 ```
 
 This is an identity and trust boundary, not structural recognition. An object
-with matching fields, an error made by another catalog, or a reconstructed
-wire value is rejected. Translate or validate external data explicitly. See
+with matching fields, an error made by another catalog, or a value that
+`StructuredError.fromJSON` rebuilt is rejected. An error that
+`AppErrors.fromJSON` restored passes, because the catalog created it (see
+[Restoring an error from JSON](#restoring-an-error-from-json)). Translate or
+validate external data explicitly. See
 [Type guards and trust boundaries](./guards#trust-boundary) for the distinction
 between classification and trusted local provenance.
+
+## Restoring an error from JSON
+
+A worker, a queue or storage of the same system hands back the serialized
+form of an error. `AppErrors.fromJSON(payload)` restores it as an error of the
+catalog, or returns `undefined` when the payload does not fit:
+
+```ts
+const error = AppErrors.fromJSON(payload) ?? StructuredError.fromJSON(payload);
+```
+
+A payload fits when its `code` is a code of the catalog and its `details` pass
+the schema of that key. The factory of the key creates the error:
+
+- `category`, `retryable` and the redaction floor come from the definition,
+  not from the payload.
+- The message, the stack, the `timestamp`, the cause chain and the members of
+  an aggregate come from the payload, as in `StructuredError.fromJSON`.
+- The error passes `AppErrors.is(error)` and `AppErrors.is(error, key)`.
+
+To restore the `details`, give the definition a validator that implements
+[Standard Schema](https://standardschema.dev) v1, such as a Zod, Valibot or
+ArkType schema, in place of `detailsType<T>()`. The details type of the key is
+the output type of the schema:
+
+```ts
+import { z } from "zod";
+
+export const AppErrors = defineErrors({
+  USER_NOT_FOUND: {
+    category: "NOT_FOUND",
+    retryable: false,
+    details: z.object({ userId: z.string() }),
+  },
+});
+```
+
+- If the schema rejects the `details` of the payload, `fromJSON` returns
+  `undefined`.
+- For a key with `detailsType<T>()` or without `details`, `fromJSON` drops the
+  `details` of the payload.
+- The factories of `create` do not run the schema. The compiler checks their
+  `details`.
+- A schema that throws, or that answers with a promise, makes `fromJSON`
+  throw. A details schema must validate synchronously.
+
+::: warning A masked field arrives masked
+`toJSON` writes the log object. So `JSON.stringify(error)` writes a field that
+a policy or the redaction floor masks as `"[REDACTED]"`, and `fromJSON`
+restores the mask as the value. A loose schema such as `z.string()` accepts
+the mask, and the restored error passes `AppErrors.is` with a value that is
+not real. Make the schema strict enough to reject a mask, for example
+`z.string().uuid()` for an identifier. If a worker needs the real values, send
+your own message with those values, not the log form of the error.
+:::
+
+Use `fromJSON` within one trust boundary only. Across services, translate the
+payload through an anti-corruption layer into your own model.
 
 ## Static metadata
 

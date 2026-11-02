@@ -1,6 +1,6 @@
 # Restore a catalog error from JSON
 
-Status: accepted; release: 10.0.0.
+Status: implemented; release: 10.0.0.
 Tracking: `base-error-ts-lzi`.
 
 ## Decision
@@ -42,10 +42,12 @@ A catalog restores its own errors from a serialized payload: `AppErrors.fromJSON
 - No schema, the `details` copied and typed as `T`. Rejected: the type lies for a malformed payload.
 - A fallback to a base `StructuredError`. Rejected: the result type becomes `CatalogError | StructuredError<string, string>`, and every match then needs `_`.
 - A throw for a payload that does not fit. Rejected: `fromJSON` is total for an untrusted payload.
+- A payload whose `details` hold a mask is rejected. Rejected: the library recognizes only its own `[REDACTED]` and its markers, not a custom mask string, a partial mask or the result of a mask function. The check would claim a completeness that it does not have.
+- A transport form without masking. Rejected: a queue is a data store, and a form that skips the policy is a leak path that any caller can log.
 
 ## Consequences
 
 - `AppErrors.is` accepts an error that `AppErrors.fromJSON` restored. Call `AppErrors.fromJSON` only for a payload within your own trust boundary: a worker, a queue or storage of the same system. Across services, translate through an anti-corruption layer, as for `StructuredError.fromJSON`.
-- `toJSON` writes the log object. A field that a policy masks arrives masked, and a schema can accept the mask.
+- `toJSON` writes the log object. A field that a policy masks arrives masked. A loose schema accepts the mask, and the restored error carries it as a value. The guide recommends a schema that rejects a mask, or a message of your own for the real values.
 - The library carries the type of Standard Schema v1, not a runtime dependency.
 - A value that `StructuredError.fromJSON` rebuilt still fails `is`.

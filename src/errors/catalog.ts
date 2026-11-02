@@ -1,7 +1,9 @@
-import { StructuredError } from "./StructuredError.js";
+import { StructuredError, rebuildFromJSON } from "./StructuredError.js";
+import type { AnyStructuredError } from "./StructuredError.js";
 import { createRedactionFloor, setRedactionFloor } from "./BaseError.js";
 import type { BuiltInRedactionPolicy, RedactionFloor } from "./BaseError.js";
-import { isInstanceOf } from "./guarded-read.js";
+import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
+import { isArrayValue, isInstanceOf, readProperty } from "./guarded-read.js";
 import { cloneJsonSafe } from "./json-safe.js";
 import type { JsonSafeValue } from "./json-safe.js";
 import { ownCase } from "./match.js";
@@ -33,6 +35,28 @@ export function detailsType<
   return Object.freeze({}) as unknown as DetailsType<T>;
 }
 
+/** The result of a Standard Schema validator: the output or the issues. */
+type DetailsSchemaResult<T> =
+  | { readonly value: T; readonly issues?: undefined }
+  | { readonly issues: ReadonlyArray<unknown> };
+
+/**
+ * A validator of one error code's details that implements Standard Schema v1
+ * (standardschema.dev), such as a Zod, Valibot or ArkType schema. The details
+ * type of the code is the output type of the schema.
+ */
+export type DetailsSchema<T extends Record<string, unknown>> = {
+  readonly "~standard": {
+    readonly version: 1;
+    readonly vendor: string;
+    readonly validate: (
+      value: unknown,
+    ) => DetailsSchemaResult<T> | Promise<DetailsSchemaResult<T>>;
+    readonly types?:
+      { readonly input: unknown; readonly output: T } | undefined;
+  };
+};
+
 /**
  * Declarative log-redaction policy of a definition. It is the redaction floor
  * of every generated error: a per-instance policy adds to it and never
@@ -43,7 +67,8 @@ export type CatalogRedactionPolicy = BuiltInRedactionPolicy;
 /**
  * Declarative spec for a single error code in a catalog.
  *
- * `details` is a compile-time marker created by {@link detailsType}.
+ * `details` is a compile-time marker created by {@link detailsType}, or a
+ * {@link DetailsSchema} that `Catalog.fromJSON` validates with.
  */
 export type ErrorSpec = {
   /** Internal category for this code. */
@@ -52,8 +77,10 @@ export type ErrorSpec = {
   retryable: boolean;
   /** JSON-safe static metadata for transport and boundary adapters. */
   metadata?: CatalogMetadata;
-  /** Type marker for this code's structured details. */
-  details?: DetailsType<Record<string, unknown>>;
+  /** The type marker or the schema of this code's structured details. */
+  details?:
+    | DetailsType<Record<string, unknown>>
+    | DetailsSchema<Record<string, unknown>>;
   /** The redaction floor of generated instances. */
   redaction?: CatalogRedactionPolicy;
 };
@@ -173,21 +200,39 @@ type FactoryBaseOptions = {
 };
 
 /**
+ * The details type that a spec declares: the type of its marker, or the
+ * output type of its schema. `never` when the spec declares none.
+ */
+type DetailsOf<S> = S extends {
+  details: DetailsType<infer D extends Record<string, unknown>>;
+}
+  ? D
+  : S extends {
+        details: { readonly "~standard": { readonly types?: infer T } };
+      }
+    ? NonNullable<T> extends { readonly output: infer D }
+      ? D
+      : never
+    : never;
+
+/**
  * The factory signature for one code. `details` is required when the spec
  * declares a details shape, and the whole options argument is optional when it
  * does not.
  */
-type FactoryFor<K extends string, S> = S extends {
-  details: DetailsType<infer D extends Record<string, unknown>>;
-}
-  ? (
-      message: string,
-      options: FactoryBaseOptions & { details: D },
-    ) => StructuredError<K, CategoryOf<S>, D>
-  : (
-      message: string,
-      options?: FactoryBaseOptions,
-    ) => StructuredError<K, CategoryOf<S>, Record<string, never>>;
+type FactoryFor<K extends string, S> = [DetailsOf<S>] extends [
+  infer D extends Record<string, unknown>,
+]
+  ? [D] extends [never]
+    ? (
+        message: string,
+        options?: FactoryBaseOptions,
+      ) => StructuredError<K, CategoryOf<S>, Record<string, never>>
+    : (
+        message: string,
+        options: FactoryBaseOptions & { details: D },
+      ) => StructuredError<K, CategoryOf<S>, D>
+  : never;
 
 /** Typed factory namespace produced by {@link defineErrors}. */
 type CatalogFactories<
@@ -271,6 +316,20 @@ export type Catalog<
     key: K,
   ): value is CatalogErrorOf<Catalog<T, P>, K>;
   /**
+   * Restores an error of this catalog from its serialized form, or returns
+   * `undefined` when the payload does not fit the catalog. The `code` must be
+   * a code of the catalog, and the `details` must pass the schema of its key.
+   * The factory of the key creates the error, so `category`, `retryable` and
+   * the redaction floor come from the definition, and the error passes
+   * `is`. The message, the stack, the time and the cause chain
+   * come from the payload, as in `StructuredError.fromJSON`. A key without a
+   * schema drops the `details` of the payload. Use it within one trust
+   * boundary only, such as a worker, a queue or storage of the same system.
+   *
+   * @throws Error - When the schema throws, or answers with a promise
+   */
+  fromJSON(payload: unknown): CatalogError<Catalog<T, P>> | undefined;
+  /**
    * Exhaustively dispatch on the key of an error of this catalog, with type
    * narrowing. `matchErrorCode` with handlers named by key: the `_`
    * catch-all receives the errors whose key has no handler, it checks no
@@ -321,7 +380,73 @@ type RuntimeSpec = {
   readonly retryable: boolean;
   readonly metadata?: CatalogMetadata;
   readonly floor?: RedactionFloor;
+  readonly validateDetails?: DetailsValidator;
 };
+
+type DetailsValidator = (value: unknown) => unknown;
+
+type RuntimeFactory = (
+  message: string,
+  options?: FactoryBaseOptions & { details?: Record<string, unknown> },
+) => AnyStructuredError;
+
+/**
+ * The validate function of a details schema, or `undefined` for the marker
+ * of {@link detailsType}. A schema can be a function, as an ArkType type is.
+ * A value that names Standard Schema without a version 1 validate function
+ * is a definition error.
+ */
+function readDetailsValidator(
+  details: unknown,
+  key: string,
+): DetailsValidator | undefined {
+  if (
+    (typeof details !== "object" && typeof details !== "function") ||
+    details === null
+  ) {
+    return undefined;
+  }
+  const schema = details as { readonly "~standard"?: unknown };
+  const standard = schema["~standard"];
+  if (standard === undefined) return undefined;
+  const validate = readProperty(standard, "validate");
+  if (
+    readProperty(standard, "version") !== 1 ||
+    typeof validate !== "function"
+  ) {
+    throw new Error(
+      `defineErrors: the details of key "${key}" are not a Standard Schema v1 validator`,
+    );
+  }
+  return (value) => Reflect.apply(validate, standard, [value]) as unknown;
+}
+
+/** Details that fail the schema of their key. */
+const REJECTED_DETAILS: unique symbol = Symbol("rejected details");
+
+/**
+ * The details of a restored error: the output of the schema of `key`, or
+ * `undefined` for a key without a schema. The result of the schema is
+ * consumer data, so every read of it is guarded.
+ */
+function restoredDetails(
+  validate: DetailsValidator | undefined,
+  key: string,
+  details: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined | typeof REJECTED_DETAILS {
+  if (validate === undefined) return undefined;
+  const result = validate(details);
+  if (typeof readProperty(result, "then") === "function") {
+    throw new Error(
+      `fromJSON: the details schema of key "${key}" returned a promise; a details schema must validate synchronously`,
+    );
+  }
+  if (readProperty(result, "issues") !== undefined) return REJECTED_DETAILS;
+  const value = readProperty(result, "value");
+  return typeof value === "object" && value !== null && !isArrayValue(value)
+    ? (value as Record<string, unknown>)
+    : REJECTED_DETAILS;
+}
 
 function snapshotRedaction(value: unknown): CatalogRedactionPolicy | undefined {
   if (value === undefined) return undefined;
@@ -524,6 +649,7 @@ export function defineErrors(
             errorMessage: "defineErrors: metadata must be JSON-safe",
           }) as CatalogMetadata);
     const redaction = snapshotRedaction(spec.redaction);
+    const validateDetails = readDetailsValidator(spec.details, key);
 
     snapshot[key] = Object.freeze({
       category: spec.category,
@@ -532,6 +658,7 @@ export function defineErrors(
       ...(redaction !== undefined && {
         floor: createRedactionFloor(redaction),
       }),
+      ...(validateDetails !== undefined && { validateDetails }),
     });
     metaSnapshot[key] = Object.freeze({
       category: spec.category,
@@ -540,13 +667,11 @@ export function defineErrors(
     });
   }
 
+  const factoryByKey = Object.create(null) as Record<string, RuntimeFactory>;
   for (const key of keys) {
     const spec = snapshot[key] as RuntimeSpec;
     const code = codeByKey[key] as string;
-    create[key] = (
-      message: string,
-      options?: FactoryBaseOptions & { details?: Record<string, unknown> },
-    ) => {
+    const factory: RuntimeFactory = (message, options) => {
       const error = new StructuredError({
         code,
         category: spec.category,
@@ -561,6 +686,8 @@ export function defineErrors(
       provenance.set(error, key);
       return error;
     };
+    create[key] = factory;
+    factoryByKey[key] = factory;
   }
 
   return Object.freeze({
@@ -590,6 +717,24 @@ export function defineErrors(
         value.category === spec.category &&
         value.retryable === spec.retryable
       );
+    },
+    fromJSON(payload: unknown): AnyStructuredError | undefined {
+      return rebuildFromJSON(payload, (fields) => {
+        const key =
+          fields.code === undefined ? undefined : keyByCode.get(fields.code);
+        if (key === undefined) return undefined;
+        const details = restoredDetails(
+          snapshot[key]?.validateDetails,
+          key,
+          fields.details,
+        );
+        if (details === REJECTED_DETAILS) return undefined;
+        const factory = factoryByKey[key] as RuntimeFactory;
+        return factory(fields.message ?? UNKNOWN_ERROR_DEFAULTS.message, {
+          ...(details !== undefined && { details }),
+          ...(fields.cause !== undefined && { cause: fields.cause }),
+        });
+      });
     },
     match(
       error: StructuredError<string, string>,
