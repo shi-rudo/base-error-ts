@@ -228,6 +228,13 @@ Full per-case narrowing needs a **real union** of distinct error types (each
 with a literal `code`), exactly what an [error catalog](./catalog) produces. For
 a single `StructuredError<"A" | "B">`, only `code` narrows.
 
+On TypeScript before 5.4, a handler for a code named like a member of
+`Object.prototype`, such as `toString`, `valueOf` or `constructor`, is typed
+against that member. The handler must then return what the member returns, for
+example a string for `toString`. The same holds for a key of `Errors.match`.
+The runtime sends such a code to its own handler. Use TypeScript 5.4 or later,
+or handle such a code in `_`.
+
 ### With errors from `catch`
 
 A caught value is `unknown`; exhaustiveness can't be derived from it. Narrow
@@ -244,5 +251,24 @@ try {
     });
   }
   throw e;
+}
+```
+
+### In a generic function
+
+In a function that is generic over the error, `matchErrorCode` checks the
+handler names against the codes of the constraint. A handler that reads its
+parameter does not compile there: the compiler cannot infer the handler table,
+and the result type is `unknown`. A handler without a parameter compiles.
+Assign the error to a variable typed with the union of the constraint, and
+match that variable:
+
+```ts
+function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
+  const known: EmailTaken | RateLimited = error;
+  return matchErrorCode(known, {
+    RATE_LIMITED: (e) => (e.retryable ? 429 : 503),
+    _: () => 500,
+  });
 }
 ```

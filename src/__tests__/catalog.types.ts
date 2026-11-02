@@ -366,3 +366,34 @@ const UnderscoreErrors = defineErrors({
 declare const underscoreError: CatalogError<typeof UnderscoreErrors>;
 // @ts-expect-error match refuses a catalog whose key _ is also the catch-all
 UnderscoreErrors.match(underscoreError, { _: () => 1 });
+
+const explicitPrefixDefinition = {
+  A: { category: "C", retryable: false },
+} as const;
+
+// @ts-expect-error an explicit prefix type argument needs the prefix option, or the typed codes would not match the runtime codes
+defineErrors<typeof explicitPrefixDefinition, "billing">(
+  explicitPrefixDefinition,
+);
+
+defineErrors<typeof explicitPrefixDefinition, "billing">(
+  explicitPrefixDefinition,
+  // @ts-expect-error an explicit prefix type argument needs the prefix option, not an empty options object
+  {},
+);
+
+const explicitPrefixCode: "billing.A" = defineErrors<
+  typeof explicitPrefixDefinition,
+  "billing"
+>(explicitPrefixDefinition, { prefix: "billing" }).create.A("m").code;
+void explicitPrefixCode;
+
+const inferredPrefixCode: "billing.A" = defineErrors(explicitPrefixDefinition, {
+  prefix: "billing",
+}).create.A("m").code;
+void inferredPrefixCode;
+
+const noPrefixCode: "A" = defineErrors(explicitPrefixDefinition, {}).create.A(
+  "m",
+).code;
+void noPrefixCode;

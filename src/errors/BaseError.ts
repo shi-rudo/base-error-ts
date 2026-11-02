@@ -1196,13 +1196,21 @@ export class BaseError<T extends string> extends Error {
       readRawStack = () => tempStack;
     }
 
+    // A frozen or sealed error cannot take the memoized data property, so the
+    // accessor keeps the value itself. A read of `stack` runs in catch paths
+    // and must not throw.
+    let kept: { readonly value: string | undefined } | undefined;
     const install = (value: string | undefined): void => {
-      Object.defineProperty(this, "stack", {
-        value,
-        writable: true,
-        configurable: true,
-        enumerable: false,
-      });
+      try {
+        Object.defineProperty(this, "stack", {
+          value,
+          writable: true,
+          configurable: true,
+          enumerable: false,
+        });
+      } catch {
+        kept = { value };
+      }
     };
     // The code removes the engine-managed `stack` that `super()` captured,
     // and does not redefine over it. On V8 11 (for example Chromium 110 to
@@ -1216,6 +1224,7 @@ export class BaseError<T extends string> extends Error {
       configurable: true,
       enumerable: false,
       get: (): string | undefined => {
+        if (kept !== undefined) return kept.value;
         const filtered = this.#filterInternalFrames(readRawStack());
         install(filtered);
         return filtered;
