@@ -100,7 +100,7 @@ function toStatus(error: AccessError): number {
 
 Do not split the union with `AuthzErrors.is`. `is` checks provenance, not the
 code. An error that this catalog instance did not create fails it, for example
-an error rebuilt with `fromJSON`. That error then reaches the branch of the
+an error rebuilt with `StructuredError.fromJSON`. That error then reaches the branch of the
 other catalog, and its `match` throws.
 
 ## Why catalogs have no `merge`, `map` or `select`

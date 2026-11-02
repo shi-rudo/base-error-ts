@@ -86,7 +86,7 @@ throw e;
 - A catalog with the key `_` cannot use `match`: `_` is the catch-all.
 - Match a union of several catalogs with `matchErrorCode` on the codes; a quoted
   code needs no brackets. Never split the union with `is`: `is` checks
-  provenance, so an error rebuilt with `fromJSON` lands in the other branch,
+  provenance, so an error rebuilt with `StructuredError.fromJSON` lands in the other branch,
   and that catalog's `match` throws.
 
 ```ts

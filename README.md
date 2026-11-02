@@ -205,7 +205,8 @@ of the request.
   the log.
 - `StructuredError.fromJSON` rebuilds a typed error from a log or from a worker
   message. `structuredClone` drops the members of an `AggregateError`, but this
-  round trip keeps them.
+  round trip keeps them. `AppErrors.fromJSON` restores an error of a catalog,
+  with its type and its redaction floor.
 
 **Answer clients**
 

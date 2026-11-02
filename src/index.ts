@@ -23,6 +23,7 @@ export type {
   CatalogMetadata,
   CatalogRedactionPolicy,
   DetailsType,
+  DetailsSchema,
   CatalogMeta,
   Catalog,
   CatalogError,

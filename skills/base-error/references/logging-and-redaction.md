@@ -146,4 +146,6 @@ serialized log object: `code`, `category`, `retryable`, `details`, the cause
 chain with stacks, and the root's timestamp. Use it inside one trust boundary,
 such as a worker or a queue the same service reads. Own log fields are not
 restored. A rebuilt error is not a catalog instance, so `Errors.is(…)` rejects
-it by design; classify it by `code` or with `isStructuredError`.
+it by design; classify it by `code` or with `isStructuredError`. For an error
+of a catalog, use `Errors.fromJSON(payload)`: it returns a catalog instance or
+`undefined` (see `catalogs-and-classes.md`).

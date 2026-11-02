@@ -39,7 +39,8 @@ the key is the code. For dotted codes, see *Dotted codes: a prefix*.
 | Member | Purpose |
 | --- | --- |
 | `create.KEY(message, { details?, cause? })` | builds a `StructuredError` with that literal `code`; `details` is required only when the definition declares `detailsType<T>()` |
-| `is(value)`, `is(value, "KEY")` | true only for instances this exact catalog created |
+| `is(value)`, `is(value, "KEY")` | true only for instances this exact catalog created, by a factory or by `fromJSON` |
+| `fromJSON(payload)` | restores an error of the catalog, or `undefined` when the code is not in the catalog or the `details` fail the schema of the key; `undefined` is still an error, so fall back (`?? StructuredError.fromJSON(payload)`) and never drop it |
 | `match(error, { KEY: handler, _? })` | dispatches on the key; exhaustive without `_` |
 | `meta(code)` | frozen `{ category, retryable, metadata? }`; takes the code, so `meta(error.code)` works |
 | `code.KEY` | the code of a key |
@@ -47,6 +48,15 @@ the key is the code. For dotted codes, see *Dotted codes: a prefix*.
 
 - `detailsType<T>()` is a compile-time marker. Validate untrusted input before
   you pass it as `details` (see the section `ValidationError`).
+- In place of the marker, `details` takes a Standard Schema v1 validator (Zod,
+  Valibot, ArkType). The details type is its output type, and `fromJSON`
+  validates with it. The factories do not run it. A key without a schema
+  drops the `details` in `fromJSON`. `category`, `retryable` and the
+  redaction floor of a restored error come from the definition.
+- `JSON.stringify(error)` writes the masked log object. A loose schema
+  accepts a mask such as `"[REDACTED]"` as a value of a restored error. Use a
+  schema that rejects a mask, or send the real values in a message of your
+  own.
 - `metadata` must be JSON-safe. HTTP, gRPC or CLI mappings stay the
   consumer's choice; `metadata.httpStatus` is a convention, not a field the
   library reads.
