@@ -849,9 +849,9 @@ export class BaseError<T extends string> extends Error {
    * Readable one-liner plus the nested cause chain. For a chain of error
    * objects, the render has exactly the same bounds as the log object. It
    * renders the same cause nodes, and past the cap the chain ends with the
-   * same depth marker.
-   * A plain-object cause carries its data fields in the log object. This
-   * render follows its `cause` links and ends them at the cap. A deny-list
+   * same depth marker. A chain of plain-object causes ends at the same hop
+   * with the same marker, and the log object also carries their data
+   * fields. A deny-list
    * on `"message"` of an instance or of a redaction floor (see
    * {@link redact}) masks the message of its error and of every node below
    * it, in the order of the log object: the policy of the node first, the

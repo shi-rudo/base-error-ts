@@ -288,7 +288,9 @@ describe("log data serialization", () => {
 
     expect(JSON.stringify(copied)).not.toContain("end");
     expect(JSON.stringify(copied)).toBe(
-      '{"cause":'.repeat(100) + "{}" + "}".repeat(100),
+      '{"cause":'.repeat(100) +
+        '"[Max cause depth exceeded]"' +
+        "}".repeat(100),
     );
   });
 

@@ -57,6 +57,11 @@ One wide value cannot spend that budget alone:
 
 A sibling such as `orderId` stays in the log.
 
+A container nested 100 levels deep in log data becomes
+`"[Max data depth exceeded]"`, and the copy reads no children. A chain of
+plain-object causes ends with `"[Max cause depth exceeded]"` after 100 hops,
+as a chain of errors does.
+
 A string in the log object holds at most 10,000 characters. A longer string
 keeps its start and ends with a count marker, such as
 `"[990000 more characters]"`. This applies to the `message`, the `name`, the
@@ -309,12 +314,14 @@ depth, and a cause's data fields), so data can't slip through wherever it sits.
 A leaf inside an **array** has no key of its own, so it is judged under the key
 of the array that holds it: `details.tokens: ["a", "b"]` is masked element by
 element unless `"tokens"` is allowed. The policy walks the log object, which the
-log build copied within its bounds: data nesting stops at 100 levels with an
-empty container, the cause spine stops at 100 hops (a `cause` object or an
-aggregate member each count one; a list on the spine is free, its members pay),
-and a cycle is a `[Circular …]` marker at its first repeat. Under an allow-list
-that marker is data and reads `[REDACTED]`. An `errors` value that is not a list
-is data, bounded by the data depth.
+log build copied within its bounds: data nesting stops at 100 levels with
+`[Max data depth exceeded]`, the cause spine stops at 100 hops with
+`[Max cause depth exceeded]` (a `cause` object or an aggregate member each count
+one; a list on the spine is free, its members pay), and a cycle is a
+`[Circular …]` marker at its first repeat. Under an allow-list, the depth marker
+and the cycle marker in data are data and read `[REDACTED]`. The marker on the
+cause spine stays readable. An `errors` value that is not a list is data,
+bounded by the data depth.
 The top-level envelope (`message`/`code`/…) is untouched, and a cause keeps its
 structural envelope (`name`/`message`/`stack`/`code`/`category`/`retryable`).
 The top-level `cause` and `details` are links, not envelope fields. A primitive

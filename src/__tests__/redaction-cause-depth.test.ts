@@ -46,7 +46,7 @@ describe("redaction: cause-chain depth does not consume the data-depth budget", 
     const err = errorWithRawDetails({ nested: deep });
 
     const json = JSON.stringify(err.redact([]).toLogObject());
-    expect(json).toContain('"child":{}');
+    expect(json).toContain('"child":"[Max data depth exceeded]"');
     expect(json).not.toContain('"bottom"');
   });
 });

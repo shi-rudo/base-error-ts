@@ -23,6 +23,8 @@ import {
   type WalkPosition,
 } from "./log-position.js";
 import {
+  MAX_CAUSE_DEPTH_MARKER,
+  MAX_DATA_DEPTH_MARKER,
   MAX_LOG_SIZE_MARKER,
   MORE_KEYS_KEY,
   UNSERIALIZABLE_VALUE_MARKER,
@@ -110,9 +112,17 @@ export function capLogStack(
   return capLogString(stack, context);
 }
 
-/** Whether a depth or spine cap cuts the container at `position`. */
-function pastDepthCap(position: WalkPosition): boolean {
-  return position.depth >= MAX_DATA_DEPTH || position.spine > MAX_CAUSE_DEPTH;
+/**
+ * The marker of the cap that cuts the container at `position`, or
+ * `undefined` when no cap cuts it. The spine grows only in the cause region
+ * and data depth only in the data region, so the cap names the region: the
+ * cause depth marker stays readable in a cause slot, and the data depth
+ * marker is data.
+ */
+function depthCutMarker(position: WalkPosition): string | undefined {
+  if (position.spine > MAX_CAUSE_DEPTH) return MAX_CAUSE_DEPTH_MARKER;
+  if (position.depth >= MAX_DATA_DEPTH) return MAX_DATA_DEPTH_MARKER;
+  return undefined;
 }
 
 /**
@@ -276,7 +286,8 @@ function unboxData(value: object): unknown {
  * Nothing in here throws.
  *
  * Cause depth and data depth count separately, with the redaction regions.
- * At a depth cap, the copy keeps an empty container and reads no children.
+ * At a depth cap, the copy writes the marker of that cap and reads no
+ * children.
  */
 export function serializeLogData(
   value: unknown,
@@ -332,7 +343,8 @@ export function serializeLogData(
           // view is not built past the cap. A custom policy that returns a
           // primitive view is cut there as well.
           position = positionOf(item, false, key, parent, arrayParent);
-          if (pastDepthCap(position)) return {};
+          const cut = depthCutMarker(position);
+          if (cut !== undefined) return cut;
           item = errorView();
         } else {
           // Binary data is summarized before its toJSON runs: the toJSON of
@@ -363,7 +375,8 @@ export function serializeLogData(
       if (position === undefined || array) {
         position = positionOf(item, array, key, parent, arrayParent);
       }
-      if (pastDepthCap(position)) return array ? [] : {};
+      const cut = depthCutMarker(position);
+      if (cut !== undefined) return cut;
       if (seen.has(item)) {
         let marker = circularMarkers.get(item);
         if (marker === undefined) {
