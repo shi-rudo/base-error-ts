@@ -162,6 +162,7 @@ bounded:
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
 | Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Cause depth counts separately |
 | Data width is limited to 1000 entries per array and 1000 keys per object | An array ends with `[N more items]`, and an object gets the key `[more keys]` with the number of own keys past the cut. Binary data reads as its type and size |
+| A string holds at most 10,000 characters, and the strings of one log object at most 1,000,000 | A longer string ends with `[N more characters]`; a string past the total is `[Max log size exceeded]` |
 
 Rejected keys, failed hooks, and width cuts remain silent in production. Each library-owned build
 shares a 100,000-visit budget across causes, data values, and own-key inspections

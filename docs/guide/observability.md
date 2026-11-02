@@ -55,7 +55,19 @@ One wide value cannot spend that budget alone:
   type and size, such as `"[Uint8Array(1000000)]"`. Its entries are not log
   data.
 
-A sibling such as `orderId` stays in the log. Proposal 0023 records the caps.
+A sibling such as `orderId` stays in the log.
+
+A string in the log object holds at most 10,000 characters. A longer string
+keeps its start and ends with a count marker, such as
+`"[990000 more characters]"`. This applies to the `message`, the `name`, the
+`code` and the `category` of every node and to every string in log data. The
+`stack` repeats `name: message` in its header, so the log writes the header
+with the cut message and keeps the frames, which get 10,000 characters of
+their own. The strings of one log object spend at most 1,000,000 characters
+in total. A string past that total becomes `[Max log size exceeded]`. The
+output of `redactWith` at the root of an error without a catalog policy stays
+as the callback returns it. `toString()` and `err.stack` are not log output
+and keep their full text. Proposal 0023 records the caps.
 
 ### Aggregate causes
 

@@ -448,9 +448,13 @@ describe("fromJSON hardening", () => {
     const restored = StructuredError.fromJSON(payload);
 
     expect(countErrors(restored) - 1).toBeLessThanOrEqual(10_000);
-    expect(JSON.stringify(restored.toLogObject())).toContain(
-      "more aggregated errors",
-    );
+    // The log of ten thousand restored errors spends its character budget
+    // before this marker, so the restored lists are checked directly.
+    expect(
+      aggregateMarkers(restored).some((marker) =>
+        marker.includes("more aggregated errors"),
+      ),
+    ).toBe(true);
   });
 
   it("reconstructs a payload within the budget in full", () => {
@@ -477,6 +481,17 @@ describe("fromJSON hardening", () => {
 });
 
 /** Every Error reachable through `cause` and `errors`, each counted once. */
+function aggregateMarkers(node: unknown, seen = new Set<unknown>()): string[] {
+  if (!(node instanceof Error) || seen.has(node)) return [];
+  seen.add(node);
+  const members = (node as { errors?: unknown[] }).errors ?? [];
+  return [
+    ...members.filter((member): member is string => typeof member === "string"),
+    ...aggregateMarkers((node as { cause?: unknown }).cause, seen),
+    ...members.flatMap((member) => aggregateMarkers(member, seen)),
+  ];
+}
+
 function countErrors(node: unknown, seen = new Set<unknown>()): number {
   if (!(node instanceof Error) || seen.has(node)) return 0;
   seen.add(node);

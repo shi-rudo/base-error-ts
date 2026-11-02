@@ -75,6 +75,21 @@ export const MAX_DATA_DEPTH = 100;
 export const MAX_DATA_WIDTH = 1000;
 
 /**
+ * Longest string the log object writes, in UTF-16 code units. A longer string
+ * keeps its start and ends with a count marker. The frames of a stack get an
+ * allowance of their own, so a long message costs the stack no frame
+ * (proposal 0023).
+ */
+export const MAX_LOG_STRING_LENGTH = 10_000;
+
+/**
+ * Characters that the strings of one log build can spend in total. Without a
+ * total, the node budget times {@link MAX_LOG_STRING_LENGTH} still passes. A
+ * string past the total becomes the size marker.
+ */
+export const MAX_LOG_CHARACTERS = 1_000_000;
+
+/**
  * Total-node budget for one data copy or `cloneJsonSafe` call. Log data
  * shares its allowance with the whole build (MAX_LOG_NODES). The unit is
  * one visited value, a container or a leaf. Redaction walks the copy and

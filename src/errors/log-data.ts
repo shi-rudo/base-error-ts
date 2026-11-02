@@ -28,6 +28,7 @@ import {
   UNSERIALIZABLE_VALUE_MARKER,
   binaryDataMarker,
   circularObjectMarker,
+  moreCharactersMarker,
   moreItemsMarker,
 } from "./serializer-markers.js";
 import {
@@ -35,6 +36,7 @@ import {
   MAX_DATA_DEPTH,
   MAX_DATA_WIDTH,
   MAX_LOG_NODES,
+  MAX_LOG_STRING_LENGTH,
 } from "./walker-bounds.js";
 
 const SIZE_CUT = Symbol("log.size");
@@ -42,6 +44,70 @@ const SIZE_CUT = Symbol("log.size");
 export function normalizeLogNumber(value: number): number | null {
   if (!Number.isFinite(value)) return null;
   return value === 0 ? 0 : value;
+}
+
+/**
+ * A string as the log object writes it: at most `limit` code units of it, and
+ * a count marker for the rest. The cut never splits a surrogate pair. The
+ * string spends its kept length from the character budget of the build; past
+ * the budget it is the size marker, and at the edge it keeps what fits.
+ */
+export function capLogString(
+  value: string,
+  context: LogBuildContext,
+  limit: number = MAX_LOG_STRING_LENGTH,
+): string {
+  const characters = context.characters;
+  const room = Math.min(limit, characters.limit - characters.used);
+  if (room <= 0) return MAX_LOG_SIZE_MARKER;
+  if (value.length <= room) {
+    characters.used += value.length;
+    return value;
+  }
+  let kept = room;
+  const last = value.charCodeAt(kept - 1);
+  if (last >= 0xd800 && last <= 0xdbff) kept--;
+  characters.used += kept;
+  return `${value.slice(0, kept)}${moreCharactersMarker(value.length - kept)}`;
+}
+
+/**
+ * A stack as the log object writes it. A stack that starts with the header
+ * `name: message` of its error gets the header with the name and the message
+ * that the log writes, so a cut message does not leave the full message in
+ * the stack, and the redaction recognizes the header as before. The frames
+ * after the header get their own allowance of {@link MAX_LOG_STRING_LENGTH},
+ * so a long message costs the stack no frame. Any other stack is cut like a
+ * string. The header forms match the ones that the redaction recognizes.
+ */
+export function capLogStack(
+  stack: string,
+  header: { readonly name: unknown; readonly message: unknown },
+  logged: { readonly name: unknown; readonly message: unknown },
+  context: LogBuildContext,
+): string {
+  const { name, message } = header;
+  if (
+    typeof name === "string" &&
+    typeof message === "string" &&
+    typeof logged.name === "string" &&
+    typeof logged.message === "string"
+  ) {
+    const forms =
+      message === "" ? [`${name}: `, name] : [`${name}: ${message}`];
+    for (const form of forms) {
+      if (stack === form || stack.startsWith(`${form}\n`)) {
+        const loggedHeader =
+          form === name ? logged.name : `${logged.name}: ${logged.message}`;
+        const frames = stack.slice(form.length);
+        context.characters.used += loggedHeader.length;
+        return frames === ""
+          ? loggedHeader
+          : `${loggedHeader}${capLogString(frames, context)}`;
+      }
+    }
+  }
+  return capLogString(stack, context);
 }
 
 /** Whether a depth or spine cap cuts the container at `position`. */
@@ -289,6 +355,7 @@ export function serializeLogData(
       }
       if (typeof item === "bigint") return item.toString();
       if (typeof item === "number") return normalizeLogNumber(item);
+      if (typeof item === "string") return capLogString(item, context);
       if (typeof item === "function" || typeof item === "symbol")
         return undefined;
       if (item === null || typeof item !== "object") return item;
@@ -374,6 +441,7 @@ export function serializeLogData(
   budget.nodes++;
   if (typeof value === "number") return normalizeLogNumber(value);
   if (typeof value === "bigint") return value.toString();
+  if (typeof value === "string") return capLogString(value, context);
   return value;
 }
 

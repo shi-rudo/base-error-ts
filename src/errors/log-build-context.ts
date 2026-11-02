@@ -1,8 +1,10 @@
-import { MAX_LOG_NODES } from "./walker-bounds.js";
+import { MAX_LOG_CHARACTERS, MAX_LOG_NODES } from "./walker-bounds.js";
 
 /** One library-owned traversal. Consumer callbacks can start independent builds. */
 export type LogBuildContext = {
   readonly budget: { nodes: number; readonly limit: number };
+  /** The characters that the strings of this build have spent. */
+  readonly characters: { used: number; readonly limit: number };
   /**
    * The builder of the diagnostic view when `value` is an error that the log
    * projects, or `undefined`. The copier calls the builder only for a value
@@ -16,5 +18,9 @@ export type LogBuildContext = {
 export function createLogBuildContext(
   dataError: LogBuildContext["dataError"],
 ): LogBuildContext {
-  return { budget: { nodes: 0, limit: MAX_LOG_NODES }, dataError };
+  return {
+    budget: { nodes: 0, limit: MAX_LOG_NODES },
+    characters: { used: 0, limit: MAX_LOG_CHARACTERS },
+    dataError,
+  };
 }
