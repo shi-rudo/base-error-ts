@@ -31,6 +31,23 @@ const withCatchAll: string | undefined = matchErrorCode(userError, {
   _: (error) => error.code,
 });
 
+const restCode: "RATE_LIMITED" = matchErrorCode(userError, {
+  USER_NOT_FOUND: () => "RATE_LIMITED" as const,
+  _: (error) => error.code,
+});
+
+matchErrorCode(userError, {
+  USER_NOT_FOUND: () => false,
+  // @ts-expect-error the catch-all never receives a code that has a handler
+  _: (error) => error.code === "USER_NOT_FOUND",
+});
+
+const restOfCompleteTable: number = matchErrorCode(userError, {
+  USER_NOT_FOUND: () => 404,
+  RATE_LIMITED: () => 429,
+  _: () => 500,
+});
+
 const complete: number = matchErrorCode(userError, {
   USER_NOT_FOUND: () => 404,
   RATE_LIMITED: () => 429,
@@ -44,6 +61,11 @@ declare const wideError: StructuredError<string, string>;
 const anyCode: number = matchErrorCode(wideError, {
   ANY_CODE: () => 1,
   _: () => 2,
+});
+
+const restOfWideCode: string = matchErrorCode(wideError, {
+  ANY_CODE: () => "any",
+  _: (error) => error.code,
 });
 
 const CatchAllCodeErrors = defineErrors({
@@ -138,6 +160,13 @@ const brandedLiteralsComplete: number = matchErrorCode(brandedLiteralsError, {
 const brandedLiteralsCatchAll: number = matchErrorCode(brandedLiteralsError, {
   _: () => 2,
 });
+
+declare const brandedCodeB: "B" & CodeBrand;
+
+const restOfBrandedLiterals: "B" & CodeBrand = matchErrorCode(
+  brandedLiteralsError,
+  { A: () => brandedCodeB, _: (error) => error.code },
+);
 
 declare const literalAndBrandedError:
   | StructuredError<"KNOWN", string>
@@ -267,5 +296,9 @@ void anyCodeWithCatchAll;
 void CatchAllCodeErrors;
 void catchAllOnly;
 void withCatchAll;
+void restCode;
+void restOfCompleteTable;
 void complete;
 void anyCode;
+void restOfWideCode;
+void restOfBrandedLiterals;

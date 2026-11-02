@@ -85,6 +85,20 @@ and its errors reached `_`.
   such as `string & { __brand }` and an `any` error still take a handler for
   any code.
 
+### The `_` catch-all receives only the codes without a handler
+
+Before v10, the `_` handler of `matchErrorCode` and of `Catalog.match`
+received the whole union. Now it receives the members of the union whose code
+has no handler. With a handler for every code, it receives `never`.
+
+- In `_`, a comparison of the code with a handled code fails to compile
+  (TS2367), because that code cannot reach `_`. Delete the dead branch, or
+  move its logic into the handler of that code.
+- A `_` handler typed with a parameter that excludes an unhandled code fails
+  to compile. Type the parameter with the whole union, or with the members
+  that reach `_`.
+- The runtime is unchanged.
+
 ## v8 to v9
 
 v9 applies a threat model to the error model (proposal 0017). The log copies

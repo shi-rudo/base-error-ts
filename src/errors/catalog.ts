@@ -6,6 +6,8 @@ import { cloneJsonSafe } from "./json-safe.js";
 import type { JsonSafeValue } from "./json-safe.js";
 import { ownCase } from "./match.js";
 import type {
+  CatchAll,
+  HandledNames,
   HandlerNames,
   HandlerResult,
   UnknownHandlerNames,
@@ -210,13 +212,17 @@ type KeyCaseArg<
   K extends string,
 > = Extract<E, { code: CodeOf<K, P> }>;
 
+/**
+ * A handler per key, each optional, plus an optional `_` catch-all that
+ * `CatchAll` types, as in `matchErrorCode`.
+ */
 type KeyCases<
   T extends ErrorCatalogDefinition,
   P extends string | undefined,
   E extends StructuredError<string, string>,
 > = {
   [K in keyof T & string]?: (error: KeyCaseArg<P, E, K>) => unknown;
-} & { _?: (error: E) => unknown };
+} & { _?: unknown };
 
 type CatchAllKeyRule =
   "match is unavailable: the key _ is also the catch-all; rename the key, or use matchErrorCode";
@@ -266,16 +272,19 @@ export type Catalog<
   ): value is CatalogErrorOf<Catalog<T, P>, K>;
   /**
    * Exhaustively dispatch on the key of an error of this catalog, with type
-   * narrowing. `matchErrorCode` with handlers named by key: it checks no
+   * narrowing. `matchErrorCode` with handlers named by key: the `_`
+   * catch-all receives the errors whose key has no handler, it checks no
    * provenance, and it throws when no case matches and no `_` catch-all
    * exists.
    */
   match<
     E extends CatalogError<Catalog<T, P>>,
     const C extends KeyCases<T, P, E>,
+    Names extends PropertyKey = never,
   >(
     error: E,
-    cases: KeyExhaustive<T, P, E, C>,
+    cases: KeyExhaustive<T, P, E, C> &
+      CatchAll<E, Names, CodeOf<HandledNames<Names>, P>>,
   ): HandlerResult<C>;
 };
 
