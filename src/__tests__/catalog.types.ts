@@ -1,11 +1,17 @@
 import {
   detailsType,
   defineErrors,
+  matchErrorCode,
   type Catalog,
   type CatalogError,
   type CatalogErrorOf,
   type ErrorCatalogDefinition,
 } from "../index.js";
+
+import {
+  schemaFrom,
+  type StandardSchemaV1,
+} from "./standard-schema.fixture.js";
 
 type IsAny<T> = 0 extends 1 & T ? true : false;
 type Assert<T extends true> = T;
@@ -411,3 +417,64 @@ const noPrefixCode: "A" = defineErrors(explicitPrefixDefinition, {}).create.A(
   "m",
 ).code;
 void noPrefixCode;
+
+const SchemaErrors = defineErrors({
+  USER_NOT_FOUND: {
+    category: "NOT_FOUND",
+    retryable: false,
+    details: schemaFrom((value): { userId: string } | undefined =>
+      typeof value === "object" && value !== null ? { userId: "7" } : undefined,
+    ),
+  },
+  RATE_LIMITED: { category: "RATE_LIMIT", retryable: true },
+});
+type SchemaError = CatalogError<typeof SchemaErrors>;
+
+SchemaErrors.create.USER_NOT_FOUND("m", { details: { userId: "7" } });
+
+// @ts-expect-error the details type of a key is the output type of its schema
+SchemaErrors.create.USER_NOT_FOUND("m", { details: { userId: 7 } });
+
+declare const wirePayload: unknown;
+const restored: SchemaError | undefined = SchemaErrors.fromJSON(wirePayload);
+
+// @ts-expect-error fromJSON returns undefined for a payload that does not fit
+const restoredWithoutCheck: SchemaError = SchemaErrors.fromJSON(wirePayload);
+
+const restoredUserId: string | undefined =
+  restored &&
+  matchErrorCode(restored, {
+    USER_NOT_FOUND: (error) => error.details?.userId,
+    RATE_LIMITED: () => undefined,
+  });
+
+const numberSchema = schemaFrom((value) =>
+  typeof value === "number" ? value : undefined,
+);
+
+// @ts-expect-error the output of a details schema must be a record
+defineErrors({ X: { category: "C", retryable: false, details: numberSchema } });
+
+void restoredWithoutCheck;
+void restoredUserId;
+
+declare const officialSchema: StandardSchemaV1<
+  { userId: string },
+  { userId: string; normalized: true }
+>;
+const OfficialSchemaErrors = defineErrors({
+  USER_NOT_FOUND: {
+    category: "NOT_FOUND",
+    retryable: false,
+    details: officialSchema,
+  },
+});
+
+OfficialSchemaErrors.create.USER_NOT_FOUND("m", {
+  details: { userId: "7", normalized: true },
+});
+
+OfficialSchemaErrors.create.USER_NOT_FOUND("m", {
+  // @ts-expect-error the details type is the output type of a schema typed with the published interface
+  details: { userId: "7" },
+});

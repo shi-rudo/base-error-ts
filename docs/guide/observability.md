@@ -505,6 +505,10 @@ total is small, because every reconstructed error captures a stack. Past the
 total, a `cause` drops and the remaining members of an aggregate collapse into
 the `[N more aggregated errors]` marker.
 
+For an error of a catalog, `AppErrors.fromJSON(payload)` restores the catalog
+type, with the decision fields and the redaction floor of the definition. See
+[Restoring an error from JSON](./catalog#restoring-an-error-from-json).
+
 It always returns a base `StructuredError`; **subclass identity is not
 restored**. A `ValidationError` round-trips to a `StructuredError` (losing
 `publicIssues()`/`addIssue()`; the raw `details.issues` survive as data). Narrow

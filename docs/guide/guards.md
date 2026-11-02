@@ -119,8 +119,9 @@ throw reads as "not a match" rather than throwing out of the guard, because a
 guard runs in `catch` blocks where a new exception destroys the original error.
 
 Catalog guards add a stronger, catalog-local guarantee. `AppErrors.is(value)`
-accepts only instances created by that exact catalog and rejects structurally
-similar, deserialized and foreign-catalog values. Use it when domain behavior
+accepts only instances created by that exact catalog, by a factory or by
+`AppErrors.fromJSON`. It rejects structurally similar and foreign-catalog
+values, and a value that `StructuredError.fromJSON` rebuilt. Use it when domain behavior
 depends on membership in your closed catalog. Use structural guards when shape
 recognition across a realm or wire boundary is the intended behavior.
 
