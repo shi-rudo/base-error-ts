@@ -117,8 +117,8 @@ function renderLine(
  * error objects, `toString()` shows the same nodes as `toLogObject()` and
  * cuts at the same marker. Near the budget the two differ: the log also
  * spends its allowance on data, and the render spends one unit per line.
- * For a plain-object cause, the serializer also copies its data fields and
- * cuts deep containers without a marker.
+ * For a plain-object cause, the serializer also copies its data fields, and
+ * it cuts a deep container with the data depth marker.
  *
  * `inherited` is the message filter of the nodes above `start`. Each node
  * passes its own filter, then the inherited one, to its cause and its

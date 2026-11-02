@@ -73,7 +73,7 @@ for mutation, JSON safety, policy order, and recursion limits.
 | --------------- | ------------- | -------------------------------------------------- |
 | `toLogObject()` | Observability | name, message, stack, full cause chain, timestamps |
 | `toJSON()`      | Observability | alias of `toLogObject()`                           |
-| `toString()`    | N/A           | one-liner plus the nested cause chain, cut at 100 hops like the log object for error chains (a plain-object cause is one value in the log and a chain here) |
+| `toString()`    | N/A           | one-liner plus the nested cause chain, cut at 100 hops with the depth marker, like the log object |
 
 `toString()` runs in `catch` paths, so it never calls the conversion of a value
 that it did not create. A cause that is not an error renders as its primitive
@@ -160,7 +160,7 @@ bounded:
 | At most 100 fields (`MAX_OWN_LOG_FIELDS`, whose declaration in `src/errors/walker-bounds.ts` owns the number) | The reader stops there |
 | A throw, or a return that is not a record, costs the fields | The node keeps its envelope and its cause chain. A getter that throws leaves `[Unserializable value]` at its own key |
 | Values are copied as data | The log shares no reference with the error, and a bigint or a cycle cannot make a consumer's `JSON.stringify` throw |
-| Data depth is limited to 100 | The copy keeps `{}` or `[]` at the cap and reads no children. Cause depth counts separately |
+| Data depth is limited to 100 | The copy writes `[Max data depth exceeded]` at the cap and reads no children. Cause depth counts separately |
 | Data width is limited to 1000 entries per array and 1000 keys per object | An array ends with `[N more items]`, and an object gets the key `[more keys]` with the number of own keys past the cut. Binary data reads as its type and size |
 | A string holds at most 10,000 characters, and the strings of one log object at most 1,000,000 | A longer string ends with `[N more characters]`; a string past the total is `[Max log size exceeded]` |
 

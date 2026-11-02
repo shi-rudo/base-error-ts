@@ -59,8 +59,8 @@ export const MAX_OWN_LOG_FIELDS_READ: number = MAX_OWN_LOG_FIELDS * 10;
 
 /**
  * Deepest nesting in a data tree. `cloneJsonSafe` rejects the value. The log
- * data serializer keeps an empty container at the cap, without reading its
- * children.
+ * data serializer writes `[Max data depth exceeded]` at the cap, without
+ * reading the children.
  * Cause depth counts separately, so a deep cause retains its shallow data.
  */
 export const MAX_DATA_DEPTH = 100;

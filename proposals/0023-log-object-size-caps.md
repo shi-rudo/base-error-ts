@@ -1,7 +1,7 @@
 # Size caps for the log object
 
 Status: implemented; release: 10.0.0.
-Tracking: `base-error-ts-ci1` (container width), `base-error-ts-s0v` (string length).
+Tracking: `base-error-ts-ci1` (container width), `base-error-ts-s0v` (string length), `base-error-ts-uxy` (depth cut).
 
 ## Decision
 
@@ -14,11 +14,14 @@ The log object caps the width of a data container and the length of a string, an
 | Typed array, `Buffer`, `DataView`, `ArrayBuffer` | no entries | `[Uint8Array(1000000)]`, with the constructor name and the length in elements or bytes |
 | Characters of one string | 10 000 | the string ends with `[990000 more characters]` |
 | Characters of one log object | 1 000 000 | a string past the budget is `[Max log size exceeded]`; a string at the edge keeps what fits and ends with the count marker |
+| Depth of log data | 100 (unchanged) | the cut container is `[Max data depth exceeded]` |
+| Hops of a plain-object cause chain | 100 (unchanged) | the cut cause is `[Max cause depth exceeded]`, as in a chain of errors |
 
 - The caps sit in `src/errors/walker-bounds.ts`, and the marker texts in `src/errors/serializer-markers.ts`.
 - The width cap and the binary summary apply where the log-data copier walks: `details`, the own fields of a subclass, a plain-object cause, and the output of a custom policy that the log copies.
 - The string cap applies to every string that the log object writes: the envelope (`name`, `message`, `code`, `category`) and log data. The `stack` gets its own rule.
 - The `stack` repeats `name: message` in its header. The log writes the header with the cut message and keeps the frames. The frames get their own allowance of 10 000 characters. So a long message costs the stack no frame, and the redaction recognizes the header as before.
+- A depth cut writes its marker in place of the container and reads no children. It replaces the empty container of proposal 0012. The spine grows only in the cause region and data depth only in the data region, so the marker names the region: the cause depth marker stays readable in a cause slot, and the data depth marker is data.
 - A cut never splits a surrogate pair. The markers that the serializer writes do not count against the character budget.
 - The output of `redactWith` at the root of an error without a catalog floor stays as the callback returns it. The consumer owns it, and the log does not copy it (proposal 0021). Everywhere else, the log copies custom output, so the caps apply.
 
@@ -29,6 +32,7 @@ The walkers cap nodes, not characters and not the width of one container.
 - One oversized value replaced all of `details` with the size marker. `Buffer.alloc(1_000_000)` or an array of 200 000 elements spent the node budget of the whole build, and a sibling such as `orderId: 42` was lost with it.
 - A small `Uint8Array` logged as an object keyed by index.
 - A 1 MB message and a 1 MB detail gave a log object of 3 000 700 characters, because the stack header repeats the message. Log pipelines and Sentry cut such a record somewhere, and not where the information is.
+- At data depth 100, the copy wrote an empty container, which reads as an empty value. A chain of plain-object causes also ended in an empty container after 100 hops, while a chain of errors and `toString()` ended with `[Max cause depth exceeded]`.
 
 ## Why these values
 
@@ -44,6 +48,6 @@ The walkers cap nodes, not characters and not the width of one container.
 
 ## Consequences
 
-- The log contract changes: a long string ends with a marker, an array ends with a count marker, an object with more than 1000 keys gets the key `[more keys]`, and binary data is a summary.
+- The log contract changes: a long string ends with a marker, an array ends with a count marker, an object with more than 1000 keys gets the key `[more keys]`, binary data is a summary, and a depth cut is a marker, not an empty container.
 - A marker in log data is data. A policy masks it like any value, and an allow-list masks the count under `[more keys]`.
 - `toString()` and `err.stack` are not log output, and the caps do not apply to them.

@@ -154,23 +154,17 @@ describe("toString() bounds the linear cause chain like toLogObject()", () => {
     expect(reads).toBeLessThanOrEqual(101);
   });
 
-  it("caps a plain-object log chain with an empty container while rendering its depth marker", () => {
+  it("ends a plain-object chain in the log and in the render at the same hop with the depth marker", () => {
     const error = new BaseError("root", plainChainOf(300));
 
     const lines = error.toString().split("\n");
-    const log = error.toLogObject();
-    const spine = walkLogSpine(log.cause);
+    const spine = walkLogSpine(error.toLogObject().cause);
 
     expect(lines).toHaveLength(102);
     expect(lines[lines.length - 1]).toBe(`Caused by: ${DEPTH_MARKER}`);
-    expect(spine.nodes).toBe(101);
-    expect(spine.terminal).toBeUndefined();
-    let terminal = log.cause;
-    for (let index = 0; index < 100; index++) {
-      terminal = (terminal as Record<string, unknown>).cause;
-    }
-    expect(terminal).toEqual({});
-    expect(JSON.stringify(log)).not.toContain(DEPTH_MARKER);
+    expect(causeLines(lines)).toHaveLength(spine.nodes + 1);
+    expect(spine.nodes).toBe(100);
+    expect(spine.terminal).toBe(DEPTH_MARKER);
   });
 
   it("renders an error-shaped plain object by its name and message", () => {
