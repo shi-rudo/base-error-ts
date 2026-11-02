@@ -317,7 +317,10 @@ export type Catalog<
   ): value is CatalogErrorOf<Catalog<T, P>, K>;
   /**
    * Restores an error of this catalog from its serialized form, or returns
-   * `undefined` when the payload does not fit the catalog. The `code` must be
+   * `undefined` when the payload does not fit the catalog. `undefined` does
+   * not mean that there is no error: the payload is still an error, only not
+   * one of this catalog. Fall back, for example to
+   * `StructuredError.fromJSON(payload)`, and never drop it. The `code` must be
    * a code of the catalog, and the `details` must pass the schema of its key.
    * The factory of the key creates the error, so `category`, `retryable` and
    * the redaction floor come from the definition, and the error passes

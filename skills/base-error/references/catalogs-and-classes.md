@@ -40,7 +40,7 @@ the key is the code. For dotted codes, see *Dotted codes: a prefix*.
 | --- | --- |
 | `create.KEY(message, { details?, cause? })` | builds a `StructuredError` with that literal `code`; `details` is required only when the definition declares `detailsType<T>()` |
 | `is(value)`, `is(value, "KEY")` | true only for instances this exact catalog created, by a factory or by `fromJSON` |
-| `fromJSON(payload)` | restores an error of the catalog, or `undefined` when the code is not in the catalog or the `details` fail the schema of the key |
+| `fromJSON(payload)` | restores an error of the catalog, or `undefined` when the code is not in the catalog or the `details` fail the schema of the key; `undefined` is still an error, so fall back (`?? StructuredError.fromJSON(payload)`) and never drop it |
 | `match(error, { KEY: handler, _? })` | dispatches on the key; exhaustive without `_` |
 | `meta(code)` | frozen `{ category, retryable, metadata? }`; takes the code, so `meta(error.code)` works |
 | `code.KEY` | the code of a key |

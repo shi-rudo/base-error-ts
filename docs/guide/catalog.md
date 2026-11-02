@@ -82,6 +82,12 @@ catalog, or returns `undefined` when the payload does not fit:
 const error = AppErrors.fromJSON(payload) ?? StructuredError.fromJSON(payload);
 ```
 
+`undefined` does not mean that there is no error. The payload is still an
+error, only not one of this catalog. Fall back, for example to
+`StructuredError.fromJSON(payload)` or to the `fromJSON` of another catalog,
+and never drop it. Code such as `if (restored) handle(restored)` loses every
+error that does not fit.
+
 A payload fits when its `code` is a code of the catalog and its `details` pass
 the schema of that key. The factory of the key creates the error:
 
