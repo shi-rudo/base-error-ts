@@ -109,6 +109,18 @@ export type UnknownHandlerNames<C, Names extends string> = Exclude<
   Names | "_"
 >;
 
+/**
+ * The unknown names of a table that `C` does not hold. A table with only
+ * unknown names has no property in common with the all-optional handler type,
+ * so the compiler falls back to the constraint for `C`. The compiler infers
+ * `TableNames` from the keys alone, so it still holds these names.
+ */
+export type NamesLostToConstraint<
+  C,
+  TableNames extends PropertyKey,
+  KnownNames extends string,
+> = Exclude<HandledNames<TableNames>, HandlerNames<C> | KnownNames>;
+
 /** The type of the handler under `Name`. The key `404` has the name `"404"`. */
 type HandlerNamed<C, Name extends string> = {
   [K in Extract<keyof C, string | number>]: `${K}` extends Name ? C[K] : never;
@@ -172,6 +184,25 @@ type NamedHandlerTable<
   : CatchAllCodeRule;
 
 /**
+ * Rejects a table with only unknown names. Every code stays required, because
+ * `C` holds no handler that `UnknownNameRule` can inspect for `any`.
+ */
+type TableOfUnknownCodes<
+  E extends StructuredError<string, string>,
+  Code extends string,
+  C,
+  TableNames extends PropertyKey,
+> = [NamesLostToConstraint<C, TableNames, CodeNames<Code>>] extends [never]
+  ? unknown
+  : {
+      [
+        K in NamesLostToConstraint<C, TableNames, CodeNames<Code>>
+      ]: UnknownCodeRule<K>;
+    } & {
+      [K in CodeNames<Code>]: (error: CaseArg<E, K>) => unknown;
+    };
+
+/**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
  *
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
@@ -228,7 +259,9 @@ export function matchErrorCode<
   // keeps the error assignable then; `E & { code }` is only the inference
   // site of `Code`.
   error: E | (E & { readonly code: Code }),
-  cases: Exhaustive<E, Code, C> & CatchAll<E, Names>,
+  cases: Exhaustive<E, Code, C> &
+    CatchAll<E, Names> &
+    TableOfUnknownCodes<E, Code, C, Names>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;

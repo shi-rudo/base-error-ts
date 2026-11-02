@@ -64,7 +64,8 @@ log query that matched the runtime message of an unhandled code reads
 
 Before v10, a handler table with a `_` catch-all accepted any extra handler,
 and so did a table with a handler for every code. A misspelled code compiled,
-and its errors reached `_`.
+and its errors reached `_`. A table with only misspelled codes and no `_`
+compiled too, and every call threw at runtime.
 
 - A handler for a code that the union does not contain is a compile error now.
   The error names the handler, for example
