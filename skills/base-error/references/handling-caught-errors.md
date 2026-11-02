@@ -49,7 +49,8 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   against that member. Use TypeScript 5.4 or later, or handle such a code in
   `_`.
 - A handler for a code that the union does not contain is a compile error,
-  also next to `_`. A misspelled code does not fall through to `_`.
+  also next to `_`. A misspelled code does not fall through to `_`. The error
+  reads `matchErrorCode: <name> is not a code of this error`.
 - `_` receives the members of the union whose code has no handler, also in
   `Catalog.match`. In `_`, a comparison with a handled code is a compile
   error.
@@ -81,7 +82,8 @@ throw e;
 ```
 
 - Without `_`, every key needs a handler; a key the catalog does not define is
-  a compile error, also next to `_`.
+  a compile error, also next to `_`. The error reads
+  `match: <key> is not a key of this catalog`.
 - `match` checks no provenance. Narrow a caught value with `Errors.is` first.
 - A catalog with the key `_` cannot use `match`: `_` is the catch-all.
 - Match a union of several catalogs with `matchErrorCode` on the codes; a quoted

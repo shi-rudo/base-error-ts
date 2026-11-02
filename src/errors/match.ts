@@ -79,6 +79,9 @@ export function ownCase<H>(
 type CatchAllCodeRule =
   "matchErrorCode is unavailable: the code _ is also the catch-all; rename the code";
 
+type UnknownCodeRule<Name extends string> =
+  `matchErrorCode: ${Name} is not a code of this error`;
+
 /**
  * The names of a handler table. A numeric object key such as `404` has the
  * name `"404"`.
@@ -125,7 +128,8 @@ type Exhaustive<
  * Rejects a union with the code `_`, and a handler for a name outside `Names`,
  * also next to a `_` catch-all. Without a `_` catch-all, every name must have
  * a handler. Missing names are added as required, so an incomplete object
- * fails to type-check.
+ * fails to type-check. A handler for an unknown name gets a string literal
+ * type and not `never`, so the compiler names the reason in its error.
  */
 type NamedHandlerTable<
   E extends StructuredError<string, string>,
@@ -142,7 +146,7 @@ type NamedHandlerTable<
               error: CaseArg<E, K>,
             ) => unknown;
           }
-    : C & Record<UnknownHandlerNames<C, Names>, never>
+    : C & { [K in UnknownHandlerNames<C, Names>]: UnknownCodeRule<K> }
   : CatchAllCodeRule;
 
 /**

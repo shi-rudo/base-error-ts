@@ -8,6 +8,16 @@ type ErrorClassHandlers<TClasses extends ErrorClassMap> = {
   readonly [K in keyof TClasses]: (error: InstanceType<TClasses[K]>) => unknown;
 };
 
+/**
+ * Rejects a handler key that names no class of the set, with a string literal
+ * type and not `never`, so the compiler names the reason in its error.
+ */
+type UnknownClassKeys<TClasses extends ErrorClassMap, THandlers> = {
+  [K in Exclude<keyof THandlers, keyof TClasses>]: K extends string | number
+    ? `match: ${K} is not a key of this error class set`
+    : never;
+};
+
 type MatchResult<THandlers> = THandlers[keyof THandlers] extends (
   ...args: never[]
 ) => infer R
@@ -31,8 +41,7 @@ export interface ErrorClassSet<TClasses extends ErrorClassMap> {
   /** Match a value using exactly one handler for every declared class key. */
   match<const THandlers extends ErrorClassHandlers<TClasses>>(
     value: unknown,
-    handlers: THandlers &
-      Record<Exclude<keyof THandlers, keyof TClasses>, never>,
+    handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
   ): MatchResult<THandlers>;
 }
 
@@ -84,8 +93,7 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
   return Object.freeze({
     match<const THandlers extends ErrorClassHandlers<TClasses>>(
       value: unknown,
-      handlers: THandlers &
-        Record<Exclude<keyof THandlers, keyof TClasses>, never>,
+      handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
     ): MatchResult<THandlers> {
       for (const key of keys) {
         const constructor = snapshot[key] as ErrorClass;

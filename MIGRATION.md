@@ -67,7 +67,9 @@ and so did a table with a handler for every code. A misspelled code compiled,
 and its errors reached `_`.
 
 - A handler for a code that the union does not contain is a compile error now.
-  Correct the code, or delete the dead handler.
+  The error names the handler, for example
+  `matchErrorCode: USER_NOT_FUND is not a code of this error`. Correct the
+  code, or delete the dead handler.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`

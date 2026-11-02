@@ -116,7 +116,9 @@ const result = InfrastructureErrors.match(error, {
 ```
 
 The handler object must contain exactly one handler for every declared key.
-Missing and additional keys are compile errors. Each handler receives the
+Missing and additional keys are compile errors. The error for an additional
+key names it, for example `match: reconnect is not a key of this error class set`.
+Each handler receives the
 instance type of its constructor, and the result is the exact union of all
 handler return types.
 
@@ -185,11 +187,12 @@ your error-handling completeness.
 
 The compiler also rejects a handler for a code that the union does not
 contain, with or without `_`. So a misspelled code fails to compile and does
-not fall through to `_`:
+not fall through to `_`. The compiler error names the handler and the reason:
 
 ```ts
 matchErrorCode(err, {
-  USER_NOT_FUND: () => render404(), // compile error: no such code
+  // compile error: "matchErrorCode: USER_NOT_FUND is not a code of this error"
+  USER_NOT_FUND: () => render404(),
   _: (e) => renderGeneric(e.code),
 });
 ```
@@ -205,6 +208,8 @@ The compiler checks names only against known codes:
   `StructuredError<string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
+- A handler typed `any` compiles under any name, because `any` turns off the
+  type check.
 
 ### Per-case narrowing
 
