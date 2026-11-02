@@ -56,6 +56,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **The guide names a limit of TypeScript before 5.4 for `matchErrorCode`.** A handler for a code named like a member of `Object.prototype`, such as `toString`, is typed against that member there. The guide and the skill say to use TypeScript 5.4 or later, or to handle such a code in `_`. The runtime dispatch is correct.
 
+- **The guide shows how to match in a function that is generic over the error.** A `matchErrorCode` handler that reads its parameter does not compile there, because the compiler cannot infer the handler table. The guide and the skill say to assign the error to a variable typed with the union of the constraint and to match that variable.
+
 ## 9.0.1 - 2026-10-23
 
 Documentation release. The README now says what the library does for a user, and the release workflow publishes to JSR as well. The code is unchanged.

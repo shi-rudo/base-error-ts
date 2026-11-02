@@ -253,3 +253,22 @@ try {
   throw e;
 }
 ```
+
+### In a generic function
+
+In a function that is generic over the error, `matchErrorCode` checks the
+handler names against the codes of the constraint. A handler that reads its
+parameter does not compile there: the compiler cannot infer the handler table,
+and the result type is `unknown`. A handler without a parameter compiles.
+Assign the error to a variable typed with the union of the constraint, and
+match that variable:
+
+```ts
+function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
+  const known: EmailTaken | RateLimited = error;
+  return matchErrorCode(known, {
+    RATE_LIMITED: (e) => (e.retryable ? 429 : 503),
+    _: () => 500,
+  });
+}
+```

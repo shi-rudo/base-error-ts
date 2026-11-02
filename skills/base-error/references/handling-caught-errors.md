@@ -58,6 +58,9 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   type parameter names no code. `matchErrorCode` takes only a `_`-only table for
   it. To name handlers, assign the error to a variable typed with its codes
   or with `StructuredError<string>`, and match that variable.
+- In a function generic over the error (`E extends A | B`), a handler that
+  reads its parameter does not compile. Assign the error to a variable typed
+  `A | B` and match that variable.
 
 ## Closed dispatch by key: `Errors.match`
 
