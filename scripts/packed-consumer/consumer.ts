@@ -61,6 +61,9 @@ export const status: number = matchErrorCode(failure, {
 // @ts-expect-error matchErrorCode needs a case for every code of the union
 matchErrorCode(failure, { EMAIL_TAKEN: () => 409 });
 
+// @ts-expect-error matchErrorCode rejects a handler that can be undefined
+matchErrorCode(failure, { EMAIL_TAKEN: undefined, _: () => 500 });
+
 export const retryable: boolean = matchErrorCode(failure, {
   RATE_LIMITED: (error) => error.retryable,
   _: () => false,

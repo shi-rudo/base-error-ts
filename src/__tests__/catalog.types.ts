@@ -259,6 +259,9 @@ AuthzErrors.match(authzError, undefinedHandlers);
 // @ts-expect-error a handler with the value undefined does not route to the catch-all
 AuthzErrors.match(authzError, { missing_role: undefined, _: () => 1 });
 
+// @ts-expect-error a catch-all with the value undefined leaves a key without a handler
+AuthzErrors.match(authzError, { missing_role: () => 1, _: undefined });
+
 void exhaustiveResult;
 void catchAllResult;
 void literalResult;

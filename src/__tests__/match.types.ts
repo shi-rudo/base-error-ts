@@ -34,6 +34,18 @@ matchErrorCode(userError, { USER_NOT_FOUND: undefined, _: () => 1 });
 // @ts-expect-error a handler that can be undefined does not route to the catch-all
 matchErrorCode(userError, { USER_NOT_FOUND: maybeHandler, _: () => 1 });
 
+// @ts-expect-error a catch-all that can be undefined leaves a code without a handler
+matchErrorCode(userError, { USER_NOT_FOUND: () => 1, _: maybeHandler });
+
+const completeTableWithUndefinedCatchAll = {
+  USER_NOT_FOUND: () => 1,
+  RATE_LIMITED: () => 2,
+  _: undefined,
+};
+
+// @ts-expect-error a catch-all with the value undefined is rejected in a complete table too
+matchErrorCode(userError, completeTableWithUndefinedCatchAll);
+
 matchErrorCode(userError, {
   USER_NOT_FOUND: maybeHandler ?? (() => 1),
   _: () => 2,
