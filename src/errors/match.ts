@@ -222,6 +222,22 @@ type TableOfUnknownCodes<
     : unknown;
 
 /**
+ * Keeps a literal code required next to an open code. The union with an open
+ * code names every string, so it holds no required name.
+ */
+type LiteralCodeHandlers<
+  E extends StructuredError<string, string>,
+  LiteralCode extends string,
+  C,
+> = "_" extends keyof C
+  ? unknown
+  : {
+      [K in Exclude<LiteralCode, HandlerNames<C>>]: (
+        error: CaseArg<E, K>,
+      ) => unknown;
+    };
+
+/**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
  *
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
@@ -288,7 +304,8 @@ export function matchErrorCode<
     E | (E & { readonly code: Code } & { readonly code: `${LiteralCode}` }),
   cases: Exhaustive<E, Code | LiteralCode, C> &
     CatchAll<E, Names> &
-    TableOfUnknownCodes<E, Code | LiteralCode, C, Names>,
+    TableOfUnknownCodes<E, Code | LiteralCode, C, Names> &
+    LiteralCodeHandlers<E, LiteralCode, C>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;

@@ -210,9 +210,15 @@ The compiler checks names only against known codes:
   `StructuredError<string, string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
-- For a union of a branded code and a literal code, the compiler can see only
-  one of them, and the result depends on the TypeScript version. Assign the
-  error to a variable typed `StructuredError<string, string>`.
+- In a union of a branded code and literal codes, every literal code needs a
+  handler, but the compiler does not check the branded code. A table without a
+  handler for it compiles, and that error throws at runtime, so give such a table
+  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
+  name it, assign the error to a variable typed
+  `StructuredError<string, string>`.
+- On TypeScript before 5.3, a function generic over a union of two enums checks
+  the table against the code of one enum only. Assign the error to a variable
+  typed with the union, and match that variable.
 - A handler typed `any` under an unknown name fails to compile too. The
   compiler error says only that `any` is not assignable to `never`. If the
   table holds only such handlers, the compiler error names the missing codes.

@@ -339,6 +339,16 @@ matchErrorCode(paymentFailure, { DECLINED: () => 1 });
 // @ts-expect-error a union of two enums needs a handler for the code of the first enum
 matchErrorCode(paymentFailure, { REFUSED: () => 1 });
 
+declare const brandedAndTwoLiterals:
+  | StructuredError<"A" & CodeBrand, string>
+  | StructuredError<"B", string>
+  | StructuredError<"C", string>;
+
+// @ts-expect-error a literal code stays required next to a branded code
+matchErrorCode(brandedAndTwoLiterals, { A: () => 1, B: () => 2 });
+
+matchErrorCode(brandedAndTwoLiterals, { B: () => 1, C: () => 2 });
+
 declare const literalAndBrandedError:
   | StructuredError<"KNOWN", string>
   | StructuredError<string & CodeBrand, string>;

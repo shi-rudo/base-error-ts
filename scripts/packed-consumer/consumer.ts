@@ -108,6 +108,15 @@ export const statusOfEachEnum: number = matchErrorCode(paymentFailure, {
 // @ts-expect-error matchErrorCode needs a case for the code of each enum
 matchErrorCode(paymentFailure, { DECLINED: () => 402 });
 
+type CodeBrand = { readonly __brand: "ErrorCode" };
+declare const brandedAndTwoLiterals:
+  | StructuredError<"A" & CodeBrand, string>
+  | StructuredError<"B", string>
+  | StructuredError<"C", string>;
+
+// @ts-expect-error matchErrorCode keeps a literal code required next to a branded code
+matchErrorCode(brandedAndTwoLiterals, { A: () => 1, B: () => 2 });
+
 export function statusOfAnyCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
