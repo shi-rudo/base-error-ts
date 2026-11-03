@@ -272,9 +272,10 @@ In a function that is generic over the error, `matchErrorCode` checks the
 handler names against the codes of the constraint. A handler that reads its
 parameter does not compile there: the compiler cannot infer the handler table,
 and the result type is `unknown`. A handler without a parameter compiles next
-to a named handler. On TypeScript 5.4 and later, a table with only `_` does not
-compile there. Assign the error to a variable typed with the union of the
-constraint, and match that variable:
+to a named handler. If the constraint is a closed union such as
+`E extends A | B`, a table with only `_` does not compile on TypeScript 5.4 and
+later. Assign the error to a variable typed with the union of the constraint,
+and match that variable:
 
 ```ts
 function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
