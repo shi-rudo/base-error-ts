@@ -13,6 +13,7 @@ import type {
   HandlerNames,
   HandlerResult,
   UnknownHandlerNames,
+  UnknownNameRule,
 } from "./match.js";
 
 /** JSON-safe static metadata supported by catalog definitions. Alias of `JsonSafeValue`, whose module owns the JSON-safety rules. */
@@ -272,9 +273,12 @@ type KeyCases<
 type CatchAllKeyRule =
   "match is unavailable: the key _ is also the catch-all; rename the key, or use matchErrorCode";
 
+type UnknownKeyRule<Name extends string> =
+  `match: ${Name} is not a key of this catalog`;
+
 /**
- * Rejects a key that the catalog does not define. Without a `_` catch-all,
- * every key of `E` must have a handler.
+ * Rejects a key that the catalog does not define, with `UnknownNameRule`.
+ * Without a `_` catch-all, every key of `E` must have a handler.
  */
 type KeyExhaustive<
   T extends ErrorCatalogDefinition,
@@ -293,7 +297,13 @@ type KeyExhaustive<
               error: KeyCaseArg<P, E, K>,
             ) => unknown;
           }
-    : C & Record<UnknownHandlerNames<C, keyof T & string>, never>;
+    : C & {
+        [K in UnknownHandlerNames<C, keyof T & string>]: UnknownNameRule<
+          C,
+          K,
+          UnknownKeyRule<K>
+        >;
+      };
 
 /** The object returned by {@link defineErrors}. */
 export type Catalog<

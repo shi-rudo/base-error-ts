@@ -79,6 +79,9 @@ export function ownCase<H>(
 type CatchAllCodeRule =
   "matchErrorCode is unavailable: the code _ is also the catch-all; rename the code";
 
+type UnknownCodeRule<Name extends string> =
+  `matchErrorCode: ${Name} is not a code of this error`;
+
 /**
  * The names of a handler table. A numeric object key such as `404` has the
  * name `"404"`.
@@ -106,6 +109,23 @@ export type UnknownHandlerNames<C, Names extends string> = Exclude<
   Names | "_"
 >;
 
+/** The type of the handler under `Name`. The key `404` has the name `"404"`. */
+type HandlerNamed<C, Name extends string> = {
+  [K in Extract<keyof C, string | number>]: `${K}` extends Name ? C[K] : never;
+}[Extract<keyof C, string | number>];
+
+/**
+ * The type that rejects the handler under an unknown name. A string literal
+ * type makes the compiler print `Reason` in its error. `any` passes every type
+ * except `never`, so a handler typed `any` gets `never`, and the compiler
+ * prints only that.
+ */
+export type UnknownNameRule<
+  C,
+  Name extends string,
+  Reason extends string,
+> = 0 extends 1 & HandlerNamed<C, Name> ? never : Reason;
+
 /**
  * A table with only a `_` catch-all names no code, so it needs no check. That
  * also holds for a code that depends on a type parameter of the caller, where
@@ -125,7 +145,7 @@ type Exhaustive<
  * Rejects a union with the code `_`, and a handler for a name outside `Names`,
  * also next to a `_` catch-all. Without a `_` catch-all, every name must have
  * a handler. Missing names are added as required, so an incomplete object
- * fails to type-check.
+ * fails to type-check. A handler for an unknown name gets `UnknownNameRule`.
  */
 type NamedHandlerTable<
   E extends StructuredError<string, string>,
@@ -142,7 +162,13 @@ type NamedHandlerTable<
               error: CaseArg<E, K>,
             ) => unknown;
           }
-    : C & Record<UnknownHandlerNames<C, Names>, never>
+    : C & {
+        [K in UnknownHandlerNames<C, Names>]: UnknownNameRule<
+          C,
+          K,
+          UnknownCodeRule<K>
+        >;
+      }
   : CatchAllCodeRule;
 
 /**
