@@ -167,7 +167,7 @@ UserErrors.match(userError, { [symbolKey]: () => 1 });
 UserErrors.match(userError, () => 1);
 
 /** The type that the compiler infers for a table with only unknown names. */
-type TableLostToConstraint = {
+type AllOptionalHandlerTable = {
   USER_NOT_FOUND?: (
     error: Extract<UserError, { code: "USER_NOT_FOUND" }>,
   ) => unknown;
@@ -180,7 +180,7 @@ type TableLostToConstraint = {
 type CasesOfOnlyUnknownCode = Parameters<
   typeof matchErrorCode<
     UserError,
-    TableLostToConstraint,
+    AllOptionalHandlerTable,
     UserError["code"],
     "USER_NOT_FUND"
   >
@@ -194,7 +194,7 @@ type OnlyUnknownCodeNamesReason = Assert<
 >;
 
 type CasesOfOnlyUnknownKey = Parameters<
-  typeof UserErrors.match<UserError, TableLostToConstraint, "USER_NOT_FUND">
+  typeof UserErrors.match<UserError, AllOptionalHandlerTable, "USER_NOT_FUND">
 >[1];
 
 type OnlyUnknownKeyNamesReason = Assert<
@@ -203,6 +203,11 @@ type OnlyUnknownKeyNamesReason = Assert<
     "match: USER_NOT_FUND is not a key of this catalog"
   >
 >;
+
+matchErrorCode<UserError, { _?: unknown }>(userError, { _: () => 1 });
+matchErrorCode<UserError, { _: () => number }>(userError, { _: () => 1 });
+UserErrors.match<UserError, { _?: unknown }>(userError, { _: () => 1 });
+UserErrors.match<UserError, { _: () => number }>(userError, { _: () => 1 });
 
 declare const wideError: StructuredError<string, string>;
 matchErrorCode(wideError, { ANY_NAME: () => 1 });

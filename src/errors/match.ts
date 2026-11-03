@@ -114,8 +114,8 @@ export type UnknownHandlerNames<C, Names extends string> = Exclude<
  * property in common with the all-optional handler type fails the weak type
  * check, so the compiler falls back to the constraint for `C`. Then `C` holds
  * `_`, and `TableNames` does not, because the compiler infers `TableNames` from
- * the keys alone. Explicit type arguments can leave `TableNames` empty too, but
- * then the constraint does not fit in `C`.
+ * the keys alone. Explicit type arguments leave `TableNames` empty too, so `C`
+ * must also hold every key of the constraint.
  */
 export type TableLostToConstraint<
   C,
@@ -124,7 +124,7 @@ export type TableLostToConstraint<
 > = "_" extends TableNames
   ? false
   : "_" extends keyof C
-    ? [Constraint] extends [C]
+    ? [keyof Constraint] extends [keyof C]
       ? true
       : false
     : false;
