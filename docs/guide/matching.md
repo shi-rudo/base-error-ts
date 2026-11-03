@@ -203,9 +203,9 @@ The compiler checks names only against known codes:
   it names every string. Write the table as an object literal.
 - An error whose code type is a bare type parameter names no code. An example
   is `StructuredError<Code>` in a generic function. For such an error,
-  `matchErrorCode` takes only a table with a single `_` handler. To name other
-  handlers, assign the error to a variable typed with its codes, or with
-  `StructuredError<string>`.
+  `matchErrorCode` takes only a table with a single `_` handler that does not
+  read its parameter. To name other handlers, assign the error to a variable
+  typed with its codes, or with `StructuredError<string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
 - A handler typed `any` under an unknown name fails to compile too. The
@@ -269,7 +269,8 @@ try {
 ### In a generic function
 
 In a function that is generic over the error, `matchErrorCode` checks the
-handler table against the codes of the constraint:
+handler table against the codes of the constraint. Each handler receives the
+error narrowed to its case:
 
 ```ts
 function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
@@ -280,7 +281,12 @@ function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
 }
 ```
 
-If the constraint names every string, such as
-`E extends StructuredError<string, string>`, a `_` handler that reads its
-parameter does not compile. Assign the error to a variable typed
-`StructuredError<string, string>`, and match that variable.
+Two kinds of constraint limit a handler that reads its parameter:
+
+- For a union of classes, such as `E extends FileError | DatabaseError`, the
+  parameter has only the type `StructuredError<string, string>`.
+- For an open code, such as `string` or a branded string, the handler can fail
+  to compile.
+
+In both cases, assign the error to a variable typed with its codes, or with
+`StructuredError<string, string>`. Then match that variable.

@@ -81,9 +81,10 @@ and its errors reached `_`.
   object literal, or type it with the codes of the union.
 - An error whose code type is a bare type parameter names no code. An example
   is `StructuredError<Code>` in a generic function. For such an error,
-  `matchErrorCode` takes only a table with a single `_` handler. To name other
-  handlers, assign the error to a variable typed with the union of its codes,
-  or with `StructuredError<string>`, and match that variable.
+  `matchErrorCode` takes only a table with a single `_` handler that does not
+  read its parameter. To name other handlers, assign the error to a variable
+  typed with the union of its codes, or with `StructuredError<string>`, and
+  match that variable.
 - The runtime is unchanged. A wide `StructuredError<string>`, a branded code
   such as `string & { __brand }` and an `any` error still take a handler for
   any code.
