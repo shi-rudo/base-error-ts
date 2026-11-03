@@ -36,8 +36,8 @@ export type HandledNames<Names extends PropertyKey> = Exclude<
  * `CatchAll` types the catch-all. It stays in this type, so a table of
  * misspelled names and `_` still overlaps it and is checked by name.
  */
-type Cases<E extends StructuredError<string, string>> = {
-  [K in E["code"]]?: (error: CaseArg<E, K>) => unknown;
+type Cases<E extends StructuredError<string, string>, Code extends string> = {
+  [K in Code]?: (error: CaseArg<E, K>) => unknown;
 } & { _?: unknown };
 
 /**
@@ -201,7 +201,7 @@ type TableOfUnknownCodes<
   C,
   TableNames extends PropertyKey,
 > =
-  TableLostToConstraint<C, Cases<E>, TableNames> extends true
+  TableLostToConstraint<C, Cases<E, Code>, TableNames> extends true
     ? {
         [
           K in Exclude<HandledNames<TableNames>, CodeNames<Code>>
@@ -256,7 +256,7 @@ type TableOfUnknownCodes<
  */
 export function matchErrorCode<
   E extends StructuredError<string, string>,
-  const C extends Cases<E>,
+  const C extends Cases<E, Code>,
   // The compiler infers `Code` from the apparent type of the error. For an
   // error typed by a type parameter, `E["code"]` would defer every check of
   // the table, and the call would accept no table.

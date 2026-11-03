@@ -104,6 +104,61 @@ function statusOfEveryCode<E extends CatalogError<typeof UserErrors>>(
   });
 }
 
+function statusOfCatchAllOnly<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  return matchErrorCode(error, { _: () => 500 });
+}
+
+function detailsFromHandlerParameter<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): string | undefined {
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: (e) => e.details?.userId,
+    RATE_LIMITED: (e) => (e.retryable ? "retry" : undefined),
+  });
+}
+
+function codeFromParametersNextToCatchAll<
+  E extends CatalogError<typeof UserErrors>,
+>(error: E): string {
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: (e) => e.code,
+    _: (e) => e.code,
+  });
+}
+
+function missingCodeInGeneric<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  // @ts-expect-error a missing code is rejected in a generic caller
+  return matchErrorCode(error, { USER_NOT_FOUND: () => 404 });
+}
+
+function wrongParameterInGeneric<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): void {
+  matchErrorCode(error, {
+    // @ts-expect-error a handler with a wrong parameter type is rejected in a generic caller
+    USER_NOT_FOUND: (e: number) => e,
+    _: () => 500,
+  });
+}
+
+function catchAllParameterOfAnyError<E extends StructuredError<string, string>>(
+  error: E,
+): void {
+  // @ts-expect-error a catch-all that reads its parameter does not compile for a constraint that names every string
+  matchErrorCode(error, { _: (e) => e.code });
+}
+
+function catchAllParameterOfWideVariable<
+  E extends StructuredError<string, string>,
+>(error: E): string {
+  const wide: StructuredError<string, string> = error;
+  return matchErrorCode(wide, { _: (e) => e.code });
+}
+
 function statusOfAnyError<E extends StructuredError<string, string>>(
   error: E,
 ): number {
@@ -275,6 +330,13 @@ void UserErrors;
 void HttpErrors;
 void statusWithCatchAll;
 void statusOfEveryCode;
+void statusOfCatchAllOnly;
+void detailsFromHandlerParameter;
+void codeFromParametersNextToCatchAll;
+void missingCodeInGeneric;
+void wrongParameterInGeneric;
+void catchAllParameterOfAnyError;
+void catchAllParameterOfWideVariable;
 void statusOfAnyError;
 void misspelledInGeneric;
 void statusOfBareCode;

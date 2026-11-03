@@ -52,6 +52,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **`toString()` masks the message of a cause under the policy of an outer error.** A deny-list on `"message"` masked the message of every cause and aggregate member in the log object. `toString()` applied it to the message of its own error only. So `${err}` printed the raw message of a cause, such as `Caused by: [INNER] inner secret`. Now `toString()` applies the deny-list of each error and of its catalog floor to the messages below it. It keeps the order of the log object: the policy of the node first, the outermost policy last. A function mask that throws renders `[REDACTED]`.
 
+- **`matchErrorCode` compiles in a function that is generic over a closed union.** In `<E extends A | B>(error: E)`, a handler that read its parameter did not compile, and a table with only `_` failed on TypeScript 5.4 and later. Both compile now, and the compiler still checks the handler table against the codes of the constraint. The handler type now uses the code that the compiler infers from the apparent type of the error, not the deferred `E["code"]`. If the constraint names every string, a `_` handler that reads its parameter still does not compile. Assign the error to a variable typed `StructuredError<string, string>`, and match that variable.
+
 ### Documentation
 
 - **The pino and Sentry guides name what the setups write for a foreign error.** They write the fixed fields of the log object and leave the own fields of the error out, such as `errno` or `statusCode`, because a foreign error can carry secrets in any field. A field that matters goes into the `details` of a wrapping `StructuredError`. The guides also state that an error posted by a worker loses its class and its policy, and that `error.toJSON()` with `StructuredError.fromJSON` keeps the masked fields masked.
@@ -67,8 +69,6 @@ Major release. The package ships one ES module build, so `import` and `require` 
 - **The guide says what `console.log` prints for a redacted error.** The _Pitfalls_ page and the observability guide said that `console.log(err)` shows the raw message. It prints the error itself, not the log object. So it also shows every own field with its raw value, the cause and the members of an aggregate. `redact(["apiKey"])` masks `details.apiKey` in `JSON.stringify(err)`, and `console.log(err)` still prints it. The guide now says to log `logObjectOf(err)` or to use the pino setup. It no longer names `logger.error({ err })` as safe, because a plain pino logger reads the error itself. The README, the JSDoc of `redact`, `redactAllow` and `redactWith`, and the skill also say that `console.log` prints the error itself.
 
 - **The guide names a limit of TypeScript before 5.4 for `matchErrorCode`.** A handler for a code named like a member of `Object.prototype`, such as `toString`, is typed against that member there. The guide and the skill say to use TypeScript 5.4 or later, or to handle such a code in `_`. The runtime dispatch is correct.
-
-- **The guide shows how to match in a function that is generic over the error.** A `matchErrorCode` handler that reads its parameter does not compile there, because the compiler cannot infer the handler table. The guide and the skill say to assign the error to a variable typed with the union of the constraint and to match that variable.
 
 ## 9.0.1 - 2026-10-23
 
