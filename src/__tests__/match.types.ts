@@ -193,6 +193,13 @@ function codeOfOtherCaseInGeneric<E extends DetailsOfEachCodeError>(
   });
 }
 
+function completeTableOfClosedBareCodeVariable<Code extends "A" | "B">(
+  error: StructuredError<Code, string>,
+): number {
+  const known: StructuredError<"A" | "B", string> = error;
+  return matchErrorCode(known, { A: () => 1, B: () => 2 });
+}
+
 function catchAllParameterOfBareCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): void {
@@ -429,6 +436,7 @@ void DetailsOfEachCode;
 void detailsOfEachCaseInGeneric;
 void memberOfCaseInGeneric;
 void codeOfOtherCaseInGeneric;
+void completeTableOfClosedBareCodeVariable;
 void catchAllParameterOfBareCode;
 void missingCodeInGeneric;
 void wrongParameterInGeneric;

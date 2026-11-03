@@ -67,10 +67,12 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
 - In a generic function, an error typed `StructuredError<Code, string>` with
-  `Code` a type parameter names no code. `matchErrorCode` takes only a `_`-only
-  table for it, and the `_` handler cannot read its parameter. To name handlers,
-  assign the error to a variable typed with its codes or with
-  `StructuredError<string, string>`, and match that variable.
+  `Code` a type parameter names no code. For `Code extends string`,
+  `matchErrorCode` takes only a `_`-only table, and the `_` handler cannot read
+  its parameter. For a closed constraint such as `Code extends "A" | "B"`, it
+  takes no table on TypeScript 5.4 and later. To name handlers, assign the error
+  to a variable typed with its codes or with `StructuredError<string, string>`,
+  and match that variable.
 - In a function generic over the error (`E extends A | B`), `matchErrorCode`
   checks the table against the codes of the constraint, and each handler
   receives the error narrowed to its case. For a union of classes, the parameter

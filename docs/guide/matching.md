@@ -202,10 +202,12 @@ The compiler checks names only against known codes:
 - A table typed `Record<string, …>` does not pass for a closed union, because
   it names every string. Write the table as an object literal.
 - An error whose code type is a bare type parameter names no code. An example is
-  `StructuredError<Code, string>` in a generic function. For such an error,
-  `matchErrorCode` takes only a table with a single `_` handler that does not
-  read its parameter. To name other handlers, assign the error to a variable
-  typed with its codes, or with `StructuredError<string, string>`.
+  `StructuredError<Code, string>` in a generic function. For
+  `Code extends string`, `matchErrorCode` takes only a table with a single `_`
+  handler that does not read its parameter. For a closed constraint such as
+  `Code extends "A" | "B"`, it takes no table on TypeScript 5.4 and later. To
+  name handlers, assign the error to a variable typed with its codes, or with
+  `StructuredError<string, string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
 - A handler typed `any` under an unknown name fails to compile too. The
@@ -276,10 +278,12 @@ handler table against the codes of the constraint. Each handler receives the
 error narrowed to its case:
 
 ```ts
-function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
+function retryAfterOf<E extends UserNotFound | RateLimited>(
+  error: E,
+): number | undefined {
   return matchErrorCode(error, {
-    RATE_LIMITED: (e) => (e.retryable ? 429 : 503),
-    _: () => 500,
+    RATE_LIMITED: (e) => e.details?.retryAfter,
+    _: () => undefined,
   });
 }
 ```

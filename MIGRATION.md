@@ -84,11 +84,12 @@ and its errors reached `_`.
   before v10 it also passed as if it had a `_` catch-all. Write the table as an
   object literal, or type it with the codes of the union.
 - An error whose code type is a bare type parameter names no code. An example is
-  `StructuredError<Code, string>` in a generic function. For such an error,
-  `matchErrorCode` takes only a table with a single `_` handler that does not
-  read its parameter. To name other handlers, assign the error to a variable
-  typed with the union of its codes, or with `StructuredError<string, string>`,
-  and match that variable.
+  `StructuredError<Code, string>` in a generic function. For
+  `Code extends string`, `matchErrorCode` takes only a table with a single `_`
+  handler that does not read its parameter. For a closed constraint such as
+  `Code extends "A" | "B"`, it takes no table on TypeScript 5.4 and later. To
+  name handlers, assign the error to a variable typed with the union of its
+  codes, or with `StructuredError<string, string>`, and match that variable.
 - The runtime is unchanged. A wide `StructuredError<string, string>`, a branded
   code such as `string & { __brand }` and an `any` error still take a handler
   for any code.

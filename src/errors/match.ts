@@ -158,8 +158,8 @@ export type UnknownNameRule<
 
 /**
  * A table with only a `_` catch-all names no code, so it needs no check. That
- * also holds for a code that depends on a type parameter of the caller, where
- * every check of a name stays deferred.
+ * also holds for an open code that depends on a type parameter of the caller,
+ * where every check of a name stays deferred.
  */
 type Exhaustive<
   E extends StructuredError<string, string>,
@@ -229,10 +229,11 @@ type TableOfUnknownCodes<
  * a `_` catch-all). A handler for a code that the union does not contain is a
  * compile error too, also next to `_`. So is a handler that can be `undefined`.
  * A table typed `Record<string, …>` does not pass for a closed union. For an
- * error whose code type is a bare type parameter, only a table with a single
- * `_` handler that does not read its parameter passes. A union with the code
- * `_` cannot name a handler next to `_`, because `_` is the catch-all. Each
- * handler receives the error narrowed to its case, so `details` is the precise
+ * error whose code type is a type parameter `Code extends string`, only a table
+ * with a single `_` handler that does not read its parameter passes. For a
+ * closed constraint on `Code`, assign the error to a variable typed with its
+ * codes. A union with the code `_` cannot name a handler next to `_`, because
+ * `_` is the catch-all. Each handler receives the error narrowed to its case, so `details` is the precise
  * per-code type. In a function generic over a union of classes, a handler
  * receives only `StructuredError`. The `_` catch-all receives the members of
  * the union whose code has no handler. The return type is the union of the
