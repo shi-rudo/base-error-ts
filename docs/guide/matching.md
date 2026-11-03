@@ -175,11 +175,11 @@ matchErrorCode(err, {
 });
 ```
 
-The `_` handler receives the members of the union whose code has no handler.
-In this example, `e` never has the code `USER_NOT_FOUND`, so a comparison of
+The `_` handler receives the members of the union whose code has no handler. In
+this example, `e` never has the code `USER_NOT_FOUND`, so a comparison of
 `e.code` with `"USER_NOT_FOUND"` is a compile error. A single
-`StructuredError<"A" | "B">` is not a union of members, so `_` receives it
-unchanged.
+`StructuredError<"A" | "B", string>` is not a union of members, so `_` receives
+it unchanged.
 
 When a new error code is added to the union, every `matchErrorCode` without a `_`
 stops compiling until you handle it. That is the point: the compiler maintains
@@ -201,11 +201,11 @@ The compiler checks names only against known codes:
 
 - A table typed `Record<string, …>` does not pass for a closed union, because
   it names every string. Write the table as an object literal.
-- An error whose code type is a bare type parameter names no code. An example
-  is `StructuredError<Code>` in a generic function. For such an error,
+- An error whose code type is a bare type parameter names no code. An example is
+  `StructuredError<Code, string>` in a generic function. For such an error,
   `matchErrorCode` takes only a table with a single `_` handler that does not
   read its parameter. To name other handlers, assign the error to a variable
-  typed with its codes, or with `StructuredError<string>`.
+  typed with its codes, or with `StructuredError<string, string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
 - A handler typed `any` under an unknown name fails to compile too. The
@@ -241,7 +241,7 @@ matchErrorCode(err as AppError, {
 
 Full per-case narrowing needs a **real union** of distinct error types (each
 with a literal `code`), exactly what an [error catalog](./catalog) produces. For
-a single `StructuredError<"A" | "B">`, only `code` narrows.
+a single `StructuredError<"A" | "B", string>`, only `code` narrows.
 
 On TypeScript before 5.4, a handler for a code named like a member of
 `Object.prototype`, such as `toString`, `valueOf` or `constructor`, is typed

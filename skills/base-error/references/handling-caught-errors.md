@@ -42,7 +42,7 @@ throw e;
 
 Narrow from `unknown` first; exhaustiveness needs the union type. Per-case
 `details` narrowing needs a union of distinct error types, which a catalog
-gives; a single `StructuredError<"A" | "B">` narrows only the code.
+gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
 
 - On TypeScript before 5.4, a handler for a code or key named like an
   `Object.prototype` member (`toString`, `valueOf`, `constructor`) is typed
@@ -66,10 +66,11 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   catch-all. A table with only `_` compiles.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
-- In a generic function, an error typed `StructuredError<Code>` with `Code` a
-  type parameter names no code. `matchErrorCode` takes only a `_`-only table for
-  it, and the `_` handler cannot read its parameter. To name handlers, assign the error to a variable typed with its codes
-  or with `StructuredError<string>`, and match that variable.
+- In a generic function, an error typed `StructuredError<Code, string>` with
+  `Code` a type parameter names no code. `matchErrorCode` takes only a `_`-only
+  table for it, and the `_` handler cannot read its parameter. To name handlers,
+  assign the error to a variable typed with its codes or with
+  `StructuredError<string, string>`, and match that variable.
 - In a function generic over the error (`E extends A | B`), `matchErrorCode`
   checks the table against the codes of the constraint, and each handler
   receives the error narrowed to its case. For a union of classes, the parameter

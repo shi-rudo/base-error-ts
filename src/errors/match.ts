@@ -5,8 +5,8 @@ import type { StructuredError } from "./StructuredError.js";
  * type overlaps `K`.
  *
  * When `E` is a real union of structured error types (e.g. produced by a
- * catalog), this resolves to the precise member. Then `details` is the
- * per-code type. When `E` is a single `StructuredError<"A" | "B">`, there is
+ * catalog), this resolves to the precise member. Then `details` is the per-code
+ * type. When `E` is a single `StructuredError<"A" | "B", string>`, there is
  * nothing to narrow, so it stays `E`. `K` can be wider than a code, because a
  * branded code names every string. The type distributes over `E`, so an `E`
  * typed by a type parameter narrows through its constraint.
@@ -23,9 +23,9 @@ type CaseArg<
   : never;
 
 /**
- * The errors that reach the `_` catch-all: the members of `E` whose code is
- * not `Handled`. When `E` is a single `StructuredError<"A" | "B">`, there is
- * nothing to narrow, so it stays `E`, as in `CaseArg`.
+ * The errors that reach the `_` catch-all: the members of `E` whose code is not
+ * `Handled`. When `E` is a single `StructuredError<"A" | "B", string>`, there
+ * is nothing to narrow, so it stays `E`, as in `CaseArg`.
  */
 type CatchAllArg<
   E extends StructuredError<string, string>,
