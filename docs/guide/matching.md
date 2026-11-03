@@ -209,7 +209,8 @@ The compiler checks names only against known codes:
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
 - A handler typed `any` under an unknown name fails to compile too. The
-  compiler error says only that `any` is not assignable to `never`.
+  compiler error says only that `any` is not assignable to `never`. If the
+  table holds only such handlers, the compiler error names the missing codes.
 
 ### Per-case narrowing
 
@@ -270,9 +271,11 @@ try {
 In a function that is generic over the error, `matchErrorCode` checks the
 handler names against the codes of the constraint. A handler that reads its
 parameter does not compile there: the compiler cannot infer the handler table,
-and the result type is `unknown`. A handler without a parameter compiles.
-Assign the error to a variable typed with the union of the constraint, and
-match that variable:
+and the result type is `unknown`. A handler without a parameter compiles next
+to a named handler. If the constraint is a closed union such as
+`E extends A | B`, a table with only `_` does not compile on TypeScript 5.4 and
+later. Assign the error to a variable typed with the union of the constraint,
+and match that variable:
 
 ```ts
 function statusOf<E extends EmailTaken | RateLimited>(error: E): number {

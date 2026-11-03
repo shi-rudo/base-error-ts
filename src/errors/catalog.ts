@@ -12,6 +12,7 @@ import type {
   HandledNames,
   HandlerNames,
   HandlerResult,
+  TableLostToConstraint,
   UnknownHandlerNames,
   UnknownNameRule,
 } from "./match.js";
@@ -305,6 +306,27 @@ type KeyExhaustive<
         >;
       };
 
+/**
+ * Rejects a table with no key among its names. Every key of `E` stays required,
+ * because `C` holds no handler that `UnknownNameRule` can inspect for `any`.
+ */
+type TableOfUnknownKeys<
+  T extends ErrorCatalogDefinition,
+  P extends string | undefined,
+  E extends StructuredError<string, string>,
+  C,
+  TableNames extends PropertyKey,
+> =
+  TableLostToConstraint<C, KeyCases<T, P, E>, TableNames> extends true
+    ? {
+        [
+          K in Exclude<HandledNames<TableNames>, keyof T & string>
+        ]: UnknownKeyRule<K>;
+      } & {
+        [K in KeyIn<T, P, E>]: (error: KeyCaseArg<P, E, K>) => unknown;
+      }
+    : unknown;
+
 /** The object returned by {@link defineErrors}. */
 export type Catalog<
   T extends ErrorCatalogDefinition,
@@ -356,7 +378,8 @@ export type Catalog<
   >(
     error: E,
     cases: KeyExhaustive<T, P, E, C> &
-      CatchAll<E, Names, CodeOf<HandledNames<Names>, P>>,
+      CatchAll<E, Names, CodeOf<HandledNames<Names>, P>> &
+      TableOfUnknownKeys<T, P, E, C, Names>,
   ): HandlerResult<C>;
 };
 

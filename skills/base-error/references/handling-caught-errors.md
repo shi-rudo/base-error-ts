@@ -51,6 +51,11 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`. The error
   reads `matchErrorCode: <name> is not a code of this error`.
+- A handler typed `any` under an unknown name is a compile error too, in
+  `matchErrorCode`, `Catalog.match` and `ErrorClassSet.match`. The compiler
+  error says only that `any` is not assignable to `never`. If a table of
+  `matchErrorCode` or `Catalog.match` holds only such handlers, the compiler
+  error names the missing codes or keys.
 - `_` receives the members of the union whose code has no handler, also in
   `Catalog.match`. In `_`, a comparison with a handled code is a compile
   error.
@@ -63,8 +68,9 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   it. To name handlers, assign the error to a variable typed with its codes
   or with `StructuredError<string>`, and match that variable.
 - In a function generic over the error (`E extends A | B`), a handler that
-  reads its parameter does not compile. Assign the error to a variable typed
-  `A | B` and match that variable.
+  reads its parameter does not compile. On TypeScript 5.4 and later, a table
+  with only `_` does not compile there either. Assign the error to a variable
+  typed `A | B` and match that variable.
 
 ## Closed dispatch by key: `Errors.match`
 

@@ -109,6 +109,26 @@ export type UnknownHandlerNames<C, Names extends string> = Exclude<
   Names | "_"
 >;
 
+/**
+ * True when the compiler replaced a table with the constraint. A table with no
+ * property in common with the all-optional handler type fails the weak type
+ * check, so the compiler falls back to the constraint for `C`. Then `C` holds
+ * `_`, and `TableNames` does not, because the compiler infers `TableNames` from
+ * the keys alone. Explicit type arguments leave `TableNames` empty too, so `C`
+ * must also hold every key of the constraint.
+ */
+export type TableLostToConstraint<
+  C,
+  Constraint,
+  TableNames extends PropertyKey,
+> = "_" extends TableNames
+  ? false
+  : "_" extends keyof C
+    ? [keyof Constraint] extends [keyof C]
+      ? true
+      : false
+    : false;
+
 /** The type of the handler under `Name`. The key `404` has the name `"404"`. */
 type HandlerNamed<C, Name extends string> = {
   [K in Extract<keyof C, string | number>]: `${K}` extends Name ? C[K] : never;
@@ -172,6 +192,26 @@ type NamedHandlerTable<
   : CatchAllCodeRule;
 
 /**
+ * Rejects a table with no code among its names. Every code stays required,
+ * because `C` holds no handler that `UnknownNameRule` can inspect for `any`.
+ */
+type TableOfUnknownCodes<
+  E extends StructuredError<string, string>,
+  Code extends string,
+  C,
+  TableNames extends PropertyKey,
+> =
+  TableLostToConstraint<C, Cases<E>, TableNames> extends true
+    ? {
+        [
+          K in Exclude<HandledNames<TableNames>, CodeNames<Code>>
+        ]: UnknownCodeRule<K>;
+      } & {
+        [K in CodeNames<Code>]: (error: CaseArg<E, K>) => unknown;
+      }
+    : unknown;
+
+/**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
  *
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
@@ -228,7 +268,9 @@ export function matchErrorCode<
   // keeps the error assignable then; `E & { code }` is only the inference
   // site of `Code`.
   error: E | (E & { readonly code: Code }),
-  cases: Exhaustive<E, Code, C> & CatchAll<E, Names>,
+  cases: Exhaustive<E, Code, C> &
+    CatchAll<E, Names> &
+    TableOfUnknownCodes<E, Code, C, Names>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;

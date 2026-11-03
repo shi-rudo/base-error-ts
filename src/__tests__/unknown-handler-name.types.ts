@@ -1,4 +1,5 @@
 import {
+  StructuredError,
   defineErrorClassSet,
   defineErrors,
   matchErrorCode,
@@ -121,6 +122,96 @@ declare const anyHandler: AnyHandler;
 declare const anyHandlerByString: Record<string, AnyHandler>;
 declare const anyHandlerByNumber: Record<number, AnyHandler>;
 
+declare const singleCodeError: StructuredError<"ONLY_CODE", string>;
+const tableOfOneUnknownName = { USER_NOT_FUND: () => 1 };
+
+// @ts-expect-error a table with only an unknown code is rejected without a catch-all
+matchErrorCode(userError, { USER_NOT_FUND: () => 1 });
+
+// @ts-expect-error a table with only an unknown code is rejected for a single code too
+matchErrorCode(singleCodeError, { ONLY_CODD: () => 1 });
+
+// @ts-expect-error a table with only a numeric unknown code is rejected
+matchErrorCode(userError, { 404: () => 1 });
+
+// @ts-expect-error a table in a variable with only an unknown code is rejected
+matchErrorCode(userError, tableOfOneUnknownName);
+
+// @ts-expect-error a table with only an unknown code and a handler typed any is rejected
+matchErrorCode(userError, { USER_NOT_FUND: anyHandler });
+
+// @ts-expect-error a table with only an unknown key is rejected without a catch-all
+UserErrors.match(userError, { USER_NOT_FUND: () => 1 });
+
+// @ts-expect-error a table with only a numeric unknown key is rejected
+UserErrors.match(userError, { 404: () => 1 });
+
+// @ts-expect-error a table in a variable with only an unknown key is rejected
+UserErrors.match(userError, tableOfOneUnknownName);
+
+// @ts-expect-error a table with only an unknown key and a handler typed any is rejected
+UserErrors.match(userError, { USER_NOT_FUND: anyHandler });
+
+const symbolKey = Symbol("symbolKey");
+
+// @ts-expect-error a table with only a symbol key names no code
+matchErrorCode(userError, { [symbolKey]: () => 1 });
+
+// @ts-expect-error a function in place of a table names no code
+matchErrorCode(userError, () => 1);
+
+// @ts-expect-error a table with only a symbol key names no key
+UserErrors.match(userError, { [symbolKey]: () => 1 });
+
+// @ts-expect-error a function in place of a table names no key
+UserErrors.match(userError, () => 1);
+
+/** The type that the compiler infers for a table with only unknown names. */
+type AllOptionalHandlerTable = {
+  USER_NOT_FOUND?: (
+    error: Extract<UserError, { code: "USER_NOT_FOUND" }>,
+  ) => unknown;
+  RATE_LIMITED?: (
+    error: Extract<UserError, { code: "RATE_LIMITED" }>,
+  ) => unknown;
+  _?: unknown;
+};
+
+type CasesOfOnlyUnknownCode = Parameters<
+  typeof matchErrorCode<
+    UserError,
+    AllOptionalHandlerTable,
+    UserError["code"],
+    "USER_NOT_FUND"
+  >
+>[1];
+
+type OnlyUnknownCodeNamesReason = Assert<
+  NamesReason<
+    CasesOfOnlyUnknownCode["USER_NOT_FUND"],
+    "matchErrorCode: USER_NOT_FUND is not a code of this error"
+  >
+>;
+
+type CasesOfOnlyUnknownKey = Parameters<
+  typeof UserErrors.match<UserError, AllOptionalHandlerTable, "USER_NOT_FUND">
+>[1];
+
+type OnlyUnknownKeyNamesReason = Assert<
+  NamesReason<
+    CasesOfOnlyUnknownKey["USER_NOT_FUND"],
+    "match: USER_NOT_FUND is not a key of this catalog"
+  >
+>;
+
+matchErrorCode<UserError, { _?: unknown }>(userError, { _: () => 1 });
+matchErrorCode<UserError, { _: () => number }>(userError, { _: () => 1 });
+UserErrors.match<UserError, { _?: unknown }>(userError, { _: () => 1 });
+UserErrors.match<UserError, { _: () => number }>(userError, { _: () => 1 });
+
+declare const wideError: StructuredError<string, string>;
+matchErrorCode(wideError, { ANY_NAME: () => 1 });
+
 matchErrorCode(userError, {
   USER_NOT_FOUND: () => 1,
   // @ts-expect-error a handler typed any under an unknown code does not stand in for a missing code
@@ -191,6 +282,8 @@ StorageErrors.match(thrown, {
   DatabaseError: anyHandler,
 });
 
+void (null as unknown as OnlyUnknownCodeNamesReason);
+void (null as unknown as OnlyUnknownKeyNamesReason);
 void (null as unknown as UnknownCodeNextToCatchAllNamesReason);
 void (null as unknown as KnownCodeNamesNoReason);
 void (null as unknown as UnknownCodeInCompleteTableNamesReason);
