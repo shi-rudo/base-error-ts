@@ -209,7 +209,8 @@ The compiler checks names only against known codes:
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
 - A handler typed `any` under an unknown name fails to compile too. The
-  compiler error says only that `any` is not assignable to `never`.
+  compiler error says only that `any` is not assignable to `never`. If the
+  table holds only such handlers, the compiler error names the missing codes.
 
 ### Per-case narrowing
 

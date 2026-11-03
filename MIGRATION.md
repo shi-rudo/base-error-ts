@@ -64,13 +64,13 @@ log query that matched the runtime message of an unhandled code reads
 
 Before v10, a handler table with a `_` catch-all accepted any extra handler,
 and so did a table with a handler for every code. A misspelled code compiled,
-and its errors reached `_`. A table with only misspelled codes and no `_`
-compiled too, and every call threw at runtime.
+and its errors reached `_`.
 
 - A handler for a code that the union does not contain is a compile error now.
   The error names the handler, for example
   `matchErrorCode: USER_NOT_FUND is not a code of this error`. Correct the
-  code, or delete the dead handler.
+  code, or delete the dead handler. For a handler typed `any`, the error says
+  only that `any` is not assignable to `never`, or it names the missing codes.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`

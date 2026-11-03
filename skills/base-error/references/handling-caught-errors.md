@@ -51,6 +51,11 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`. The error
   reads `matchErrorCode: <name> is not a code of this error`.
+- A handler typed `any` under an unknown name is a compile error too, in
+  `matchErrorCode`, `Catalog.match` and `ErrorClassSet.match`. The compiler
+  error says only that `any` is not assignable to `never`. If a table of
+  `matchErrorCode` or `Catalog.match` holds only such handlers, the compiler
+  error names the missing codes or keys.
 - `_` receives the members of the union whose code has no handler, also in
   `Catalog.match`. In `_`, a comparison with a handled code is a compile
   error.

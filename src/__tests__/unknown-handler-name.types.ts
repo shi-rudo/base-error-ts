@@ -152,10 +152,35 @@ UserErrors.match(userError, tableOfOneUnknownName);
 // @ts-expect-error a table with only an unknown key and a handler typed any is rejected
 UserErrors.match(userError, { USER_NOT_FUND: anyHandler });
 
+const symbolKey = Symbol("symbolKey");
+
+// @ts-expect-error a table with only a symbol key names no code
+matchErrorCode(userError, { [symbolKey]: () => 1 });
+
+// @ts-expect-error a function in place of a table names no code
+matchErrorCode(userError, () => 1);
+
+// @ts-expect-error a table with only a symbol key names no key
+UserErrors.match(userError, { [symbolKey]: () => 1 });
+
+// @ts-expect-error a function in place of a table names no key
+UserErrors.match(userError, () => 1);
+
+/** The type that the compiler infers for a table with only unknown names. */
+type TableLostToConstraint = {
+  USER_NOT_FOUND?: (
+    error: Extract<UserError, { code: "USER_NOT_FOUND" }>,
+  ) => unknown;
+  RATE_LIMITED?: (
+    error: Extract<UserError, { code: "RATE_LIMITED" }>,
+  ) => unknown;
+  _?: unknown;
+};
+
 type CasesOfOnlyUnknownCode = Parameters<
   typeof matchErrorCode<
     UserError,
-    Record<never, never>,
+    TableLostToConstraint,
     UserError["code"],
     "USER_NOT_FUND"
   >
@@ -169,7 +194,7 @@ type OnlyUnknownCodeNamesReason = Assert<
 >;
 
 type CasesOfOnlyUnknownKey = Parameters<
-  typeof UserErrors.match<UserError, Record<never, never>, "USER_NOT_FUND">
+  typeof UserErrors.match<UserError, TableLostToConstraint, "USER_NOT_FUND">
 >[1];
 
 type OnlyUnknownKeyNamesReason = Assert<

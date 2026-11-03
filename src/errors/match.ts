@@ -110,16 +110,24 @@ export type UnknownHandlerNames<C, Names extends string> = Exclude<
 >;
 
 /**
- * The unknown names of a table that `C` does not hold. A table with only
- * unknown names has no property in common with the all-optional handler type,
- * so the compiler falls back to the constraint for `C`. The compiler infers
- * `TableNames` from the keys alone, so it still holds these names.
+ * True when the compiler replaced a table with the constraint. A table with no
+ * property in common with the all-optional handler type fails the weak type
+ * check, so the compiler falls back to the constraint for `C`. Then `C` holds
+ * `_`, and `TableNames` does not, because the compiler infers `TableNames` from
+ * the keys alone. Explicit type arguments can leave `TableNames` empty too, but
+ * then the constraint does not fit in `C`.
  */
-export type NamesLostToConstraint<
+export type TableLostToConstraint<
   C,
+  Constraint,
   TableNames extends PropertyKey,
-  KnownNames extends string,
-> = Exclude<HandledNames<TableNames>, HandlerNames<C> | KnownNames>;
+> = "_" extends TableNames
+  ? false
+  : "_" extends keyof C
+    ? [Constraint] extends [C]
+      ? true
+      : false
+    : false;
 
 /** The type of the handler under `Name`. The key `404` has the name `"404"`. */
 type HandlerNamed<C, Name extends string> = {
@@ -184,23 +192,24 @@ type NamedHandlerTable<
   : CatchAllCodeRule;
 
 /**
- * Rejects a table with only unknown names. Every code stays required, because
- * `C` holds no handler that `UnknownNameRule` can inspect for `any`.
+ * Rejects a table with no code among its names. Every code stays required,
+ * because `C` holds no handler that `UnknownNameRule` can inspect for `any`.
  */
 type TableOfUnknownCodes<
   E extends StructuredError<string, string>,
   Code extends string,
   C,
   TableNames extends PropertyKey,
-> = [NamesLostToConstraint<C, TableNames, CodeNames<Code>>] extends [never]
-  ? unknown
-  : {
-      [
-        K in NamesLostToConstraint<C, TableNames, CodeNames<Code>>
-      ]: UnknownCodeRule<K>;
-    } & {
-      [K in CodeNames<Code>]: (error: CaseArg<E, K>) => unknown;
-    };
+> =
+  TableLostToConstraint<C, Cases<E>, TableNames> extends true
+    ? {
+        [
+          K in Exclude<HandledNames<TableNames>, CodeNames<Code>>
+        ]: UnknownCodeRule<K>;
+      } & {
+        [K in CodeNames<Code>]: (error: CaseArg<E, K>) => unknown;
+      }
+    : unknown;
 
 /**
  * Exhaustively dispatch on a structured error's `code`, with type narrowing.
