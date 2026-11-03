@@ -233,11 +233,11 @@ type TableOfUnknownCodes<
  * with a single `_` handler that does not read its parameter passes. For a
  * closed constraint on `Code`, assign the error to a variable typed with its
  * codes. A union with the code `_` cannot name a handler next to `_`, because
- * `_` is the catch-all. Each handler receives the error narrowed to its case, so `details` is the precise
- * per-code type. In a function generic over a union of classes, a handler
- * receives only `StructuredError`. The `_` catch-all receives the members of
- * the union whose code has no handler. The return type is the union of the
- * handler return types.
+ * `_` is the catch-all. Each handler receives the error narrowed to its case,
+ * so `details` is the precise per-code type. In a function generic over a union
+ * of classes, a handler receives only `StructuredError`. The `_` catch-all
+ * receives the members of the union whose code has no handler. The return type
+ * is the union of the handler return types.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive
@@ -269,21 +269,26 @@ type TableOfUnknownCodes<
  */
 export function matchErrorCode<
   E extends StructuredError<string, string>,
-  const C extends Cases<E, Code>,
+  const C extends Cases<E, Code | LiteralCode>,
   // The compiler infers `Code` from the apparent type of the error. For an
   // error typed by a type parameter, `E["code"]` would defer every check of
   // the table, and the call would accept no table.
   Code extends string = E["code"],
   Names extends PropertyKey = never,
+  // The compiler infers `Code` from one member of a union of codes with
+  // different base types, such as two enums. A template literal gives it plain
+  // string literals, and these form a union.
+  LiteralCode extends string = never,
 >(
   // For a union of codes that are not literal types, such as `"A" & Brand`,
   // the compiler infers `Code` from one member only. The union with `E`
   // keeps the error assignable then; `E & { code }` is only the inference
-  // site of `Code`.
-  error: E | (E & { readonly code: Code }),
-  cases: Exhaustive<E, Code, C> &
+  // site of `Code` and `LiteralCode`.
+  error:
+    E | (E & { readonly code: Code } & { readonly code: `${LiteralCode}` }),
+  cases: Exhaustive<E, Code | LiteralCode, C> &
     CatchAll<E, Names> &
-    TableOfUnknownCodes<E, Code, C, Names>,
+    TableOfUnknownCodes<E, Code | LiteralCode, C, Names>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;

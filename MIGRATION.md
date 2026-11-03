@@ -91,6 +91,9 @@ and its errors reached `_`.
   `Code extends "A" | "B"`, it takes no table on TypeScript 5.4 and later. To
   name handlers, assign the error to a variable typed with the union of its
   codes, or with `StructuredError<string, string>`, and match that variable.
+- For a union of a branded code and a literal code, the compiler can see only
+  one of them, and the result depends on the TypeScript version. Assign such an
+  error to a variable typed `StructuredError<string, string>`.
 - The runtime is unchanged. A wide `StructuredError<string, string>`, a branded
   code such as `string & { __brand }` and an `any` error still take a handler
   for any code.

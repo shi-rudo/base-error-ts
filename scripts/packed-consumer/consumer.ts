@@ -91,6 +91,23 @@ export function statusOfCatchAllOnly<E extends EmailTaken | RateLimited>(
   return matchErrorCode(error, { _: () => 500 });
 }
 
+enum CardCode {
+  Declined = "DECLINED",
+}
+enum BankCode {
+  Refused = "REFUSED",
+}
+declare const paymentFailure:
+  StructuredError<CardCode, string> | StructuredError<BankCode, string>;
+
+export const statusOfEachEnum: number = matchErrorCode(paymentFailure, {
+  DECLINED: () => 402,
+  REFUSED: () => 403,
+});
+
+// @ts-expect-error matchErrorCode needs a case for the code of each enum
+matchErrorCode(paymentFailure, { DECLINED: () => 402 });
+
 export function statusOfAnyCode<Code extends string>(
   error: StructuredError<Code, string>,
 ): number {
