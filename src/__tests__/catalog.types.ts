@@ -250,6 +250,15 @@ AuthzErrors.match(authzError, {
   // @ts-expect-error the catch-all never receives the code of a key that has a handler
   _: (error) => error.code === "restaurant.authz.missing_role",
 });
+
+const undefinedHandlers = { not_a_member: undefined, missing_role: undefined };
+
+// @ts-expect-error a handler with the value undefined does not count as a handler
+AuthzErrors.match(authzError, undefinedHandlers);
+
+// @ts-expect-error a handler with the value undefined does not route to the catch-all
+AuthzErrors.match(authzError, { missing_role: undefined, _: () => 1 });
+
 void exhaustiveResult;
 void catchAllResult;
 void literalResult;

@@ -19,6 +19,26 @@ declare const userError: CatalogError<typeof UserErrors>;
 // @ts-expect-error a code that the union does not contain is rejected next to a catch-all
 matchErrorCode(userError, { USER_NOT_FUND: () => 1, _: () => 2 });
 
+declare const maybeHandler: (() => number) | undefined;
+const undefinedHandlers = {
+  USER_NOT_FOUND: undefined,
+  RATE_LIMITED: undefined,
+};
+
+// @ts-expect-error a handler with the value undefined does not count as a handler
+matchErrorCode(userError, undefinedHandlers);
+
+// @ts-expect-error a handler with the value undefined does not route to the catch-all
+matchErrorCode(userError, { USER_NOT_FOUND: undefined, _: () => 1 });
+
+// @ts-expect-error a handler that can be undefined does not route to the catch-all
+matchErrorCode(userError, { USER_NOT_FOUND: maybeHandler, _: () => 1 });
+
+matchErrorCode(userError, {
+  USER_NOT_FOUND: maybeHandler ?? (() => 1),
+  _: () => 2,
+});
+
 matchErrorCode(userError, {
   USER_NOT_FOUND: () => 1,
   RATE_LIMITED: () => 2,

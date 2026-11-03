@@ -71,6 +71,10 @@ and its errors reached `_`.
   `matchErrorCode: USER_NOT_FUND is not a code of this error`. Correct the
   code, or delete the dead handler. For a handler typed `any`, the error says
   only that `any` is not assignable to `never`, or it names the missing codes.
+- A handler that can be `undefined` is a compile error now, also next to `_`.
+  It counted as a handler: without `_`, the call threw at runtime, and next to
+  `_`, its errors reached `_`. To send a code to `_`, leave its key out. For a
+  conditional handler, write `USER_NOT_FOUND: handler ?? fallback`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`

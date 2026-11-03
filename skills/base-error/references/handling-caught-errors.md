@@ -56,6 +56,9 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   error says only that `any` is not assignable to `never`. If a table of
   `matchErrorCode` or `Catalog.match` holds only such handlers, the compiler
   error names the missing codes or keys.
+- A handler that can be `undefined` is a compile error, also next to `_`, in
+  `matchErrorCode` and `Catalog.match`. To send a code to `_`, leave its key
+  out. For a conditional handler, write `CODE: handler ?? fallback`.
 - `_` receives the members of the union whose code has no handler, also in
   `Catalog.match`. In `_`, a comparison with a handled code is a compile
   error.
