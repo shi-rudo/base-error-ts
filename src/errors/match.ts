@@ -206,10 +206,12 @@ export type UnknownNameRule<
 > = 0 extends 1 & HandlerNamed<C, Name> ? never : Reason;
 
 /**
- * `Name` when a member of `E` has a branded code that reads as `Name`, such as
- * `"A" & Brand` for `"A"`, otherwise `never`. A template literal cannot read such
- * a code, and the compiler chooses by its version whether `Code` holds it, so
- * the set of names can miss it. A name typed `string` reads no code.
+ * `unknown` when a member of `E` has a branded code that reads as `Name`, such
+ * as `"A" & Brand` for `"A"`, otherwise `never`. A template literal cannot read
+ * such a code, and the compiler chooses by its version whether `Code` holds it,
+ * so the set of names can miss it. A name typed `string` reads no code. This
+ * type stays deferred for an `E` typed by a type parameter, so it joins a rule
+ * as a union member. The compiler then still prints the rule.
  */
 type BrandedCodeNamed<
   E extends StructuredError<string, string>,
@@ -219,7 +221,7 @@ type BrandedCodeNamed<
   : E extends { readonly code: infer MemberCode }
     ? MemberCode extends object
       ? MemberCode extends Name
-        ? Name
+        ? unknown
         : never
       : never
     : never;
@@ -263,11 +265,8 @@ type NamedHandlerTable<
               : (error: CaseArg<E, K>) => unknown;
           }
     : C & {
-        [K in UnknownHandlerNames<C, Names>]: [BrandedCodeNamed<E, K>] extends [
-          never,
-        ]
-          ? UnknownNameRule<C, K, UnknownCodeRule<K>>
-          : unknown;
+        [K in UnknownHandlerNames<C, Names>]:
+          UnknownNameRule<C, K, UnknownCodeRule<K>> | BrandedCodeNamed<E, K>;
       }
   : CatchAllCodeRule;
 
