@@ -16,6 +16,8 @@ const EXAMPLE_FILES = [
   "domain-errors-example.ts",
   "pino-logger.ts",
   "sentry-reporter.ts",
+  "fastify-error-handler.ts",
+  "express-error-handler.ts",
   "automatic-name-example.ts",
   "cause-chain-example.ts",
   "public-error-e2e.ts",

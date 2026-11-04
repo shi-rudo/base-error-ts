@@ -15,6 +15,8 @@ This directory contains examples of how to use the `BaseError` and `StructuredEr
 9. **pino Logger** (`pino-logger.ts`) - Logs a masked error through the subpath `@shirudo/base-error/pino`
 10. **Sentry Reporter** (`sentry-reporter.ts`) - Reports a masked error through the subpath `@shirudo/base-error/sentry`, without a DSN and without a network call
 11. **Voucher Service** (`voucher-service/`) - One small HTTP service that composes the whole feature set: catalog, validation, aggregate fan-out, retry decision, redacted logging, queue round-trip, and localized RFC 9457 responses
+12. **Fastify Error Handler** (`fastify-error-handler.ts`) - `setErrorHandler`, `frameworkErrors` and `setNotFoundHandler` send only the result of the public-error pipeline and log the error. Real requests check the responses and the log lines
+13. **Express Error Handler** (`express-error-handler.ts`) - An error middleware with four parameters and a not-found middleware send only the result of the public-error pipeline and log the error. Real requests check the responses and the log lines
 
 ## Running the Examples
 
