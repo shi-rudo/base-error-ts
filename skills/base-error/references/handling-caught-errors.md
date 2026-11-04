@@ -60,9 +60,11 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   `matchErrorCode` or `Catalog.match` holds only such handlers, the compiler
   error names the missing codes or keys.
 - A handler that can be `undefined` is a compile error, also next to `_`, in
-  `matchErrorCode` and `Catalog.match`. To send a code to `_`, leave its key
-  out. For a conditional handler, write `CODE: handler ?? fallback`. The same
-  holds for `_` itself, also in a table with a handler for every code.
+  `matchErrorCode` and `Catalog.match`. The error names the key, for example
+  `matchErrorCode: the handler of CODE can be undefined`. To send a code to `_`,
+  leave its key out. For a conditional handler, write
+  `CODE: handler ?? fallback`. The same holds for `_` itself, also in a table
+  with a handler for every code.
 - `_` receives the members of the union whose code has no handler, also in
   `Catalog.match`. In `_`, a comparison with a handled code is a compile
   error.

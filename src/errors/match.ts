@@ -56,23 +56,52 @@ type SymbolKeyRule = "a handler table takes no symbol key";
  * they handle. The compiler infers `Names` from the keys alone, so the type
  * of the catch-all does not depend on the handler table: a type parameter in
  * the parameter type of a handler is fixed when the handler is checked, and
- * the table must stay open until every handler is checked. A key with the value
- * `undefined` holds no handler, and its error reaches `_`, whose type excludes
- * that code. So the type of a key rejects `undefined`. A symbol key holds no
- * handler either, because no code reaches it, and its return type would widen
- * the result.
+ * the table must stay open until every handler is checked. A symbol key holds
+ * no handler, because no code reaches it, and its return type would widen the
+ * result.
  */
 export type CatchAll<
   E extends StructuredError<string, string>,
   Names extends PropertyKey,
   Handled extends string = HandledNames<Names>,
 > = {
-  readonly [N in Names]: N extends symbol
-    ? SymbolKeyRule
-    : NonNullable<unknown>;
+  readonly [N in Names]: N extends symbol ? SymbolKeyRule : unknown;
 } & {
   readonly _?: (error: CatchAllArg<E, Handled>) => unknown;
 };
+
+/**
+ * The keys of `C` whose handler can be `undefined`. Such a key holds no handler,
+ * and its error reaches `_`, whose type excludes that code. A handler typed
+ * `any` or `unknown` names no such key.
+ */
+type UndefinedHandlerKeys<C> = {
+  [K in keyof C]-?: unknown extends C[K]
+    ? never
+    : undefined extends C[K]
+      ? K
+      : never;
+}[keyof C];
+
+/**
+ * `Table`, or a table that rejects each handler that can be `undefined` with a
+ * string literal type, so the compiler names that key. This type replaces `C`,
+ * because `undefined` and another type under one key reduce the whole
+ * intersection to `never`. Each key of the constraint is optional, and `C` is
+ * the constraint while the compiler types a handler parameter and after a table
+ * lost its type to it, so `Table` checks that `C`.
+ */
+export type DefinedHandlers<C, Constraint, Matcher extends string, Table> = [
+  Constraint,
+] extends [C]
+  ? Table
+  : [UndefinedHandlerKeys<C>] extends [never]
+    ? Table
+    : {
+        [K in keyof C]: K extends UndefinedHandlerKeys<C>
+          ? `${Matcher}: the handler of ${Extract<K, string | number>} can be undefined`
+          : C[K];
+      };
 
 /** The union of every handler's return type. This is the result of a matcher. */
 export type HandlerResult<C> = {
@@ -348,7 +377,12 @@ export function matchErrorCode<
   // site of `Code` and `LiteralCode`.
   error:
     E | (E & { readonly code: Code } & { readonly code: `${LiteralCode}` }),
-  cases: Exhaustive<E, Code | LiteralCode, C> &
+  cases: DefinedHandlers<
+    C,
+    Cases<E, Code | LiteralCode>,
+    "matchErrorCode",
+    Exhaustive<E, Code | LiteralCode, C>
+  > &
     CatchAll<E, Names> &
     TableOfUnknownCodes<E, Code | LiteralCode, C, Names> &
     LiteralCodeHandlers<E, LiteralCode, Names>,

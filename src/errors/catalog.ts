@@ -9,6 +9,7 @@ import type { JsonSafeValue } from "./json-safe.js";
 import { ownCase } from "./match.js";
 import type {
   CatchAll,
+  DefinedHandlers,
   HandledNames,
   HandlerNames,
   HandlerResult,
@@ -385,7 +386,12 @@ export type Catalog<
     Names extends PropertyKey = never,
   >(
     error: E,
-    cases: KeyExhaustive<T, P, E, C> &
+    cases: DefinedHandlers<
+      C,
+      KeyCases<T, P, E>,
+      "match",
+      KeyExhaustive<T, P, E, C>
+    > &
       CatchAll<E, Names, CodeOf<HandledNames<Names>, P>> &
       TableOfUnknownKeys<T, P, E, C, Names>,
   ): HandlerResult<C>;

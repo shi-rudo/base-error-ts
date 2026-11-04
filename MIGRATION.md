@@ -74,9 +74,11 @@ and its errors reached `_`.
   only that `any` is not assignable to `never`, or it names the missing codes.
 - A handler that can be `undefined` is a compile error now, also next to `_`.
   It counted as a handler: without `_`, the call threw at runtime, and next to
-  `_`, its errors reached `_`. To send a code to `_`, leave its key out. For a
-  conditional handler, write `USER_NOT_FOUND: handler ?? fallback`. The same
-  holds for `_` itself, also in a table with a handler for every code.
+  `_`, its errors reached `_`. The error names the key, for example
+  `matchErrorCode: the handler of USER_NOT_FOUND can be undefined`. To send a
+  code to `_`, leave its key out. For a conditional handler, write
+  `USER_NOT_FOUND: handler ?? fallback`. The same holds for `_` itself, also in
+  a table with a handler for every code.
 - A table without a handler for a code named like a member of
   `Object.prototype`, such as `toString`, is a compile error now, also in
   `Catalog.match` and `ErrorClassSet.match`. The inherited member fulfilled the
