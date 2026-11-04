@@ -1,21 +1,35 @@
 /**
- * Answers each error in Fastify with the result of the public-error pipeline.
- * Without this handler, Fastify sends the internal `code` and the technical
- * `message` to the client.
+ * Answers an error, a bad URL and an unknown route in Fastify with the result
+ * of the public-error pipeline, and logs each error with pino. Without this
+ * setup, Fastify sends the internal `code` and the technical `message` to the
+ * client.
  *
  * Run the demo with `npx tsx examples/fastify-error-handler.ts`. It sends real
- * requests, and it fails if a response holds more than the public problem.
+ * requests. It compares the status, the content type and the body of each
+ * response with the public problem, and it reads the log lines.
  */
 import assert from "node:assert/strict";
 
 import Fastify from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import pino from "pino";
 
 import { StructuredError } from "../src/index.js";
+import { pinoErrorOptions } from "../src/pino/index.js";
 import {
   definePublicErrors,
   project,
   toProblem,
 } from "../src/public-error/index.js";
+
+type LogLine = { level: number; err?: { message?: string } };
+
+const logLines: LogLine[] = [];
+const logger = pino(pinoErrorOptions, {
+  write(line: string) {
+    logLines.push(JSON.parse(line) as LogLine);
+  },
+});
 
 // #region usage
 const catalog = definePublicErrors({
@@ -44,14 +58,50 @@ const catalog = definePublicErrors({
   .registerByCode("FST_ERR_CTP_INVALID_MEDIA_TYPE", {
     publicCode: "unsupported_media_type",
     status: 415,
+  })
+  .registerByCode("FST_ERR_BAD_URL", {
+    publicCode: "invalid_url",
+    status: 400,
+  })
+  .registerByCode("ROUTE_NOT_FOUND", {
+    publicCode: "route_not_found",
+    status: 404,
   });
 
-const app = Fastify();
-
-app.setErrorHandler((error, _request, reply) => {
+function sendProblem(
+  error: unknown,
+  request: FastifyRequest,
+  reply: FastifyReply,
+) {
   const { status, headers, body } = toProblem(catalog, project(catalog, error));
+  request.log[status >= 500 ? "error" : "info"](
+    { err: error },
+    "request failed",
+  );
   return reply.status(status).headers(headers).send(body);
+}
+
+const app = Fastify({
+  loggerInstance: logger,
+  // Fastify answers a bad URL before the error handler can run.
+  frameworkErrors: sendProblem,
 });
+
+app.setErrorHandler(sendProblem);
+
+// Fastify raises no error for an unknown route.
+app.setNotFoundHandler((request, reply) =>
+  sendProblem(
+    new StructuredError({
+      code: "ROUTE_NOT_FOUND",
+      category: "NOT_FOUND",
+      retryable: false,
+      message: `No route for ${request.method} ${request.url}`,
+    }),
+    request,
+    reply,
+  ),
+);
 // #endregion usage
 
 app.get("/users/:id", () => {
@@ -132,5 +182,16 @@ await assertProblem(
   postUsers("text/csv", "name\nada"),
 );
 
+await assertProblem("/users/%E0%A4%A", { status: 400, code: "invalid_url" });
+await assertProblem("/no-such-route", { status: 404, code: "route_not_found" });
+
 await app.close();
-console.log("Fastify: each response holds only the public problem");
+
+const errorLevelMessages = logLines
+  .filter((line) => line.level === 50)
+  .map((line) => line.err?.message);
+assert.deepEqual(errorLevelMessages, [
+  "Connection to db-primary.internal:5432 refused",
+]);
+
+console.log("Fastify: each checked response holds only the public problem");
