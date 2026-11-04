@@ -73,7 +73,7 @@ describe("walker node budgets (shared-reference blowup)", () => {
       category: "C",
       retryable: false,
       message: "dag details",
-      details: { ssn: "secret", nested: makeDag(18), after: "secret" },
+      details: { ssn: "hunter2", nested: makeDag(18), after: "hunter2" },
     }).redact(["ssn", "after"]);
 
     const log = err.toLogObject();
@@ -86,7 +86,7 @@ describe("walker node budgets (shared-reference blowup)", () => {
     });
     expect(log.stack).toEqual(expect.any(String));
     expect(log.details).toBe("[Max log size exceeded]");
-    expect(JSON.stringify(log)).not.toContain("secret");
+    expect(JSON.stringify(log)).not.toContain("hunter2");
   });
 });
 

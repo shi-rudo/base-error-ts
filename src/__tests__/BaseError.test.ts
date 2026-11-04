@@ -902,7 +902,7 @@ describe("BaseError", () => {
       // A chain longer than the depth cap must serialize without a stack
       // overflow and be bounded: the deepest links are replaced by a marker,
       // mirroring how every other traversal in the library caps at 100.
-      let chain: unknown = new Error("leaf");
+      let chain: unknown = new Error("deepest cause");
       for (let i = 0; i < 500; i++) {
         const next = new Error(`level ${i}`);
         (next as unknown as Record<string, unknown>).cause = chain;
@@ -924,10 +924,10 @@ describe("BaseError", () => {
       }
 
       // The terminal is the depth-cap marker, and the chain is bounded well
-      // below its true length, so the deepest "leaf" never gets serialized.
+      // below its true length, so the deepest cause never gets serialized.
       expect(node).toBe("[Max cause depth exceeded]");
       expect(depth).toBeLessThanOrEqual(101);
-      expect(JSON.stringify(json)).not.toContain("leaf");
+      expect(JSON.stringify(json)).not.toContain("deepest cause");
     });
 
     describe("plain-object cause payloads (JSON semantics, characterization)", () => {
