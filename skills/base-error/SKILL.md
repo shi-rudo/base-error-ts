@@ -98,10 +98,18 @@ sends the stack when `NODE_ENV` is not `production`.
   Produce client output with `project`, and `toProblem` for HTTP.
 - Install an error handler of your own in every HTTP framework, and send only
   the `toProblem` result from it. Do not rely on a default error handler.
+  Log the error in that handler, because it replaces the logging of the default
+  handler.
   Register the errors that the framework raises for a bad request, or the
   fallback answers them with `500`: in Fastify by `code`, such as
   `FST_ERR_VALIDATION` and `FST_ERR_CTP_INVALID_JSON_BODY`, and for
   `express.json()` by `type`, such as `entity.parse.failed`, with `register`.
+- Send the `toProblem` result on the paths that skip the error handler too: an
+  unknown route (Fastify `setNotFoundHandler`, an Express middleware after the
+  routes) and a bad URL in Fastify (`frameworkErrors`).
+- After the first chunk of a response, close the connection in an Express error
+  middleware with `response.destroy()`. Do not call `next(error)` there, because
+  Express then prints the raw error to stderr.
 - `project` never throws: a value that matches no descriptor becomes the
   catalog's `fallback`. Register every code that should reach a client, and
   report `kind: "fallback"` outcomes from `onProject` so a missing

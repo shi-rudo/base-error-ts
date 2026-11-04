@@ -58,11 +58,22 @@ your own error handler, and send only the result of the pipeline from it.
 Your handler also gets the errors that the framework raises for a bad request,
 for example a body that is not valid JSON. If the catalog does not register
 them, the fallback answers `500` where the default handler answered `400`.
-Register each error that a client can cause. In Fastify, these errors carry a
-`code`:
+Register each error that a client can cause.
+
+A handler of your own also replaces the logging of the default handler. Log the
+error in your handler, or the error reaches no log. The snippets log a status
+of 500 and more at the level `error`, so a client mistake starts no alert.
+
+Some answers do not reach the error handler. A framework raises no error for an
+unknown route, and Fastify answers a bad URL before the error handler can run.
+Send the result of the pipeline on these paths too.
+
+In Fastify, the errors of a bad request carry a `code`:
 
 ```ts
 import Fastify from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { StructuredError } from "@shirudo/base-error";
 import {
   definePublicErrors,
   project,
@@ -76,12 +87,16 @@ Fastify has more of these codes. Register each code that your routes can raise.
 
 In Express, register an error middleware with four parameters after the routes,
 and send the same result from it. The errors of `express.json()` have no
-`code`. They have a `type`, for example `entity.parse.failed` (400) and
-`entity.too.large` (413). Register them with `register` and a `match` function:
+`code`. They have a `type`, for example `entity.parse.failed` (400),
+`entity.too.large` (413), `charset.unsupported` (415) and
+`encoding.unsupported` (415). Register them with `register` and a `match`
+function. The router raises a `URIError` with the status 400 for a bad URL.
+Express has more of these errors. Register each one that your routes can raise.
 
 ```ts
 import express from "express";
 import type { ErrorRequestHandler } from "express";
+import { StructuredError } from "@shirudo/base-error";
 import {
   definePublicErrors,
   project,
@@ -91,14 +106,27 @@ import {
 
 <<< @/../examples/express-error-handler.ts#usage{ts}
 
-In this snippet, `routes` is the router that holds your routes.
+In these snippets, `logger` is a pino logger with `pinoErrorOptions`, see
+[Logging with pino](./logging-with-pino). `routes` is the router that holds your
+routes.
+
+After the first chunk of a response, an Express error middleware cannot send a
+problem. Close the connection with `response.destroy()`. Do not call
+`next(error)` there: Express then prints the raw error to stderr, past the
+redaction of the log object.
+
+A handler does not remove the headers that a route set before it threw. The
+default handlers of Fastify 5 and Express 5 keep them too. If a route sets a
+header such as `cache-control` or `set-cookie` before it can throw, remove that
+header in your handler.
 
 The snippets come from `examples/fastify-error-handler.ts` and
 `examples/express-error-handler.ts`. CI runs both against Fastify 5 and
-Express 5. Each example sends real requests and fails if a response holds more
-than the public problem.
-
-Log the error in the same handler, see [Logging with pino](./logging-with-pino).
+Express 5. Each example sends real requests to its own routes. It compares the
+status, the content type and the body of each response with the public problem,
+and it reads the log lines. It checks no other header. Fastify answers a request
+with a broken `Content-Length` before any handler can run, with the text
+`Client Error`.
 
 ## 3. `StructuredError.name` is the `code`, not `"StructuredError"`
 
