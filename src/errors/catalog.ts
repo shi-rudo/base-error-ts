@@ -12,6 +12,7 @@ import type {
   HandledNames,
   HandlerNames,
   HandlerResult,
+  InheritedMemberName,
   TableLostToConstraint,
   UnknownHandlerNames,
   UnknownNameRule,
@@ -277,6 +278,9 @@ type CatchAllKeyRule =
 type UnknownKeyRule<Name extends string> =
   `match: ${Name} is not a key of this catalog`;
 
+type MissingKeyRule<Name extends string> =
+  `match: ${Name} needs a handler of its own`;
+
 /**
  * Rejects a key that the catalog does not define, with `UnknownNameRule`.
  * Without a `_` catch-all, every key of `E` must have a handler.
@@ -294,9 +298,11 @@ type KeyExhaustive<
       : [Exclude<KeyIn<T, P, E>, HandlerNames<C>>] extends [never]
         ? C
         : C & {
-            [K in Exclude<KeyIn<T, P, E>, HandlerNames<C>>]: (
-              error: KeyCaseArg<P, E, K>,
-            ) => unknown;
+            [
+              K in Exclude<KeyIn<T, P, E>, HandlerNames<C>>
+            ]: K extends InheritedMemberName
+              ? MissingKeyRule<K>
+              : (error: KeyCaseArg<P, E, K>) => unknown;
           }
     : C & {
         [K in UnknownHandlerNames<C, keyof T & string>]: UnknownNameRule<

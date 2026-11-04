@@ -358,6 +358,22 @@ const literalAndBrandedWithCatchAll: number = matchErrorCode(
   { KNOWN: () => 1, _: () => 2 },
 );
 
+declare const codeNamedLikeAnInheritedMethod:
+  StructuredError<"toString", string> | StructuredError<"OTHER", string>;
+
+// @ts-expect-error the inherited toString does not count as a handler for the code toString
+matchErrorCode(codeNamedLikeAnInheritedMethod, { OTHER: () => 1 });
+
+const ownHandlerOfToString: string = matchErrorCode(
+  codeNamedLikeAnInheritedMethod,
+  { toString: () => "handled", OTHER: () => "other" },
+);
+
+const inheritedMethodCodeInCatchAll: number = matchErrorCode(
+  codeNamedLikeAnInheritedMethod,
+  { OTHER: () => 1, _: () => 2 },
+);
+
 class EmailTakenError extends StructuredError<"EMAIL_TAKEN", "CONFLICT"> {
   constructor() {
     super({
@@ -494,6 +510,8 @@ void misspelledInGeneric;
 void statusOfBareCode;
 void namedHandlerOfBareCode;
 void statusOfAnnotatedCode;
+void ownHandlerOfToString;
+void inheritedMethodCodeInCatchAll;
 void brandedCodeWithCatchAll;
 void openCodeWithCatchAll;
 void codeOfEachEnum;

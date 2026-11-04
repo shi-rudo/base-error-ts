@@ -86,6 +86,18 @@ export function ownCase<H>(
     : undefined;
 }
 
+/**
+ * The names of the members of `Object.prototype` that the compiler knows. An
+ * object literal inherits these members, and such a member fulfills a required
+ * key of a function type. The matchers run only an own handler, so that error
+ * would throw at runtime. No inherited method fulfills a string literal type,
+ * so a required handler of such a name takes one.
+ */
+export type InheritedMemberName = keyof typeof Object.prototype;
+
+type MissingCodeRule<Name extends string> =
+  `matchErrorCode: ${Name} needs a handler of its own`;
+
 type CatchAllCodeRule =
   "matchErrorCode is unavailable: the code _ is also the catch-all; rename the code";
 
@@ -188,9 +200,11 @@ type NamedHandlerTable<
       : [Exclude<Names, HandlerNames<C>>] extends [never]
         ? C
         : C & {
-            [K in Exclude<Names, HandlerNames<C>>]: (
-              error: CaseArg<E, K>,
-            ) => unknown;
+            [
+              K in Exclude<Names, HandlerNames<C>>
+            ]: K extends InheritedMemberName
+              ? MissingCodeRule<K>
+              : (error: CaseArg<E, K>) => unknown;
           }
     : C & {
         [K in UnknownHandlerNames<C, Names>]: UnknownNameRule<
@@ -232,9 +246,11 @@ type LiteralCodeHandlers<
 > = "_" extends keyof C
   ? unknown
   : {
-      [K in Exclude<LiteralCode, HandlerNames<C>>]: (
-        error: CaseArg<E, K>,
-      ) => unknown;
+      [
+        K in Exclude<LiteralCode, HandlerNames<C>>
+      ]: K extends InheritedMemberName
+        ? MissingCodeRule<K>
+        : (error: CaseArg<E, K>) => unknown;
     };
 
 /**

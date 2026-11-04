@@ -1,7 +1,7 @@
 import { isInstanceOf } from "./guarded-read.js";
 import type { ErrorClass } from "./guards.js";
 import { ownCase } from "./match.js";
-import type { UnknownNameRule } from "./match.js";
+import type { InheritedMemberName, UnknownNameRule } from "./match.js";
 
 /** A keyed set of local Error constructors. */
 export type ErrorClassMap = Readonly<Record<string, ErrorClass>>;
@@ -21,6 +21,16 @@ type UnknownClassKeys<TClasses extends ErrorClassMap, THandlers> = {
         `match: ${K} is not a key of this error class set`
       >
     : never;
+};
+
+/**
+ * Rejects a table without a handler for a key named like a member of
+ * `Object.prototype`, which the inherited member fulfills otherwise.
+ */
+type MissingInheritedKeys<TClasses extends ErrorClassMap, THandlers> = {
+  [
+    K in Exclude<keyof TClasses & InheritedMemberName, keyof THandlers>
+  ]: `match: ${K} needs a handler of its own`;
 };
 
 type MatchResult<THandlers> = THandlers[keyof THandlers] extends (
@@ -50,7 +60,9 @@ export interface ErrorClassSet<TClasses extends ErrorClassMap> {
    */
   match<const THandlers extends ErrorClassHandlers<TClasses>>(
     value: unknown,
-    handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
+    handlers: THandlers &
+      UnknownClassKeys<TClasses, THandlers> &
+      MissingInheritedKeys<TClasses, THandlers>,
   ): MatchResult<THandlers>;
 }
 
@@ -102,7 +114,9 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
   return Object.freeze({
     match<const THandlers extends ErrorClassHandlers<TClasses>>(
       value: unknown,
-      handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
+      handlers: THandlers &
+        UnknownClassKeys<TClasses, THandlers> &
+        MissingInheritedKeys<TClasses, THandlers>,
     ): MatchResult<THandlers> {
       for (const key of keys) {
         const constructor = snapshot[key] as ErrorClass;

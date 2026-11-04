@@ -48,6 +48,9 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   `Object.prototype` member (`toString`, `valueOf`, `constructor`) is typed
   against that member. Use TypeScript 5.4 or later, or handle such a code in
   `_`.
+- A table without a handler for such a code or key is a compile error, also
+  in `ErrorClassSet.match`, because the inherited member does not count as a
+  handler. The error reads `matchErrorCode: toString needs a handler of its own`.
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`. The error
   reads `matchErrorCode: <name> is not a code of this error`.

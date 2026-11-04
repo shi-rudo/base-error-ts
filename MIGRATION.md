@@ -77,6 +77,11 @@ and its errors reached `_`.
   `_`, its errors reached `_`. To send a code to `_`, leave its key out. For a
   conditional handler, write `USER_NOT_FOUND: handler ?? fallback`. The same
   holds for `_` itself, also in a table with a handler for every code.
+- A table without a handler for a code named like a member of
+  `Object.prototype`, such as `toString`, is a compile error now, also in
+  `Catalog.match` and `ErrorClassSet.match`. The inherited member fulfilled the
+  required key. The error reads
+  `matchErrorCode: toString needs a handler of its own`. Add the handler.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`
@@ -127,7 +132,8 @@ has no handler. With a handler for every code, it receives `never`.
   an object literal. `matchErrorCode` and `Catalog.match` already read only own
   properties.
 - A key named like a member of `Object.prototype`, such as `toString`, ran the
-  inherited method when the table had no handler for it. Now the call throws.
+  inherited method when the table had no handler for it. Now the compiler
+  rejects such a table, and a cast past the compiler throws at runtime.
 
 ## v8 to v9
 

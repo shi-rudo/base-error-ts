@@ -269,6 +269,11 @@ example a string for `toString`. The same holds for a key of `Errors.match`.
 The runtime sends such a code to its own handler. Use TypeScript 5.4 or later,
 or handle such a code in `_`.
 
+A table without a handler for such a code is a compile error, because the
+inherited member does not count as a handler. The error reads
+`matchErrorCode: toString needs a handler of its own`. `Errors.match` and
+`ErrorClassSet.match` check the same.
+
 ### With errors from `catch`
 
 A caught value is `unknown`; exhaustiveness can't be derived from it. Narrow
