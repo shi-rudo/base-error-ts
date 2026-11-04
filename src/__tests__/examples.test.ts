@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const EXAMPLES_DIR = join(__dirname, "..", "..", "examples");
+const TSCONFIG = join(__dirname, "..", "..", "tsconfig.examples.json");
 
 const EXAMPLE_FILES = [
   "basic-usage.ts",
@@ -18,6 +19,7 @@ const EXAMPLE_FILES = [
   "sentry-reporter.ts",
   "fastify-error-handler.ts",
   "express-error-handler.ts",
+  "nest-exception-filter.ts",
   "automatic-name-example.ts",
   "cause-chain-example.ts",
   "public-error-e2e.ts",
@@ -41,7 +43,7 @@ describe("Examples", () => {
         expect(existsSync(filePath)).toBe(true);
 
         expect(() => {
-          execSync(`TEST=true npx tsx "${filePath}"`, {
+          execSync(`TEST=true npx tsx --tsconfig "${TSCONFIG}" "${filePath}"`, {
             encoding: "utf-8",
             stdio: "pipe",
             timeout: 30000,

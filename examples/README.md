@@ -17,6 +17,7 @@ This directory contains examples of how to use the `BaseError` and `StructuredEr
 11. **Voucher Service** (`voucher-service/`) - One small HTTP service that composes the whole feature set: catalog, validation, aggregate fan-out, retry decision, redacted logging, queue round-trip, and localized RFC 9457 responses
 12. **Fastify Error Handler** (`fastify-error-handler.ts`) - `setErrorHandler`, `frameworkErrors` and `setNotFoundHandler` send only the result of the public-error pipeline and log the error. Real requests check the responses and the log lines
 13. **Express Error Handler** (`express-error-handler.ts`) - An error middleware with four parameters and a not-found middleware send only the result of the public-error pipeline and log the error. Real requests check the responses and the log lines
+14. **Nest Exception Filter** (`nest-exception-filter.ts`) - An exception filter with `@Catch()` sends only the result of the public-error pipeline and logs the exception. Real requests check the responses and the log lines
 
 ## Running the Examples
 
@@ -31,4 +32,7 @@ pnpm tsx examples/basic-usage.ts
 pnpm tsx examples/error-handling.ts
 pnpm tsx examples/structured-errors-example.ts
 pnpm tsx examples/public-error-e2e.ts
+
+# Nest needs the legacy decorators of this config
+pnpm tsx --tsconfig tsconfig.examples.json examples/nest-exception-filter.ts
 ```

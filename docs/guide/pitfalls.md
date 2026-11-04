@@ -52,6 +52,10 @@ does not call the pipeline. It reads the fields of the error itself:
   and a missing value means `development`. With `NODE_ENV=production`, Express
   sends only `Internal Server Error`.
 
+- Nest 12 answers an error that is not an `HttpException` with
+  `Internal server error`. It sends the text of an `HttpException` and of the
+  JSON parser.
+
 Other frameworks behave differently. Do not rely on a default handler. Install
 your own error handler, and send only the result of the pipeline from it.
 
@@ -64,9 +68,9 @@ A handler of your own also replaces the logging of the default handler. Log the
 error in your handler, or the error reaches no log. The snippets log a status
 of 500 and more at the level `error`, so a client mistake starts no alert.
 
-Some answers do not reach the error handler. A framework raises no error for an
-unknown route, and Fastify answers a bad URL before the error handler can run.
-Send the result of the pipeline on these paths too.
+Some answers do not reach the error handler. Fastify and Express raise no error
+for an unknown route, and Fastify answers a bad URL before the error handler can
+run. Send the result of the pipeline on these paths too.
 
 In Fastify, the errors of a bad request carry a `code`:
 
@@ -106,23 +110,43 @@ import {
 
 <<< @/../examples/express-error-handler.ts#usage{ts}
 
+In Nest, register an exception filter with `@Catch()`. It receives each
+exception, also the `HttpException` that Nest raises for an unknown route or a
+bad request. Register an `HttpException` by its status with `register` and a
+`match` function. If the catalog does not register the status, the fallback
+answers `500`. So register each status that your controllers raise. The snippet
+uses the Express platform of Nest.
+
+```ts
+import { Catch, HttpException } from "@nestjs/common";
+import type { ArgumentsHost, ExceptionFilter } from "@nestjs/common";
+import type { Response } from "express";
+import {
+  definePublicErrors,
+  project,
+  toProblem,
+} from "@shirudo/base-error/public-error";
+```
+
+<<< @/../examples/nest-exception-filter.ts#usage{ts}
+
 In these snippets, `logger` is a pino logger with `pinoErrorOptions`, see
 [Logging with pino](./logging-with-pino). `routes` is the router that holds your
-routes.
+routes, and `app` is your Nest application.
 
-After the first chunk of a response, an Express error middleware cannot send a
-problem. Close the connection with `response.destroy()`. Do not call
-`next(error)` there: Express then prints the raw error to stderr, past the
-redaction of the log object.
+After the first chunk of a response, an Express error middleware or a Nest
+filter cannot send a problem. Close the connection with `response.destroy()`. In
+Express, do not call `next(error)` there: Express then prints the raw error to
+stderr, past the redaction of the log object.
 
 A handler does not remove the headers that a route set before it threw. The
 default handlers of Fastify 5 and Express 5 keep them too. If a route sets a
 header such as `cache-control` or `set-cookie` before it can throw, remove that
 header in your handler.
 
-The snippets come from `examples/fastify-error-handler.ts` and
-`examples/express-error-handler.ts`. CI runs both against Fastify 5 and
-Express 5. Each example sends real requests to its own routes. It compares the
+The snippets come from `examples/fastify-error-handler.ts`,
+`examples/express-error-handler.ts` and `examples/nest-exception-filter.ts`. CI
+runs them against Fastify 5, Express 5 and Nest 12. Each example sends real requests to its own routes. It compares the
 status, the content type and the body of each response with the public problem,
 and it reads the log lines. It checks no other header. Fastify answers a request
 with a broken `Content-Length` before any handler can run, with the text
