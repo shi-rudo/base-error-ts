@@ -48,6 +48,8 @@ type Cases<E extends StructuredError<string, string>, Code extends string> = {
   [K in Code]?: (error: CaseArg<E, K>) => unknown;
 } & { _?: unknown };
 
+type SymbolKeyRule = "a handler table takes no symbol key";
+
 /**
  * The optional `_` catch-all, typed with the errors whose code has no
  * handler. `Names` holds the keys of the table, and `Handled` the codes that
@@ -56,13 +58,19 @@ type Cases<E extends StructuredError<string, string>, Code extends string> = {
  * the parameter type of a handler is fixed when the handler is checked, and
  * the table must stay open until every handler is checked. A key with the value
  * `undefined` holds no handler, and its error reaches `_`, whose type excludes
- * that code. So the type of a key rejects `undefined`.
+ * that code. So the type of a key rejects `undefined`. A symbol key holds no
+ * handler either, because no code reaches it, and its return type would widen
+ * the result.
  */
 export type CatchAll<
   E extends StructuredError<string, string>,
   Names extends PropertyKey,
   Handled extends string = HandledNames<Names>,
-> = { readonly [N in Names]: NonNullable<unknown> } & {
+> = {
+  readonly [N in Names]: N extends symbol
+    ? SymbolKeyRule
+    : NonNullable<unknown>;
+} & {
   readonly _?: (error: CatchAllArg<E, Handled>) => unknown;
 };
 

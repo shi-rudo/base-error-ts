@@ -82,6 +82,9 @@ and its errors reached `_`.
   `Catalog.match` and `ErrorClassSet.match`. The inherited member fulfilled the
   required key. The error reads
   `matchErrorCode: toString needs a handler of its own`. Add the handler.
+- A symbol key is a compile error now, also in `Catalog.match`. No code reaches
+  it, and its return type widened the result. The error reads
+  `a handler table takes no symbol key`. Delete the key.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`

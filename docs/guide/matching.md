@@ -222,6 +222,9 @@ The compiler checks names only against known codes:
 - On TypeScript before 5.3, a function generic over a union of two enums checks
   the table against the code of one enum only. Assign the error to a variable
   typed with the union, and match that variable.
+- A symbol key is a compile error, also in `Catalog.match`, because no code
+  reaches it and its return type widens the result. The error reads
+  `a handler table takes no symbol key`.
 - The compiler accepts a class instance as a table, because a type does not say
   where a method lives. The runtime reads only own properties, so the call
   throws. Write the table as an object literal. The same holds for

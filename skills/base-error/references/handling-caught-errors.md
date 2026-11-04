@@ -79,6 +79,9 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   typed with the union, and match that variable.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
+- A symbol key is a compile error, also in `Catalog.match`, because no code
+  reaches it and its return type widens the result. The error reads
+  `a handler table takes no symbol key`.
 - The compiler accepts a class instance as a table, because a type does not say
   where a method lives. The runtime reads only own properties, so the call
   throws. Write the table as an object literal. The same holds for

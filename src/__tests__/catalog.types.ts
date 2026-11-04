@@ -248,6 +248,15 @@ KeyNamedLikeAnInheritedMethod.match(errorOfInheritedMethodKey, {
   _: () => 2,
 });
 
+const symbolHandlerKey = Symbol("symbol-key");
+
+AuthzErrors.match(authzError, {
+  not_a_member: () => 1,
+  missing_role: () => 2,
+  // @ts-expect-error a symbol key next to a complete table holds no handler
+  [symbolHandlerKey]: () => "s",
+});
+
 const exhaustiveResult: string = AuthzErrors.match(authzError, {
   not_a_member: (error) => error.code,
   missing_role: (error) => error.details?.role ?? "unknown",

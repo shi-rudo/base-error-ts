@@ -374,6 +374,23 @@ const inheritedMethodCodeInCatchAll: number = matchErrorCode(
   { OTHER: () => 1, _: () => 2 },
 );
 
+const symbolKey = Symbol("symbol-key");
+declare const wideSymbol: symbol;
+declare const oneOfTwo:
+  StructuredError<"A", string> | StructuredError<"B", string>;
+
+// @ts-expect-error a symbol key next to a complete table holds no handler
+matchErrorCode(oneOfTwo, { A: () => 1, B: () => 2, [symbolKey]: () => "s" });
+
+// @ts-expect-error a symbol key next to `_` holds no handler
+matchErrorCode(oneOfTwo, { A: () => 1, _: () => 2, [symbolKey]: () => "s" });
+
+// @ts-expect-error a table of only a symbol key holds no handler
+matchErrorCode(oneOfTwo, { [symbolKey]: () => "s" });
+
+// @ts-expect-error a key of the type symbol holds no handler
+matchErrorCode(oneOfTwo, { A: () => 1, B: () => 2, [wideSymbol]: () => "s" });
+
 class EmailTakenError extends StructuredError<"EMAIL_TAKEN", "CONFLICT"> {
   constructor() {
     super({
