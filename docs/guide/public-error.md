@@ -314,6 +314,7 @@ const result = toProblem({ status: 429 }, view); // explicit transport
   to a TanStack server function to a React `useQuery`). The framework hops are
   plain functions in that file.
 - Error handlers that run against real servers in
-  `examples/fastify-error-handler.ts` and `examples/express-error-handler.ts`.
+  `examples/fastify-error-handler.ts`, `examples/express-error-handler.ts` and
+  `examples/nest-exception-filter.ts`.
   [Pitfall 2](./pitfalls#_2-the-default-error-handler-of-a-framework-sends-the-message)
-  shows both.
+  shows all three.
