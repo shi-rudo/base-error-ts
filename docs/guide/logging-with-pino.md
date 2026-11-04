@@ -147,9 +147,14 @@ logger[level]({ err: error }, "request failed");
   another `errorKey` after you spread the options, pino copies the raw message
   of an error under that key into `msg`.
 - Pino and the setup recognize an error in the first argument with
-  `instanceof Error`. An error from a `node:vm` context fails this test, and
-  pino writes it as a merge object without its message. Log such an error under
-  `err`: `logger.error({ err: error })`.
+  `instanceof Error`. An error from a `node:vm` context fails this test. Pino
+  then writes it as a merge object: its enumerable fields, such as `details`,
+  reach the top level of the line raw, and its message is missing. Log such an
+  error under `err`: `logger.error({ err: error })`.
+- An error from a `node:vm` context logs without its policy, also under `err`.
+  `logObjectOf` writes it like a foreign error, so the line holds its raw message
+  and its raw `details`. If such an error has a policy, call `toLogObject()` in
+  its own realm, and log the result under `err`.
 - An error that a worker posts with `postMessage` arrives as a plain `Error`,
   without its class and its policy, so its raw message reaches the line. Post
   `error.toJSON()` instead, and rebuild the error with
