@@ -122,6 +122,9 @@ Each handler receives the
 instance type of its constructor, and the result is the exact union of all
 handler return types.
 
+`match` runs only an own property of the table. A key without one throws, for
+example `match: no case for key "timeout" of this error class set`.
+
 Class-set keys must be finite, non-numeric string literals. Numeric-looking
 keys are rejected because JavaScript reorders array-index object keys. Let the
 definition call infer keys directly. For a separately declared definition, use
@@ -219,6 +222,10 @@ The compiler checks names only against known codes:
 - On TypeScript before 5.3, a function generic over a union of two enums checks
   the table against the code of one enum only. Assign the error to a variable
   typed with the union, and match that variable.
+- The compiler accepts a class instance as a table, because a type does not say
+  where a method lives. The runtime reads only own properties, so the call
+  throws. Write the table as an object literal. The same holds for
+  `Catalog.match` and `ErrorClassSet.match`.
 - A handler typed `any` under an unknown name fails to compile too. The
   compiler error says only that `any` is not assignable to `never`. If the
   table holds only such handlers, the compiler error names the missing codes.

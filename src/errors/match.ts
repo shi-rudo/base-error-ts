@@ -253,7 +253,9 @@ type LiteralCodeHandlers<
  * so `details` is the precise per-code type. In a function generic over a union
  * of classes, a handler receives only `StructuredError`. The `_` catch-all
  * receives the members of the union whose code has no handler. The return type
- * is the union of the handler return types.
+ * is the union of the handler return types. Only an own property of the table
+ * counts as a handler. The compiler accepts a class instance as a table, and the
+ * call throws at runtime.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive

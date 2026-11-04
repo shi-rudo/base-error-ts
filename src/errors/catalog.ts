@@ -369,7 +369,9 @@ export type Catalog<
    * narrowing. `matchErrorCode` with handlers named by key: the `_`
    * catch-all receives the errors whose key has no handler, it checks no
    * provenance, and it throws when no case matches and no `_` catch-all
-   * exists. A handler that can be `undefined` is a compile error.
+   * exists. A handler that can be `undefined` is a compile error. Only an own
+   * property of the table counts as a handler. The compiler accepts a class
+   * instance as a table, and the call throws at runtime.
    */
   match<
     E extends CatalogError<Catalog<T, P>>,

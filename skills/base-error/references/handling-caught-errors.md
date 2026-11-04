@@ -76,6 +76,10 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   typed with the union, and match that variable.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
+- The compiler accepts a class instance as a table, because a type does not say
+  where a method lives. The runtime reads only own properties, so the call
+  throws. Write the table as an object literal. The same holds for
+  `Catalog.match` and `ErrorClassSet.match`.
 - In a generic function, an error typed `StructuredError<Code, string>` with
   `Code` a type parameter names no code. For `Code extends string`,
   `matchErrorCode` takes only a `_`-only table, and the `_` handler cannot read

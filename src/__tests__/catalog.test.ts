@@ -880,6 +880,24 @@ describe("Catalog.match", () => {
     );
   });
 
+  it("throws for a class instance as a table, because its methods are not own", () => {
+    class Handlers {
+      not_a_member() {
+        return "not a member";
+      }
+      missing_role() {
+        return "missing role";
+      }
+    }
+    const error = AuthzErrors.create.not_a_member("actor 42 is no member");
+
+    expect(() =>
+      AuthzErrors.match(error as AuthzError, new Handlers()),
+    ).toThrow(
+      'match: no case for key "not_a_member" of error code "restaurant.authz.not_a_member", and no "_" catch-all',
+    );
+  });
+
   it("throws with the code when a code outside the catalog has no catch-all", () => {
     const foreign = AppErrors.create.RATE_LIMITED("slow down");
 

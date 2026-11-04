@@ -1,5 +1,6 @@
 import { isInstanceOf } from "./guarded-read.js";
 import type { ErrorClass } from "./guards.js";
+import { ownCase } from "./match.js";
 import type { UnknownNameRule } from "./match.js";
 
 /** A keyed set of local Error constructors. */
@@ -42,7 +43,11 @@ type ValidClassDefinition<TClasses extends ErrorClassMap> = [
 
 /** A reusable, exhaustive matcher for a closed set of Error classes. */
 export interface ErrorClassSet<TClasses extends ErrorClassMap> {
-  /** Match a value using exactly one handler for every declared class key. */
+  /**
+   * Match a value using exactly one handler for every declared class key.
+   * Only an own property of the table counts as a handler. The compiler accepts
+   * a class instance as a table, and the call throws at runtime.
+   */
   match<const THandlers extends ErrorClassHandlers<TClasses>>(
     value: unknown,
     handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
@@ -102,9 +107,23 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
       for (const key of keys) {
         const constructor = snapshot[key] as ErrorClass;
         if (isInstanceOf(value, constructor)) {
-          const handler = handlers[key] as (
-            error: InstanceType<TClasses[typeof key]>,
-          ) => MatchResult<THandlers>;
+          const handler = ownCase(
+            handlers as Readonly<
+              Record<
+                string,
+                | ((
+                    error: InstanceType<TClasses[typeof key]>,
+                  ) => MatchResult<THandlers>)
+                | undefined
+              >
+            >,
+            key,
+          );
+          if (!handler) {
+            throw new Error(
+              `match: no case for key "${key}" of this error class set`,
+            );
+          }
           return handler(value as InstanceType<TClasses[typeof key]>);
         }
       }
