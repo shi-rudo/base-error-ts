@@ -177,6 +177,25 @@ export type UnknownNameRule<
 > = 0 extends 1 & HandlerNamed<C, Name> ? never : Reason;
 
 /**
+ * `Name` when a member of `E` has a branded code that reads as `Name`, such as
+ * `"A" & Brand` for `"A"`, otherwise `never`. A template literal cannot read such
+ * a code, and the compiler chooses by its version whether `Code` holds it, so
+ * the set of names can miss it. A name typed `string` reads no code.
+ */
+type BrandedCodeNamed<
+  E extends StructuredError<string, string>,
+  Name extends string,
+> = string extends Name
+  ? never
+  : E extends { readonly code: infer MemberCode }
+    ? MemberCode extends object
+      ? MemberCode extends Name
+        ? Name
+        : never
+      : never
+    : never;
+
+/**
  * A table with only a `_` catch-all names no code, so it needs no check. That
  * also holds for an open code that depends on a type parameter of the caller,
  * where every check of a name stays deferred.
@@ -215,11 +234,11 @@ type NamedHandlerTable<
               : (error: CaseArg<E, K>) => unknown;
           }
     : C & {
-        [K in UnknownHandlerNames<C, Names>]: UnknownNameRule<
-          C,
-          K,
-          UnknownCodeRule<K>
-        >;
+        [K in UnknownHandlerNames<C, Names>]: [BrandedCodeNamed<E, K>] extends [
+          never,
+        ]
+          ? UnknownNameRule<C, K, UnknownCodeRule<K>>
+          : unknown;
       }
   : CatchAllCodeRule;
 
@@ -245,17 +264,18 @@ type TableOfUnknownCodes<
 
 /**
  * Keeps a literal code required next to an open code. The union with an open
- * code names every string, so it holds no required name.
+ * code names every string, so it holds no required name. A table can lose its
+ * type to the constraint, which holds `_`, so this type reads `TableNames`.
  */
 type LiteralCodeHandlers<
   E extends StructuredError<string, string>,
   LiteralCode extends string,
-  C,
-> = "_" extends keyof C
+  TableNames extends PropertyKey,
+> = "_" extends TableNames
   ? unknown
   : {
       [
-        K in Exclude<LiteralCode, HandlerNames<C>>
+        K in Exclude<LiteralCode, HandledNames<TableNames>>
       ]: K extends InheritedMemberName
         ? MissingCodeRule<K>
         : (error: CaseArg<E, K>) => unknown;
@@ -331,7 +351,7 @@ export function matchErrorCode<
   cases: Exhaustive<E, Code | LiteralCode, C> &
     CatchAll<E, Names> &
     TableOfUnknownCodes<E, Code | LiteralCode, C, Names> &
-    LiteralCodeHandlers<E, LiteralCode, C>,
+    LiteralCodeHandlers<E, LiteralCode, Names>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;

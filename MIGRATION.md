@@ -103,8 +103,9 @@ and its errors reached `_`.
 - In a union of a branded code and literal codes, every literal code needs a
   handler, but the compiler does not check the branded code. A table without a
   handler for it compiles, and that error throws at runtime, so give such a table
-  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
-  name it, assign the error to a variable typed
+  a `_` handler. A named handler that reads its parameter can fail to compile in
+  such a table, and on TypeScript 7 the error then says that the branded code is
+  not a code of this error. To read the error, assign it to a variable typed
   `StructuredError<string, string>`.
 - On TypeScript before 5.3, a function generic over a union of two enums checks
   the table against the code of one enum only. Assign the error to a variable

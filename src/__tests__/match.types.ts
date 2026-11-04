@@ -347,7 +347,26 @@ declare const brandedAndTwoLiterals:
 // @ts-expect-error a literal code stays required next to a branded code
 matchErrorCode(brandedAndTwoLiterals, { A: () => 1, B: () => 2 });
 
+// @ts-expect-error a table of only the branded code leaves the literal codes without a handler
+matchErrorCode(brandedAndTwoLiterals, { A: () => 1 });
+
 matchErrorCode(brandedAndTwoLiterals, { B: () => 1, C: () => 2 });
+
+const completeTableNextToBrandedCode: number = matchErrorCode(
+  brandedAndTwoLiterals,
+  { A: () => 1, B: () => 2, C: () => 3 },
+);
+
+declare const brandedAndOneLiteral:
+  StructuredError<"A" & CodeBrand, string> | StructuredError<"B", string>;
+
+// @ts-expect-error a table of only the branded code leaves the literal code without a handler
+matchErrorCode(brandedAndOneLiteral, { A: () => 1 });
+
+const completeTableNextToOneLiteral: number = matchErrorCode(
+  brandedAndOneLiteral,
+  { A: () => 1, B: () => 2 },
+);
 
 declare const literalAndBrandedError:
   | StructuredError<"KNOWN", string>
@@ -529,6 +548,8 @@ void namedHandlerOfBareCode;
 void statusOfAnnotatedCode;
 void ownHandlerOfToString;
 void inheritedMethodCodeInCatchAll;
+void completeTableNextToBrandedCode;
+void completeTableNextToOneLiteral;
 void brandedCodeWithCatchAll;
 void openCodeWithCatchAll;
 void codeOfEachEnum;
