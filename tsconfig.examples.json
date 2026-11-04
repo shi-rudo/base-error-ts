@@ -4,7 +4,9 @@
     "noEmit": true,
     "declaration": false,
     "sourceMap": false,
-    "isolatedDeclarations": false
+    "isolatedDeclarations": false,
+    // The decorators of Nest use the legacy signature.
+    "experimentalDecorators": true
   },
   "include": ["examples/**/*.ts", "src/**/*"]
 }
