@@ -369,7 +369,7 @@ export type Catalog<
    * narrowing. `matchErrorCode` with handlers named by key: the `_`
    * catch-all receives the errors whose key has no handler, it checks no
    * provenance, and it throws when no case matches and no `_` catch-all
-   * exists.
+   * exists. A handler that can be `undefined` is a compile error.
    */
   match<
     E extends CatalogError<Catalog<T, P>>,

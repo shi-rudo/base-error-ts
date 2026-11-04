@@ -42,7 +42,7 @@ throw e;
 
 Narrow from `unknown` first; exhaustiveness needs the union type. Per-case
 `details` narrowing needs a union of distinct error types, which a catalog
-gives; a single `StructuredError<"A" | "B">` narrows only the code.
+gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
 
 - On TypeScript before 5.4, a handler for a code or key named like an
   `Object.prototype` member (`toString`, `valueOf`, `constructor`) is typed
@@ -56,6 +56,10 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   error says only that `any` is not assignable to `never`. If a table of
   `matchErrorCode` or `Catalog.match` holds only such handlers, the compiler
   error names the missing codes or keys.
+- A handler that can be `undefined` is a compile error, also next to `_`, in
+  `matchErrorCode` and `Catalog.match`. To send a code to `_`, leave its key
+  out. For a conditional handler, write `CODE: handler ?? fallback`. The same
+  holds for `_` itself, also in a table with a handler for every code.
 - `_` receives the members of the union whose code has no handler, also in
   `Catalog.match`. In `_`, a comparison with a handled code is a compile
   error.
@@ -63,10 +67,13 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   catch-all. A table with only `_` compiles.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
-- In a generic function, an error typed `StructuredError<Code>` with `Code` a
-  type parameter names no code. `matchErrorCode` takes only a `_`-only table for
-  it, and the `_` handler cannot read its parameter. To name handlers, assign the error to a variable typed with its codes
-  or with `StructuredError<string>`, and match that variable.
+- In a generic function, an error typed `StructuredError<Code, string>` with
+  `Code` a type parameter names no code. For `Code extends string`,
+  `matchErrorCode` takes only a `_`-only table, and the `_` handler cannot read
+  its parameter. For a closed constraint such as `Code extends "A" | "B"`, it
+  takes no table on TypeScript 5.4 and later. To name handlers, assign the error
+  to a variable typed with its codes or with `StructuredError<string, string>`,
+  and match that variable.
 - In a function generic over the error (`E extends A | B`), `matchErrorCode`
   checks the table against the codes of the constraint, and each handler
   receives the error narrowed to its case. For a union of classes, the parameter

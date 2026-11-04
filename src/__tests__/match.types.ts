@@ -19,6 +19,38 @@ declare const userError: CatalogError<typeof UserErrors>;
 // @ts-expect-error a code that the union does not contain is rejected next to a catch-all
 matchErrorCode(userError, { USER_NOT_FUND: () => 1, _: () => 2 });
 
+declare const maybeHandler: (() => number) | undefined;
+const undefinedHandlers = {
+  USER_NOT_FOUND: undefined,
+  RATE_LIMITED: undefined,
+};
+
+// @ts-expect-error a handler with the value undefined does not count as a handler
+matchErrorCode(userError, undefinedHandlers);
+
+// @ts-expect-error a handler with the value undefined does not route to the catch-all
+matchErrorCode(userError, { USER_NOT_FOUND: undefined, _: () => 1 });
+
+// @ts-expect-error a handler that can be undefined does not route to the catch-all
+matchErrorCode(userError, { USER_NOT_FOUND: maybeHandler, _: () => 1 });
+
+// @ts-expect-error a catch-all that can be undefined leaves a code without a handler
+matchErrorCode(userError, { USER_NOT_FOUND: () => 1, _: maybeHandler });
+
+const completeTableWithUndefinedCatchAll = {
+  USER_NOT_FOUND: () => 1,
+  RATE_LIMITED: () => 2,
+  _: undefined,
+};
+
+// @ts-expect-error a catch-all with the value undefined is rejected in a complete table too
+matchErrorCode(userError, completeTableWithUndefinedCatchAll);
+
+matchErrorCode(userError, {
+  USER_NOT_FOUND: maybeHandler ?? (() => 1),
+  _: () => 2,
+});
+
 matchErrorCode(userError, {
   USER_NOT_FOUND: () => 1,
   RATE_LIMITED: () => 2,
@@ -171,6 +203,13 @@ function codeOfOtherCaseInGeneric<E extends DetailsOfEachCodeError>(
     // @ts-expect-error a handler in a generic caller never receives the code of another case
     RATE_LIMITED: (e) => e.code === "USER_NOT_FOUND",
   });
+}
+
+function completeTableOfClosedBareCodeVariable<Code extends "A" | "B">(
+  error: StructuredError<Code, string>,
+): number {
+  const known: StructuredError<"A" | "B", string> = error;
+  return matchErrorCode(known, { A: () => 1, B: () => 2 });
 }
 
 function catchAllParameterOfBareCode<Code extends string>(
@@ -409,6 +448,7 @@ void DetailsOfEachCode;
 void detailsOfEachCaseInGeneric;
 void memberOfCaseInGeneric;
 void codeOfOtherCaseInGeneric;
+void completeTableOfClosedBareCodeVariable;
 void catchAllParameterOfBareCode;
 void missingCodeInGeneric;
 void wrongParameterInGeneric;

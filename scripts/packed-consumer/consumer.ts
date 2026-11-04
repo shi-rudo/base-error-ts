@@ -61,6 +61,9 @@ export const status: number = matchErrorCode(failure, {
 // @ts-expect-error matchErrorCode needs a case for every code of the union
 matchErrorCode(failure, { EMAIL_TAKEN: () => 409 });
 
+// @ts-expect-error matchErrorCode rejects a handler that can be undefined
+matchErrorCode(failure, { EMAIL_TAKEN: undefined, _: () => 500 });
+
 export const retryable: boolean = matchErrorCode(failure, {
   RATE_LIMITED: (error) => error.retryable,
   _: () => false,
@@ -71,6 +74,21 @@ matchErrorCode(failure, { EMAIL_TAKN: () => 409, _: () => 500 });
 
 export function statusOf<E extends EmailTaken | RateLimited>(error: E): number {
   return matchErrorCode(error, { RATE_LIMITED: () => 429, _: () => 500 });
+}
+
+export function codeOfEachCase<E extends EmailTaken | RateLimited>(
+  error: E,
+): string {
+  return matchErrorCode(error, {
+    RATE_LIMITED: (e) => e.code,
+    _: (e) => e.code,
+  });
+}
+
+export function statusOfCatchAllOnly<E extends EmailTaken | RateLimited>(
+  error: E,
+): number {
+  return matchErrorCode(error, { _: () => 500 });
 }
 
 export function statusOfAnyCode<Code extends string>(

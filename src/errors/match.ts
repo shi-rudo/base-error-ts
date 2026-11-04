@@ -5,8 +5,8 @@ import type { StructuredError } from "./StructuredError.js";
  * type overlaps `K`.
  *
  * When `E` is a real union of structured error types (e.g. produced by a
- * catalog), this resolves to the precise member. Then `details` is the
- * per-code type. When `E` is a single `StructuredError<"A" | "B">`, there is
+ * catalog), this resolves to the precise member. Then `details` is the per-code
+ * type. When `E` is a single `StructuredError<"A" | "B", string>`, there is
  * nothing to narrow, so it stays `E`. `K` can be wider than a code, because a
  * branded code names every string. The type distributes over `E`, so an `E`
  * typed by a type parameter narrows through its constraint.
@@ -23,9 +23,9 @@ type CaseArg<
   : never;
 
 /**
- * The errors that reach the `_` catch-all: the members of `E` whose code is
- * not `Handled`. When `E` is a single `StructuredError<"A" | "B">`, there is
- * nothing to narrow, so it stays `E`, as in `CaseArg`.
+ * The errors that reach the `_` catch-all: the members of `E` whose code is not
+ * `Handled`. When `E` is a single `StructuredError<"A" | "B", string>`, there
+ * is nothing to narrow, so it stays `E`, as in `CaseArg`.
  */
 type CatchAllArg<
   E extends StructuredError<string, string>,
@@ -54,13 +54,15 @@ type Cases<E extends StructuredError<string, string>, Code extends string> = {
  * they handle. The compiler infers `Names` from the keys alone, so the type
  * of the catch-all does not depend on the handler table: a type parameter in
  * the parameter type of a handler is fixed when the handler is checked, and
- * the table must stay open until every handler is checked.
+ * the table must stay open until every handler is checked. A key with the value
+ * `undefined` holds no handler, and its error reaches `_`, whose type excludes
+ * that code. So the type of a key rejects `undefined`.
  */
 export type CatchAll<
   E extends StructuredError<string, string>,
   Names extends PropertyKey,
   Handled extends string = HandledNames<Names>,
-> = { readonly [N in Names]: unknown } & {
+> = { readonly [N in Names]: NonNullable<unknown> } & {
   readonly _?: (error: CatchAllArg<E, Handled>) => unknown;
 };
 
@@ -156,8 +158,8 @@ export type UnknownNameRule<
 
 /**
  * A table with only a `_` catch-all names no code, so it needs no check. That
- * also holds for a code that depends on a type parameter of the caller, where
- * every check of a name stays deferred.
+ * also holds for an open code that depends on a type parameter of the caller,
+ * where every check of a name stays deferred.
  */
 type Exhaustive<
   E extends StructuredError<string, string>,
@@ -225,15 +227,17 @@ type TableOfUnknownCodes<
  * Pass a handler per `code`. If `error`'s type is a closed union of structured
  * error types, an omitted handler is a **compile error** (unless you provide
  * a `_` catch-all). A handler for a code that the union does not contain is a
- * compile error too, also next to `_`. A table typed `Record<string, …>` does
- * not pass for a closed union. For an error whose code type is a bare type
- * parameter, only a table with a single `_` handler that does not read its
- * parameter passes. A union with the code `_` cannot name a handler next to
- * `_`, because `_` is the catch-all. Each handler receives the error narrowed to
- * its case, so `details` is the precise per-code type. In a function generic
- * over a union of classes, a handler receives only `StructuredError`. The `_`
- * catch-all receives the members of the union whose code has no handler. The
- * return type is the union of the handler return types.
+ * compile error too, also next to `_`. So is a handler that can be `undefined`.
+ * A table typed `Record<string, …>` does not pass for a closed union. For an
+ * error whose code type is a type parameter `Code extends string`, only a table
+ * with a single `_` handler that does not read its parameter passes. For a
+ * closed constraint on `Code`, assign the error to a variable typed with its
+ * codes. A union with the code `_` cannot name a handler next to `_`, because
+ * `_` is the catch-all. Each handler receives the error narrowed to its case, so `details` is the precise
+ * per-code type. In a function generic over a union of classes, a handler
+ * receives only `StructuredError`. The `_` catch-all receives the members of
+ * the union whose code has no handler. The return type is the union of the
+ * handler return types.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive

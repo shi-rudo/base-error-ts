@@ -71,6 +71,11 @@ and its errors reached `_`.
   `matchErrorCode: USER_NOT_FUND is not a code of this error`. Correct the
   code, or delete the dead handler. For a handler typed `any`, the error says
   only that `any` is not assignable to `never`, or it names the missing codes.
+- A handler that can be `undefined` is a compile error now, also next to `_`.
+  It counted as a handler: without `_`, the call threw at runtime, and next to
+  `_`, its errors reached `_`. To send a code to `_`, leave its key out. For a
+  conditional handler, write `USER_NOT_FOUND: handler ?? fallback`. The same
+  holds for `_` itself, also in a table with a handler for every code.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`
@@ -79,15 +84,16 @@ and its errors reached `_`.
   union. It names every string, so the compiler cannot check its names, and
   before v10 it also passed as if it had a `_` catch-all. Write the table as an
   object literal, or type it with the codes of the union.
-- An error whose code type is a bare type parameter names no code. An example
-  is `StructuredError<Code>` in a generic function. For such an error,
-  `matchErrorCode` takes only a table with a single `_` handler that does not
-  read its parameter. To name other handlers, assign the error to a variable
-  typed with the union of its codes, or with `StructuredError<string>`, and
-  match that variable.
-- The runtime is unchanged. A wide `StructuredError<string>`, a branded code
-  such as `string & { __brand }` and an `any` error still take a handler for
-  any code.
+- An error whose code type is a bare type parameter names no code. An example is
+  `StructuredError<Code, string>` in a generic function. For
+  `Code extends string`, `matchErrorCode` takes only a table with a single `_`
+  handler that does not read its parameter. For a closed constraint such as
+  `Code extends "A" | "B"`, it takes no table on TypeScript 5.4 and later. To
+  name handlers, assign the error to a variable typed with the union of its
+  codes, or with `StructuredError<string, string>`, and match that variable.
+- The runtime is unchanged. A wide `StructuredError<string, string>`, a branded
+  code such as `string & { __brand }` and an `any` error still take a handler
+  for any code.
 
 ### The `_` catch-all receives only the codes without a handler
 

@@ -291,7 +291,9 @@ function describe(error: AuthzError): string {
 `match` follows the exhaustiveness rules of `matchErrorCode`. Its `_` catch-all
 receives the errors whose key has no handler. It rejects a key that
 the catalog does not define, and the compiler error names that key, for example
-`match: not_a_membr is not a key of this catalog`. A key of the catalog that a
+`match: not_a_membr is not a key of this catalog`. A handler that can be
+`undefined` is a compile error too, also next to `_`. To send a key to `_`, leave
+it out. A key of the catalog that a
 narrowed error cannot
 have still compiles, because `match` checks the keys of the catalog, not the
 codes of the error. `match` checks no provenance,
