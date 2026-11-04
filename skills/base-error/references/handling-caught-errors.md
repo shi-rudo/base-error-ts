@@ -65,12 +65,15 @@ gives; a single `StructuredError<"A" | "B">` narrows only the code.
   the table as an object literal.
 - In a generic function, an error typed `StructuredError<Code>` with `Code` a
   type parameter names no code. `matchErrorCode` takes only a `_`-only table for
-  it. To name handlers, assign the error to a variable typed with its codes
+  it, and the `_` handler cannot read its parameter. To name handlers, assign the error to a variable typed with its codes
   or with `StructuredError<string>`, and match that variable.
-- In a function generic over the error (`E extends A | B`), a handler that
-  reads its parameter does not compile. On TypeScript 5.4 and later, a table
-  with only `_` does not compile there either. Assign the error to a variable
-  typed `A | B` and match that variable.
+- In a function generic over the error (`E extends A | B`), `matchErrorCode`
+  checks the table against the codes of the constraint, and each handler
+  receives the error narrowed to its case. For a union of classes, the parameter
+  has only the type `StructuredError<string, string>`. For an open code, such as
+  `string` or a branded string, a handler that reads its parameter can fail to
+  compile. In both cases, assign the error to a variable typed with its codes or
+  with `StructuredError<string, string>`, and match that variable.
 
 ## Closed dispatch by key: `Errors.match`
 

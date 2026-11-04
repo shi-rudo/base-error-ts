@@ -104,6 +104,113 @@ function statusOfEveryCode<E extends CatalogError<typeof UserErrors>>(
   });
 }
 
+function statusOfCatchAllOnly<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  return matchErrorCode(error, { _: () => 500 });
+}
+
+function detailsFromHandlerParameter<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): string | undefined {
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: (e) => e.details?.userId,
+    RATE_LIMITED: (e) => (e.retryable ? "retry" : undefined),
+  });
+}
+
+function codeFromParametersNextToCatchAll<
+  E extends CatalogError<typeof UserErrors>,
+>(error: E): string {
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: (e) => e.code,
+    _: (e) => e.code,
+  });
+}
+
+const DetailsOfEachCode = defineErrors({
+  USER_NOT_FOUND: {
+    category: "NOT_FOUND",
+    retryable: false,
+    details: detailsType<{ userId: string }>(),
+  },
+  RATE_LIMITED: {
+    category: "RATE_LIMIT",
+    retryable: true,
+    details: detailsType<{ retryAfter: number }>(),
+  },
+});
+type DetailsOfEachCodeError = CatalogError<typeof DetailsOfEachCode>;
+
+function detailsOfEachCaseInGeneric<E extends DetailsOfEachCodeError>(
+  error: E,
+): string | number | undefined {
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: (e) => e.details?.userId,
+    RATE_LIMITED: (e) => e.details?.retryAfter,
+  });
+}
+
+function memberOfCaseInGeneric<E extends DetailsOfEachCodeError>(
+  error: E,
+): string | undefined {
+  const userIdOf = (
+    notFound: Extract<DetailsOfEachCodeError, { code: "USER_NOT_FOUND" }>,
+  ): string | undefined => notFound.details?.userId;
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: userIdOf,
+    _: () => undefined,
+  });
+}
+
+function codeOfOtherCaseInGeneric<E extends DetailsOfEachCodeError>(
+  error: E,
+): boolean {
+  return matchErrorCode(error, {
+    USER_NOT_FOUND: () => false,
+    // @ts-expect-error a handler in a generic caller never receives the code of another case
+    RATE_LIMITED: (e) => e.code === "USER_NOT_FOUND",
+  });
+}
+
+function catchAllParameterOfBareCode<Code extends string>(
+  error: StructuredError<Code, string>,
+): void {
+  // @ts-expect-error a catch-all that reads its parameter does not compile for a code typed by a bare type parameter
+  matchErrorCode(error, { _: (e) => e.code });
+}
+
+function missingCodeInGeneric<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): number {
+  // @ts-expect-error a missing code is rejected in a generic caller
+  return matchErrorCode(error, { USER_NOT_FOUND: () => 404 });
+}
+
+function wrongParameterInGeneric<E extends CatalogError<typeof UserErrors>>(
+  error: E,
+): void {
+  matchErrorCode(error, {
+    // @ts-expect-error a handler with a wrong parameter type is rejected in a generic caller
+    USER_NOT_FOUND: (e: number) => e,
+    _: () => 500,
+  });
+}
+
+function catchAllParameterOfAnyError<E extends StructuredError<string, string>>(
+  error: E,
+): void {
+  // @ts-expect-error a catch-all that reads its parameter does not compile for a constraint that names every string
+  matchErrorCode(error, { _: (e) => e.code });
+}
+
+function catchAllParameterOfWideVariable<
+  E extends StructuredError<string, string>,
+>(error: E): string {
+  const wide: StructuredError<string, string> = error;
+  return matchErrorCode(wide, { _: (e) => e.code });
+}
+
 function statusOfAnyError<E extends StructuredError<string, string>>(
   error: E,
 ): number {
@@ -199,6 +306,26 @@ class RateLimitedError extends StructuredError<"RATE_LIMITED", "LIMIT"> {
   }
 }
 
+function codeOfClassUnionInGeneric<
+  E extends EmailTakenError | RateLimitedError,
+>(error: E): void {
+  matchErrorCode(error, {
+    // @ts-expect-error a handler in a generic caller of a class union receives only the base type
+    EMAIL_TAKEN: (e): "EMAIL_TAKEN" => e.code,
+    _: () => undefined,
+  });
+}
+
+function codeOfClassUnionVariable<E extends EmailTakenError | RateLimitedError>(
+  error: E,
+): "EMAIL_TAKEN" | undefined {
+  const known: EmailTakenError | RateLimitedError = error;
+  return matchErrorCode(known, {
+    EMAIL_TAKEN: (e): "EMAIL_TAKEN" => e.code,
+    _: () => undefined,
+  });
+}
+
 function misspelledInGenericClassUnion<
   E extends EmailTakenError | RateLimitedError,
 >(error: E): number {
@@ -275,6 +402,18 @@ void UserErrors;
 void HttpErrors;
 void statusWithCatchAll;
 void statusOfEveryCode;
+void statusOfCatchAllOnly;
+void detailsFromHandlerParameter;
+void codeFromParametersNextToCatchAll;
+void DetailsOfEachCode;
+void detailsOfEachCaseInGeneric;
+void memberOfCaseInGeneric;
+void codeOfOtherCaseInGeneric;
+void catchAllParameterOfBareCode;
+void missingCodeInGeneric;
+void wrongParameterInGeneric;
+void catchAllParameterOfAnyError;
+void catchAllParameterOfWideVariable;
 void statusOfAnyError;
 void misspelledInGeneric;
 void statusOfBareCode;
@@ -285,6 +424,8 @@ void openCodeWithCatchAll;
 void brandedLiteralsComplete;
 void brandedLiteralsCatchAll;
 void literalAndBrandedWithCatchAll;
+void codeOfClassUnionInGeneric;
+void codeOfClassUnionVariable;
 void misspelledInGenericClassUnion;
 void underscorePrefixedCode;
 void numericKeyWithCatchAll;

@@ -1,18 +1,26 @@
 import type { StructuredError } from "./StructuredError.js";
 
 /**
- * Narrows a member of an error union to a single `code`.
+ * Narrows a member of an error union to a single `code`: the members whose code
+ * type overlaps `K`.
  *
  * When `E` is a real union of structured error types (e.g. produced by a
  * catalog), this resolves to the precise member. Then `details` is the
  * per-code type. When `E` is a single `StructuredError<"A" | "B">`, there is
- * nothing to narrow, so it falls back to `E` instead of `never`.
+ * nothing to narrow, so it stays `E`. `K` can be wider than a code, because a
+ * branded code names every string. The type distributes over `E`, so an `E`
+ * typed by a type parameter narrows through its constraint.
  */
-type CaseArg<E extends StructuredError<string, string>, K extends string> = [
-  Extract<E, { code: K }>,
-] extends [never]
-  ? E
-  : Extract<E, { code: K }>;
+type CaseArg<
+  E extends StructuredError<string, string>,
+  K extends string,
+> = E extends { readonly code: infer MemberCode }
+  ? K extends MemberCode
+    ? E
+    : MemberCode extends K
+      ? E
+      : never
+  : never;
 
 /**
  * The errors that reach the `_` catch-all: the members of `E` whose code is
@@ -36,8 +44,8 @@ export type HandledNames<Names extends PropertyKey> = Exclude<
  * `CatchAll` types the catch-all. It stays in this type, so a table of
  * misspelled names and `_` still overlaps it and is checked by name.
  */
-type Cases<E extends StructuredError<string, string>> = {
-  [K in E["code"]]?: (error: CaseArg<E, K>) => unknown;
+type Cases<E extends StructuredError<string, string>, Code extends string> = {
+  [K in Code]?: (error: CaseArg<E, K>) => unknown;
 } & { _?: unknown };
 
 /**
@@ -201,7 +209,7 @@ type TableOfUnknownCodes<
   C,
   TableNames extends PropertyKey,
 > =
-  TableLostToConstraint<C, Cases<E>, TableNames> extends true
+  TableLostToConstraint<C, Cases<E, Code>, TableNames> extends true
     ? {
         [
           K in Exclude<HandledNames<TableNames>, CodeNames<Code>>
@@ -219,12 +227,13 @@ type TableOfUnknownCodes<
  * a `_` catch-all). A handler for a code that the union does not contain is a
  * compile error too, also next to `_`. A table typed `Record<string, …>` does
  * not pass for a closed union. For an error whose code type is a bare type
- * parameter, only a table with a single `_` handler passes. A union with the
- * code `_` cannot name a handler next to `_`, because `_` is the catch-all.
- * Each handler receives the error narrowed to its case, so `details` is the
- * precise per-code type. The `_` catch-all receives the members of the union
- * whose code has no handler. The return type is the union of the handler
- * return types.
+ * parameter, only a table with a single `_` handler that does not read its
+ * parameter passes. A union with the code `_` cannot name a handler next to
+ * `_`, because `_` is the catch-all. Each handler receives the error narrowed to
+ * its case, so `details` is the precise per-code type. In a function generic
+ * over a union of classes, a handler receives only `StructuredError`. The `_`
+ * catch-all receives the members of the union whose code has no handler. The
+ * return type is the union of the handler return types.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive
@@ -256,7 +265,7 @@ type TableOfUnknownCodes<
  */
 export function matchErrorCode<
   E extends StructuredError<string, string>,
-  const C extends Cases<E>,
+  const C extends Cases<E, Code>,
   // The compiler infers `Code` from the apparent type of the error. For an
   // error typed by a type parameter, `E["code"]` would defer every check of
   // the table, and the call would accept no table.
