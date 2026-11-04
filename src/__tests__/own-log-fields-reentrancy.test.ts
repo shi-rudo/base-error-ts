@@ -96,7 +96,7 @@ describe("public logging during own log field processing", () => {
       readonly code = 0;
       readonly category = "VALIDATION";
       readonly retryable = false;
-      readonly details = { password: "cause-secret", requestId: "R" };
+      readonly details = { password: "cause-hunter2", requestId: "R" };
 
       protected override buildOwnLogFields(): Record<string, unknown> {
         causeCalls++;
@@ -109,7 +109,7 @@ describe("public logging during own log field processing", () => {
       category: "VALIDATION",
       retryable: false,
       message: "related diagnosis",
-      details: { password: "root-secret" },
+      details: { password: "root-hunter2" },
       cause,
     }).redact(["password"]);
     class Outer extends BaseError<"Outer"> {
@@ -135,7 +135,7 @@ describe("public logging during own log field processing", () => {
       },
     });
     expect(log.related).not.toHaveProperty("cause.contribution");
-    expect(JSON.stringify(log)).not.toContain("secret");
+    expect(JSON.stringify(log)).not.toContain("hunter2");
   });
 
   it.each(["getter", "toJSON"] as const)(

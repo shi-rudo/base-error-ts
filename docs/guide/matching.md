@@ -122,6 +122,9 @@ Each handler receives the
 instance type of its constructor, and the result is the exact union of all
 handler return types.
 
+`match` runs only an own property of the table. A key without one throws, for
+example `match: no case for key "timeout" of this error class set`.
+
 Class-set keys must be finite, non-numeric string literals. Numeric-looking
 keys are rejected because JavaScript reorders array-index object keys. Let the
 definition call infer keys directly. For a separately declared definition, use
@@ -213,12 +216,20 @@ The compiler checks names only against known codes:
 - In a union of a branded code and literal codes, every literal code needs a
   handler, but the compiler does not check the branded code. A table without a
   handler for it compiles, and that error throws at runtime, so give such a table
-  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
-  name it, assign the error to a variable typed
+  a `_` handler. A named handler that reads its parameter can fail to compile in
+  such a table, and on TypeScript 7 the error then says that the branded code is
+  not a code of this error. To read the error, assign it to a variable typed
   `StructuredError<string, string>`.
 - On TypeScript before 5.3, a function generic over a union of two enums checks
   the table against the code of one enum only. Assign the error to a variable
   typed with the union, and match that variable.
+- A symbol key is a compile error, also in `Catalog.match`, because no code
+  reaches it and its return type widens the result. The error reads
+  `a handler table takes no symbol key`.
+- The compiler accepts a class instance as a table, because a type does not say
+  where a method lives. The runtime reads only own properties, so the call
+  throws. Write the table as an object literal. The same holds for
+  `Catalog.match` and `ErrorClassSet.match`.
 - A handler typed `any` under an unknown name fails to compile too. The
   compiler error says only that `any` is not assignable to `never`. If the
   table holds only such handlers, the compiler error names the missing codes.
@@ -261,6 +272,11 @@ against that member. The handler must then return what the member returns, for
 example a string for `toString`. The same holds for a key of `Errors.match`.
 The runtime sends such a code to its own handler. Use TypeScript 5.4 or later,
 or handle such a code in `_`.
+
+A table without a handler for such a code is a compile error, because the
+inherited member does not count as a handler. The error reads
+`matchErrorCode: toString needs a handler of its own`. `Errors.match` and
+`ErrorClassSet.match` check the same.
 
 ### With errors from `catch`
 

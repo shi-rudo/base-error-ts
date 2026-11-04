@@ -44,6 +44,34 @@ describe("defineErrorClassSet", () => {
     ).toThrow(/outside the declared error class set/);
   });
 
+  it("throws instead of running a method that the table inherits", () => {
+    const errors = defineErrorClassSet({
+      toString: FileError,
+      database: DatabaseError,
+    });
+
+    expect(() =>
+      errors.match(new FileError("config.json"), {
+        database: () => "database",
+      } as never),
+    ).toThrow('match: no case for key "toString" of this error class set');
+  });
+
+  it("throws for a class instance as a table, because its methods are not own", () => {
+    class Handlers {
+      file() {
+        return "file";
+      }
+      database() {
+        return "database";
+      }
+    }
+
+    expect(() =>
+      InfrastructureErrors.match(new FileError("config.json"), new Handlers()),
+    ).toThrow('match: no case for key "file" of this error class set');
+  });
+
   it("rejects an empty class definition", () => {
     expect(() => {
       // @ts-expect-error runtime defense for JavaScript and unsafe casts

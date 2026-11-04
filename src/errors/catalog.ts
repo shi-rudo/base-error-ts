@@ -12,6 +12,7 @@ import type {
   HandledNames,
   HandlerNames,
   HandlerResult,
+  InheritedMemberName,
   TableLostToConstraint,
   UnknownHandlerNames,
   UnknownNameRule,
@@ -277,6 +278,9 @@ type CatchAllKeyRule =
 type UnknownKeyRule<Name extends string> =
   `match: ${Name} is not a key of this catalog`;
 
+type MissingKeyRule<Name extends string> =
+  `match: ${Name} needs a handler of its own`;
+
 /**
  * Rejects a key that the catalog does not define, with `UnknownNameRule`.
  * Without a `_` catch-all, every key of `E` must have a handler.
@@ -294,9 +298,11 @@ type KeyExhaustive<
       : [Exclude<KeyIn<T, P, E>, HandlerNames<C>>] extends [never]
         ? C
         : C & {
-            [K in Exclude<KeyIn<T, P, E>, HandlerNames<C>>]: (
-              error: KeyCaseArg<P, E, K>,
-            ) => unknown;
+            [
+              K in Exclude<KeyIn<T, P, E>, HandlerNames<C>>
+            ]: K extends InheritedMemberName
+              ? MissingKeyRule<K>
+              : (error: KeyCaseArg<P, E, K>) => unknown;
           }
     : C & {
         [K in UnknownHandlerNames<C, keyof T & string>]: UnknownNameRule<
@@ -369,7 +375,9 @@ export type Catalog<
    * narrowing. `matchErrorCode` with handlers named by key: the `_`
    * catch-all receives the errors whose key has no handler, it checks no
    * provenance, and it throws when no case matches and no `_` catch-all
-   * exists. A handler that can be `undefined` is a compile error.
+   * exists. A handler that can be `undefined` is a compile error. Only an own
+   * property of the table counts as a handler. The compiler accepts a class
+   * instance as a table, and the call throws at runtime.
    */
   match<
     E extends CatalogError<Catalog<T, P>>,

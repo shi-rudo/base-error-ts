@@ -1,6 +1,7 @@
 import { isInstanceOf } from "./guarded-read.js";
 import type { ErrorClass } from "./guards.js";
-import type { UnknownNameRule } from "./match.js";
+import { ownCase } from "./match.js";
+import type { InheritedMemberName, UnknownNameRule } from "./match.js";
 
 /** A keyed set of local Error constructors. */
 export type ErrorClassMap = Readonly<Record<string, ErrorClass>>;
@@ -20,6 +21,16 @@ type UnknownClassKeys<TClasses extends ErrorClassMap, THandlers> = {
         `match: ${K} is not a key of this error class set`
       >
     : never;
+};
+
+/**
+ * Rejects a table without a handler for a key named like a member of
+ * `Object.prototype`, which the inherited member fulfills otherwise.
+ */
+type MissingInheritedKeys<TClasses extends ErrorClassMap, THandlers> = {
+  [
+    K in Exclude<keyof TClasses & InheritedMemberName, keyof THandlers>
+  ]: `match: ${K} needs a handler of its own`;
 };
 
 type MatchResult<THandlers> = THandlers[keyof THandlers] extends (
@@ -42,10 +53,16 @@ type ValidClassDefinition<TClasses extends ErrorClassMap> = [
 
 /** A reusable, exhaustive matcher for a closed set of Error classes. */
 export interface ErrorClassSet<TClasses extends ErrorClassMap> {
-  /** Match a value using exactly one handler for every declared class key. */
+  /**
+   * Match a value using exactly one handler for every declared class key.
+   * Only an own property of the table counts as a handler. The compiler accepts
+   * a class instance as a table, and the call throws at runtime.
+   */
   match<const THandlers extends ErrorClassHandlers<TClasses>>(
     value: unknown,
-    handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
+    handlers: THandlers &
+      UnknownClassKeys<TClasses, THandlers> &
+      MissingInheritedKeys<TClasses, THandlers>,
   ): MatchResult<THandlers>;
 }
 
@@ -97,14 +114,30 @@ export function defineErrorClassSet<const TClasses extends ErrorClassMap>(
   return Object.freeze({
     match<const THandlers extends ErrorClassHandlers<TClasses>>(
       value: unknown,
-      handlers: THandlers & UnknownClassKeys<TClasses, THandlers>,
+      handlers: THandlers &
+        UnknownClassKeys<TClasses, THandlers> &
+        MissingInheritedKeys<TClasses, THandlers>,
     ): MatchResult<THandlers> {
       for (const key of keys) {
         const constructor = snapshot[key] as ErrorClass;
         if (isInstanceOf(value, constructor)) {
-          const handler = handlers[key] as (
-            error: InstanceType<TClasses[typeof key]>,
-          ) => MatchResult<THandlers>;
+          const handler = ownCase(
+            handlers as Readonly<
+              Record<
+                string,
+                | ((
+                    error: InstanceType<TClasses[typeof key]>,
+                  ) => MatchResult<THandlers>)
+                | undefined
+              >
+            >,
+            key,
+          );
+          if (!handler) {
+            throw new Error(
+              `match: no case for key "${key}" of this error class set`,
+            );
+          }
           return handler(value as InstanceType<TClasses[typeof key]>);
         }
       }

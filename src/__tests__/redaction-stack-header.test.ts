@@ -52,8 +52,8 @@ describe("redact: a deny-listed message is masked in the stack of the log object
   });
 
   it("masks the header of every node on the cause chain", () => {
-    const native = new Error("native secret");
-    const middle = new TestError("middle secret", native);
+    const native = new Error("native hunter2");
+    const middle = new TestError("middle hunter2", native);
     const outer = new TestError(SECRET, middle).redact(["message"]);
 
     const log = outer.toLogObject();
@@ -64,16 +64,15 @@ describe("redact: a deny-listed message is masked in the stack of the log object
     expect(framesOf(cause.stack)).toEqual(framesOf(middle.stack));
     expect(headerOf(inner.stack)).toBe("Error: [REDACTED]");
     expect(framesOf(inner.stack)).toEqual(framesOf(native.stack));
-    expect(JSON.stringify(outer)).not.toContain("secret");
     expect(JSON.stringify(outer)).not.toContain("hunter2");
   });
 
   it("masks the header of every aggregate member", () => {
     const members = [
-      new Error("member secret 1"),
-      new Error("member secret 2"),
+      new Error("member hunter2 1"),
+      new Error("member hunter2 2"),
     ];
-    const aggregate = new AggregateError(members, "aggregate secret");
+    const aggregate = new AggregateError(members, "aggregate hunter2");
     const err = new TestError(SECRET, aggregate).redact(["message"]);
 
     const log = err.toLogObject();
@@ -88,13 +87,13 @@ describe("redact: a deny-listed message is masked in the stack of the log object
         framesOf(members[index]?.stack),
       );
     });
-    expect(JSON.stringify(err)).not.toContain("secret");
+    expect(JSON.stringify(err)).not.toContain("hunter2");
   });
 
   it("masks the header of every member of an aggregate root", () => {
     const members = [
-      new Error("member secret 1"),
-      new Error("member secret 2"),
+      new Error("member hunter2 1"),
+      new Error("member hunter2 2"),
     ];
     const err = new StructuredAggregateError({
       code: "FAN_OUT_FAILED",
@@ -112,7 +111,6 @@ describe("redact: a deny-listed message is masked in the stack of the log object
     for (const member of errors) {
       expect(headerOf(nodeOf(member).stack)).toBe("Error: [REDACTED]");
     }
-    expect(JSON.stringify(err)).not.toContain("secret");
     expect(JSON.stringify(err)).not.toContain("hunter2");
   });
 
@@ -282,14 +280,14 @@ describe("redact: a deny-listed message is masked in the stack of the log object
   it("covers a forged chain deeper than the data depth cap", () => {
     let chain: Record<string, unknown> = {
       name: "E",
-      message: "secret 0",
-      stack: "E: secret 0\n    at fn (file:1:1)",
+      message: "hunter2 0",
+      stack: "E: hunter2 0\n    at fn (file:1:1)",
     };
     for (let index = 1; index < 200; index++) {
       chain = {
         name: "E",
-        message: `secret ${index}`,
-        stack: `E: secret ${index}\n    at fn (file:1:1)`,
+        message: `hunter2 ${index}`,
+        stack: `E: hunter2 ${index}\n    at fn (file:1:1)`,
         cause: chain,
       };
     }
@@ -297,15 +295,15 @@ describe("redact: a deny-listed message is masked in the stack of the log object
 
     const json = JSON.stringify(err);
 
-    expect(json).not.toContain("secret");
+    expect(json).not.toContain("hunter2");
     expect(json).toContain("E: [REDACTED]\\n    at fn (file:1:1)");
   });
 
   it("stops at a size marker on the spine without throwing", () => {
     const leaf = {
       name: "E",
-      message: "leaf secret",
-      stack: "E: leaf secret\n    at fn (file:1:1)",
+      message: "leaf hunter2",
+      stack: "E: leaf hunter2\n    at fn (file:1:1)",
     };
     const middle = { ...leaf, errors: new Array<unknown>(50).fill(leaf) };
     const top = { ...leaf, errors: new Array<unknown>(50).fill(middle) };
@@ -314,7 +312,6 @@ describe("redact: a deny-listed message is masked in the stack of the log object
 
     const json = JSON.stringify(err);
 
-    expect(json).not.toContain("secret");
     expect(json).not.toContain("hunter2");
   });
 });

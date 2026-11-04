@@ -48,6 +48,8 @@ type Cases<E extends StructuredError<string, string>, Code extends string> = {
   [K in Code]?: (error: CaseArg<E, K>) => unknown;
 } & { _?: unknown };
 
+type SymbolKeyRule = "a handler table takes no symbol key";
+
 /**
  * The optional `_` catch-all, typed with the errors whose code has no
  * handler. `Names` holds the keys of the table, and `Handled` the codes that
@@ -56,13 +58,19 @@ type Cases<E extends StructuredError<string, string>, Code extends string> = {
  * the parameter type of a handler is fixed when the handler is checked, and
  * the table must stay open until every handler is checked. A key with the value
  * `undefined` holds no handler, and its error reaches `_`, whose type excludes
- * that code. So the type of a key rejects `undefined`.
+ * that code. So the type of a key rejects `undefined`. A symbol key holds no
+ * handler either, because no code reaches it, and its return type would widen
+ * the result.
  */
 export type CatchAll<
   E extends StructuredError<string, string>,
   Names extends PropertyKey,
   Handled extends string = HandledNames<Names>,
-> = { readonly [N in Names]: NonNullable<unknown> } & {
+> = {
+  readonly [N in Names]: N extends symbol
+    ? SymbolKeyRule
+    : NonNullable<unknown>;
+} & {
   readonly _?: (error: CatchAllArg<E, Handled>) => unknown;
 };
 
@@ -85,6 +93,18 @@ export function ownCase<H>(
     ? cases[name]
     : undefined;
 }
+
+/**
+ * The names of the members of `Object.prototype` that the compiler knows. An
+ * object literal inherits these members, and such a member fulfills a required
+ * key of a function type. The matchers run only an own handler, so that error
+ * would throw at runtime. No inherited method fulfills a string literal type,
+ * so a required handler of such a name takes one.
+ */
+export type InheritedMemberName = keyof typeof Object.prototype;
+
+type MissingCodeRule<Name extends string> =
+  `matchErrorCode: ${Name} needs a handler of its own`;
 
 type CatchAllCodeRule =
   "matchErrorCode is unavailable: the code _ is also the catch-all; rename the code";
@@ -157,6 +177,25 @@ export type UnknownNameRule<
 > = 0 extends 1 & HandlerNamed<C, Name> ? never : Reason;
 
 /**
+ * `Name` when a member of `E` has a branded code that reads as `Name`, such as
+ * `"A" & Brand` for `"A"`, otherwise `never`. A template literal cannot read such
+ * a code, and the compiler chooses by its version whether `Code` holds it, so
+ * the set of names can miss it. A name typed `string` reads no code.
+ */
+type BrandedCodeNamed<
+  E extends StructuredError<string, string>,
+  Name extends string,
+> = string extends Name
+  ? never
+  : E extends { readonly code: infer MemberCode }
+    ? MemberCode extends object
+      ? MemberCode extends Name
+        ? Name
+        : never
+      : never
+    : never;
+
+/**
  * A table with only a `_` catch-all names no code, so it needs no check. That
  * also holds for an open code that depends on a type parameter of the caller,
  * where every check of a name stays deferred.
@@ -188,16 +227,18 @@ type NamedHandlerTable<
       : [Exclude<Names, HandlerNames<C>>] extends [never]
         ? C
         : C & {
-            [K in Exclude<Names, HandlerNames<C>>]: (
-              error: CaseArg<E, K>,
-            ) => unknown;
+            [
+              K in Exclude<Names, HandlerNames<C>>
+            ]: K extends InheritedMemberName
+              ? MissingCodeRule<K>
+              : (error: CaseArg<E, K>) => unknown;
           }
     : C & {
-        [K in UnknownHandlerNames<C, Names>]: UnknownNameRule<
-          C,
-          K,
-          UnknownCodeRule<K>
-        >;
+        [K in UnknownHandlerNames<C, Names>]: [BrandedCodeNamed<E, K>] extends [
+          never,
+        ]
+          ? UnknownNameRule<C, K, UnknownCodeRule<K>>
+          : unknown;
       }
   : CatchAllCodeRule;
 
@@ -223,18 +264,21 @@ type TableOfUnknownCodes<
 
 /**
  * Keeps a literal code required next to an open code. The union with an open
- * code names every string, so it holds no required name.
+ * code names every string, so it holds no required name. A table can lose its
+ * type to the constraint, which holds `_`, so this type reads `TableNames`.
  */
 type LiteralCodeHandlers<
   E extends StructuredError<string, string>,
   LiteralCode extends string,
-  C,
-> = "_" extends keyof C
+  TableNames extends PropertyKey,
+> = "_" extends TableNames
   ? unknown
   : {
-      [K in Exclude<LiteralCode, HandlerNames<C>>]: (
-        error: CaseArg<E, K>,
-      ) => unknown;
+      [
+        K in Exclude<LiteralCode, HandledNames<TableNames>>
+      ]: K extends InheritedMemberName
+        ? MissingCodeRule<K>
+        : (error: CaseArg<E, K>) => unknown;
     };
 
 /**
@@ -253,7 +297,9 @@ type LiteralCodeHandlers<
  * so `details` is the precise per-code type. In a function generic over a union
  * of classes, a handler receives only `StructuredError`. The `_` catch-all
  * receives the members of the union whose code has no handler. The return type
- * is the union of the handler return types.
+ * is the union of the handler return types. Only an own property of the table
+ * counts as a handler. The compiler accepts a class instance as a table, and the
+ * call throws at runtime.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive
@@ -305,7 +351,7 @@ export function matchErrorCode<
   cases: Exhaustive<E, Code | LiteralCode, C> &
     CatchAll<E, Names> &
     TableOfUnknownCodes<E, Code | LiteralCode, C, Names> &
-    LiteralCodeHandlers<E, LiteralCode, C>,
+    LiteralCodeHandlers<E, LiteralCode, Names>,
 ): HandlerResult<C> {
   const table = cases as Record<string, ((error: E) => unknown) | undefined>;
   const handler = ownCase(table, error.code) ?? table._;

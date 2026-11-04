@@ -92,6 +92,14 @@ StructurallyIdenticalErrors.match(caught, {
   first: () => "first",
 });
 
+const KeyNamedLikeAnInheritedMethod = defineErrorClassSet({
+  toString: FileError,
+  database: DatabaseError,
+});
+
+// @ts-expect-error the inherited toString does not count as a handler for the key toString
+KeyNamedLikeAnInheritedMethod.match(caught, { database: () => 1 });
+
 InfrastructureErrors.match(caught, {
   file: () => "file",
   database: () => "database",

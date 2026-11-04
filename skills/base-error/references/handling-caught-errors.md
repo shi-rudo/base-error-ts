@@ -48,6 +48,9 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   `Object.prototype` member (`toString`, `valueOf`, `constructor`) is typed
   against that member. Use TypeScript 5.4 or later, or handle such a code in
   `_`.
+- A table without a handler for such a code or key is a compile error, also
+  in `ErrorClassSet.match`, because the inherited member does not count as a
+  handler. The error reads `matchErrorCode: toString needs a handler of its own`.
 - A handler for a code that the union does not contain is a compile error,
   also next to `_`. A misspelled code does not fall through to `_`. The error
   reads `matchErrorCode: <name> is not a code of this error`.
@@ -68,14 +71,22 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
 - In a union of a branded code and literal codes, every literal code needs a
   handler, but the compiler does not check the branded code. A table without a
   handler for it compiles, and that error throws at runtime, so give such a table
-  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
-  name it, assign the error to a variable typed
+  a `_` handler. A named handler that reads its parameter can fail to compile in
+  such a table, and on TypeScript 7 the error then says that the branded code is
+  not a code of this error. To read the error, assign it to a variable typed
   `StructuredError<string, string>`.
 - On TypeScript before 5.3, a function generic over a union of two enums checks
   the table against the code of one enum only. Assign the error to a variable
   typed with the union, and match that variable.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
+- A symbol key is a compile error, also in `Catalog.match`, because no code
+  reaches it and its return type widens the result. The error reads
+  `a handler table takes no symbol key`.
+- The compiler accepts a class instance as a table, because a type does not say
+  where a method lives. The runtime reads only own properties, so the call
+  throws. Write the table as an object literal. The same holds for
+  `Catalog.match` and `ErrorClassSet.match`.
 - In a generic function, an error typed `StructuredError<Code, string>` with
   `Code` a type parameter names no code. For `Code extends string`,
   `matchErrorCode` takes only a `_`-only table, and the `_` handler cannot read

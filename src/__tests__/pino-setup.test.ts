@@ -202,6 +202,34 @@ describe("the pino setup", () => {
     });
   });
 
+  it("lets pino write the fields of an error from another realm raw as a merge object", () => {
+    const { logger, parsed } = recordingLogger();
+    const foreign: unknown = runInNewContext(
+      `const error = new Error("vm failure");
+       error.details = { email: "${SECRET_EMAIL}" };
+       error`,
+    );
+
+    logger.error(foreign);
+
+    const [line] = parsed();
+    expect(line).toMatchObject({ details: { email: SECRET_EMAIL } });
+    expect(line).not.toHaveProperty("err");
+    expect(line).not.toHaveProperty("msg");
+  });
+
+  it("keeps the policy of a log object that another realm built under err", () => {
+    const { logger, lines } = recordingLogger();
+    const foreignLogObject: unknown = runInNewContext(
+      `({ name: "F", message: "[REDACTED]", details: { email: "[REDACTED]" } })`,
+    );
+
+    logger.error({ err: foreignLogObject });
+
+    expect(lines[0]).toContain('"email":"[REDACTED]"');
+    expect(lines[0]).not.toContain(SECRET_EMAIL);
+  });
+
   it("keeps a merge object with a name and a message as a merge object", () => {
     const { logger, parsed } = recordingLogger();
 

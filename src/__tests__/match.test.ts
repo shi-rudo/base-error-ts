@@ -96,6 +96,26 @@ describe("matchErrorCode", () => {
     ).toThrow(/unhandled error code "RATE_LIMITED"/);
   });
 
+  it("throws for a class instance as a table, because its methods are not own", () => {
+    class Handlers {
+      USER_NOT_FOUND() {
+        return "user";
+      }
+    }
+
+    expect(() =>
+      matchErrorCode(
+        new StructuredError({
+          code: "USER_NOT_FOUND",
+          category: "CAT",
+          retryable: false,
+          message: "x",
+        }) as StructuredError<"USER_NOT_FOUND", "CAT">,
+        new Handlers(),
+      ),
+    ).toThrow(/unhandled error code "USER_NOT_FOUND"/);
+  });
+
   it("treats codes that collide with Object.prototype as ordinary codes", () => {
     // Codes like "toString"/"valueOf"/"hasOwnProperty" are valid catalog codes,
     // but a prototype-chain lookup would resolve them to inherited Object methods

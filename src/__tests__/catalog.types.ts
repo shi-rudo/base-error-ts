@@ -225,6 +225,38 @@ AuthzErrors.is(caught, "restaurant.authz.missing_role");
 
 declare const authzError: AuthzError;
 
+const KeyNamedLikeAnInheritedMethod = defineErrors({
+  toString: { category: "INTERNAL", retryable: false },
+  other: { category: "INTERNAL", retryable: false },
+});
+declare const errorOfInheritedMethodKey: CatalogError<
+  typeof KeyNamedLikeAnInheritedMethod
+>;
+
+// @ts-expect-error the inherited toString does not count as a handler for the key toString
+KeyNamedLikeAnInheritedMethod.match(errorOfInheritedMethodKey, {
+  other: () => 1,
+});
+
+KeyNamedLikeAnInheritedMethod.match(errorOfInheritedMethodKey, {
+  toString: () => "handled",
+  other: () => "other",
+});
+
+KeyNamedLikeAnInheritedMethod.match(errorOfInheritedMethodKey, {
+  other: () => 1,
+  _: () => 2,
+});
+
+const symbolHandlerKey = Symbol("symbol-key");
+
+AuthzErrors.match(authzError, {
+  not_a_member: () => 1,
+  missing_role: () => 2,
+  // @ts-expect-error a symbol key next to a complete table holds no handler
+  [symbolHandlerKey]: () => "s",
+});
+
 const exhaustiveResult: string = AuthzErrors.match(authzError, {
   not_a_member: (error) => error.code,
   missing_role: (error) => error.details?.role ?? "unknown",

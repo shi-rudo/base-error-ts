@@ -2,13 +2,14 @@
 
 ## v9 to v10
 
-v10 has four breaking changes. It ships one ES module build (proposal 0019):
-the CommonJS build is gone, and `require()` loads the ES module build on
-Node.js 24, so `import` and `require` load the same classes. A redaction policy
-in a catalog definition is a floor (proposal 0021): a policy on a single error
+These are the breaking changes of v10. It ships one ES module build
+(proposal 0019): the CommonJS build is gone, and `require()` loads the ES module
+build on Node.js 24, so `import` and `require` load the same classes. A
+redaction policy in a catalog definition is a floor (proposal 0021): a policy on a single error
 adds to it and no longer replaces it. `matchError` is now `matchErrorCode`,
 without an alias. It rejects a handler for a code that the union does not
-contain. The other changes of v10 add features
+contain. `_` receives only the codes without a handler. `ErrorClassSet.match`
+runs only an own handler. The other changes of v10 add features
 and keep the behavior of v9: `logObjectOf`, the subpaths
 `@shirudo/base-error/pino` and `@shirudo/base-error/sentry`, and the `prefix`
 and `match` of a catalog.
@@ -76,6 +77,14 @@ and its errors reached `_`.
   `_`, its errors reached `_`. To send a code to `_`, leave its key out. For a
   conditional handler, write `USER_NOT_FOUND: handler ?? fallback`. The same
   holds for `_` itself, also in a table with a handler for every code.
+- A table without a handler for a code named like a member of
+  `Object.prototype`, such as `toString`, is a compile error now, also in
+  `Catalog.match` and `ErrorClassSet.match`. The inherited member fulfilled the
+  required key. The error reads
+  `matchErrorCode: toString needs a handler of its own`. Add the handler.
+- A symbol key is a compile error now, also in `Catalog.match`. No code reaches
+  it, and its return type widened the result. The error reads
+  `a handler table takes no symbol key`. Delete the key.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. The handler of that code was the catch-all, and the compiler
   stopped checking the other codes. Rename the code. A table with only `_`
@@ -94,8 +103,9 @@ and its errors reached `_`.
 - In a union of a branded code and literal codes, every literal code needs a
   handler, but the compiler does not check the branded code. A table without a
   handler for it compiles, and that error throws at runtime, so give such a table
-  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
-  name it, assign the error to a variable typed
+  a `_` handler. A named handler that reads its parameter can fail to compile in
+  such a table, and on TypeScript 7 the error then says that the branded code is
+  not a code of this error. To read the error, assign it to a variable typed
   `StructuredError<string, string>`.
 - On TypeScript before 5.3, a function generic over a union of two enums checks
   the table against the code of one enum only. Assign the error to a variable
@@ -117,6 +127,17 @@ has no handler. With a handler for every code, it receives `never`.
   to compile. Type the parameter with the whole union, or with the members
   that reach `_`.
 - The runtime is unchanged.
+
+### `ErrorClassSet.match` runs only an own handler
+
+- A class instance as a table compiled and ran its methods. It still compiles,
+  because a type does not say where a method lives, and the call now throws
+  `match: no case for key "<key>" of this error class set`. Write the table as
+  an object literal. `matchErrorCode` and `Catalog.match` already read only own
+  properties.
+- A key named like a member of `Object.prototype`, such as `toString`, ran the
+  inherited method when the table had no handler for it. Now the compiler
+  rejects such a table, and a cast past the compiler throws at runtime.
 
 ## v8 to v9
 

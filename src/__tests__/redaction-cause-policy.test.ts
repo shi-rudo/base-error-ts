@@ -168,7 +168,7 @@ describe("a cause's own redaction policy holds when another error logs it", () =
       category: "C",
       retryable: false,
       message: "leaf",
-      details: { secret: "leaf-secret" },
+      details: { secret: "leaf-hunter2" },
     }).redact(["secret"]);
     for (let level = 0; level < 50; level++) {
       err = new StructuredError({
@@ -176,7 +176,7 @@ describe("a cause's own redaction policy holds when another error logs it", () =
         category: "C",
         retryable: false,
         message: "wrap",
-        details: { secret: `secret-${level}` },
+        details: { secret: `hunter2-${level}` },
         cause: err,
       }).redact(["secret"]);
     }
@@ -191,8 +191,8 @@ describe("a cause's own redaction policy holds when another error logs it", () =
     }
 
     expect(visited).toBe(51);
-    expect(JSON.stringify(outer)).not.toContain("secret-");
-    expect(JSON.stringify(outer)).not.toContain("leaf-secret");
+    expect(JSON.stringify(outer)).not.toContain("hunter2-");
+    expect(JSON.stringify(outer)).not.toContain("leaf-hunter2");
   });
 
   it("keeps toString() as it was: a denied message is masked, details never render", () => {

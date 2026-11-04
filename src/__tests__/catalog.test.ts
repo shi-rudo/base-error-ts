@@ -613,7 +613,7 @@ describe("defineErrors with a prefix", () => {
     const cause = new Error("membership lookup failed");
 
     const error = AuthzErrors.create.missing_role("actor 42 lacks a role", {
-      details: { role: "owner" },
+      details: { role: "hunter2" },
       cause,
     });
 
@@ -623,9 +623,9 @@ describe("defineErrors with a prefix", () => {
     expect(error.category).toBe("FORBIDDEN");
     expect(error.retryable).toBe(false);
     expect(error.message).toBe("actor 42 lacks a role");
-    expect(error.details).toEqual({ role: "owner" });
+    expect(error.details).toEqual({ role: "hunter2" });
     expect((error as unknown as { cause: unknown }).cause).toBe(cause);
-    expect(JSON.stringify(error.toLogObject())).not.toContain("owner");
+    expect(JSON.stringify(error.toLogObject())).not.toContain("hunter2");
   });
 
   it("maps each key to its code in a frozen namespace", () => {
@@ -875,6 +875,24 @@ describe("Catalog.match", () => {
 
     expect(() =>
       AuthzErrors.match(error as AuthzError, casesWithoutCatchAll as never),
+    ).toThrow(
+      'match: no case for key "not_a_member" of error code "restaurant.authz.not_a_member", and no "_" catch-all',
+    );
+  });
+
+  it("throws for a class instance as a table, because its methods are not own", () => {
+    class Handlers {
+      not_a_member() {
+        return "not a member";
+      }
+      missing_role() {
+        return "missing role";
+      }
+    }
+    const error = AuthzErrors.create.not_a_member("actor 42 is no member");
+
+    expect(() =>
+      AuthzErrors.match(error as AuthzError, new Handlers()),
     ).toThrow(
       'match: no case for key "not_a_member" of error code "restaurant.authz.not_a_member", and no "_" catch-all',
     );
