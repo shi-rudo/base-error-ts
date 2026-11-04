@@ -62,35 +62,41 @@ Register each error that a client can cause. In Fastify, these errors carry a
 `code`:
 
 ```ts
-const catalog = definePublicErrors({
-  fallback: { publicCode: "internal_error", status: 500 },
-})
-  .registerByCode("FST_ERR_CTP_INVALID_JSON_BODY", {
-    publicCode: "invalid_json",
-    status: 400,
-  })
-  .registerByCode("FST_ERR_VALIDATION", {
-    publicCode: "invalid_request",
-    status: 400,
-  })
-  .registerByCode("FST_ERR_CTP_BODY_TOO_LARGE", {
-    publicCode: "payload_too_large",
-    status: 413,
-  });
-
-app.setErrorHandler((error, request, reply) => {
-  const { status, headers, body } = toProblem(catalog, project(catalog, error));
-  return reply.status(status).headers(headers).send(body);
-});
+import Fastify from "fastify";
+import {
+  definePublicErrors,
+  project,
+  toProblem,
+} from "@shirudo/base-error/public-error";
 ```
 
-Fastify has more of these codes, for example `FST_ERR_CTP_EMPTY_JSON_BODY`
-(400) and `FST_ERR_CTP_INVALID_MEDIA_TYPE` (415).
+<<< @/../examples/fastify-error-handler.ts#usage{ts}
+
+Fastify has more of these codes. Register each code that your routes can raise.
 
 In Express, register an error middleware with four parameters after the routes,
 and send the same result from it. The errors of `express.json()` have no
 `code`. They have a `type`, for example `entity.parse.failed` (400) and
-`entity.too.large` (413). Register them with `register` and a `match` function.
+`entity.too.large` (413). Register them with `register` and a `match` function:
+
+```ts
+import express from "express";
+import type { ErrorRequestHandler } from "express";
+import {
+  definePublicErrors,
+  project,
+  toProblem,
+} from "@shirudo/base-error/public-error";
+```
+
+<<< @/../examples/express-error-handler.ts#usage{ts}
+
+In this snippet, `routes` is the router that holds your routes.
+
+The snippets come from `examples/fastify-error-handler.ts` and
+`examples/express-error-handler.ts`. CI runs both against Fastify 5 and
+Express 5. Each example sends real requests and fails if a response holds more
+than the public problem.
 
 Log the error in the same handler, see [Logging with pino](./logging-with-pino).
 
