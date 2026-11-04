@@ -91,6 +91,15 @@ and its errors reached `_`.
   `Code extends "A" | "B"`, it takes no table on TypeScript 5.4 and later. To
   name handlers, assign the error to a variable typed with the union of its
   codes, or with `StructuredError<string, string>`, and match that variable.
+- In a union of a branded code and literal codes, every literal code needs a
+  handler, but the compiler does not check the branded code. A table without a
+  handler for it compiles, and that error throws at runtime, so give such a table
+  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
+  name it, assign the error to a variable typed
+  `StructuredError<string, string>`.
+- On TypeScript before 5.3, a function generic over a union of two enums checks
+  the table against the code of one enum only. Assign the error to a variable
+  typed with the union, and match that variable.
 - The runtime is unchanged. A wide `StructuredError<string, string>`, a branded
   code such as `string & { __brand }` and an `any` error still take a handler
   for any code.

@@ -314,6 +314,41 @@ const restOfBrandedLiterals: "B" & CodeBrand = matchErrorCode(
   { A: () => brandedCodeB, _: (error) => error.code },
 );
 
+enum CardCode {
+  Declined = "DECLINED",
+}
+enum BankCode {
+  Refused = "REFUSED",
+}
+declare const paymentFailure:
+  StructuredError<CardCode, string> | StructuredError<BankCode, string>;
+
+const codeOfEachEnum: CardCode | BankCode = matchErrorCode(paymentFailure, {
+  DECLINED: (error): CardCode => error.code,
+  REFUSED: (error): BankCode => error.code,
+});
+
+const restOfTwoEnums: CardCode = matchErrorCode(paymentFailure, {
+  REFUSED: (): CardCode => CardCode.Declined,
+  _: (error) => error.code,
+});
+
+// @ts-expect-error a union of two enums needs a handler for the code of the second enum
+matchErrorCode(paymentFailure, { DECLINED: () => 1 });
+
+// @ts-expect-error a union of two enums needs a handler for the code of the first enum
+matchErrorCode(paymentFailure, { REFUSED: () => 1 });
+
+declare const brandedAndTwoLiterals:
+  | StructuredError<"A" & CodeBrand, string>
+  | StructuredError<"B", string>
+  | StructuredError<"C", string>;
+
+// @ts-expect-error a literal code stays required next to a branded code
+matchErrorCode(brandedAndTwoLiterals, { A: () => 1, B: () => 2 });
+
+matchErrorCode(brandedAndTwoLiterals, { B: () => 1, C: () => 2 });
+
 declare const literalAndBrandedError:
   | StructuredError<"KNOWN", string>
   | StructuredError<string & CodeBrand, string>;
@@ -461,6 +496,8 @@ void namedHandlerOfBareCode;
 void statusOfAnnotatedCode;
 void brandedCodeWithCatchAll;
 void openCodeWithCatchAll;
+void codeOfEachEnum;
+void restOfTwoEnums;
 void brandedLiteralsComplete;
 void brandedLiteralsCatchAll;
 void literalAndBrandedWithCatchAll;

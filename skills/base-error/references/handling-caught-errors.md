@@ -65,6 +65,15 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   error.
 - A union with the code `_` cannot name a handler next to `_`: `_` is the
   catch-all. A table with only `_` compiles.
+- In a union of a branded code and literal codes, every literal code needs a
+  handler, but the compiler does not check the branded code. A table without a
+  handler for it compiles, and that error throws at runtime, so give such a table
+  a `_` handler. TypeScript 7 also rejects a handler for the branded code. To
+  name it, assign the error to a variable typed
+  `StructuredError<string, string>`.
+- On TypeScript before 5.3, a function generic over a union of two enums checks
+  the table against the code of one enum only. Assign the error to a variable
+  typed with the union, and match that variable.
 - A table typed `Record<string, …>` does not pass for a closed union. Write
   the table as an object literal.
 - In a generic function, an error typed `StructuredError<Code, string>` with
