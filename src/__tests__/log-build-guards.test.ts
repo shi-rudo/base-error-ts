@@ -104,7 +104,7 @@ describe("log build guards", () => {
 
   it("does not re-enter a hook through a nested error", () => {
     let calls = 0;
-    const error = new OwnFieldsError(() => {
+    const error: OwnFieldsError = new OwnFieldsError(() => {
       calls++;
       return { nested: { error }, retained: "value" };
     });
