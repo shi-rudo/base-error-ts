@@ -234,9 +234,11 @@ The compiler checks names only against known codes:
   compiler error says only that `any` is not assignable to `never`. If the
   table holds only such handlers, the compiler error names the missing codes.
 - A handler that can be `undefined` fails to compile, also next to `_`. It does
-  not count as a handler. To send a code to `_`, leave its key out. For a
-  conditional handler, write `USER_NOT_FOUND: handler ?? fallback`. The same
-  holds for `_` itself, also in a table with a handler for every code.
+  not count as a handler. The error names the key, for example
+  `matchErrorCode: the handler of USER_NOT_FOUND can be undefined`. To send a
+  code to `_`, leave its key out. For a conditional handler, write
+  `USER_NOT_FOUND: handler ?? fallback`. The same holds for `_` itself, also in
+  a table with a handler for every code.
 
 ### Per-case narrowing
 
