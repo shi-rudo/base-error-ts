@@ -19,6 +19,7 @@ import {
 import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
 import { isNativeError } from "./native-error.js";
 import {
+  isObjectLike,
   readMembers,
   readOwnEnumerableKeys,
   readOwnProperty,
@@ -222,7 +223,7 @@ export class BaseError<T extends string> extends Error {
     // every build.
     const resolvedName =
       options.name ??
-      (new.target === BaseError ? "BaseError" : this.constructor.name);
+      (new.target === BaseError ? "BaseError" : new.target.name);
     this.name = resolvedName as T;
     this._tag = resolvedName;
 
@@ -235,8 +236,14 @@ export class BaseError<T extends string> extends Error {
     // Guarded: under native class semantics the prototype is already correct,
     // and an unconditional setPrototypeOf would deopt every construction (V8
     // hidden-class transition) for nothing.
-    if (Object.getPrototypeOf(this) !== new.target.prototype) {
-      Object.setPrototypeOf(this, new.target.prototype);
+    // A target without an object prototype keeps the prototype that `super` set,
+    // as a plain `Error` does.
+    const targetPrototype: unknown = new.target.prototype;
+    if (
+      isObjectLike(targetPrototype) &&
+      Object.getPrototypeOf(this) !== targetPrototype
+    ) {
+      Object.setPrototypeOf(this, targetPrototype as object);
     }
 
     // Cross-runtime best-effort stack collection, deferred: capturing is
