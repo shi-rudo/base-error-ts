@@ -136,6 +136,31 @@ check(
     .some((line) => line.includes("callerOfTheProxiedClass")) === true,
 );
 
+function SmokeLegacyError(message) {
+  return Reflect.construct(BaseError, [message], SmokeLegacyError);
+}
+SmokeLegacyError.prototype = Object.create(BaseError.prototype);
+check(
+  "ES5 inheritance without a reset of the constructor keeps its own name",
+  SmokeLegacyError("m").name === "SmokeLegacyError",
+);
+const ProxiedBaseError = new Proxy(BaseError, {});
+check(
+  "a proxy around BaseError keeps the name without the binding of the bundler",
+  new ProxiedBaseError("m").name === "BaseError",
+);
+const withSmokeMixin = (Base) => class extends Base {};
+check(
+  "an anonymous class from a mixin has a name",
+  new (withSmokeMixin(BaseError))("m").name === "BaseError",
+);
+function SmokeBoundTarget() {}
+check(
+  "Reflect.construct with a target without a prototype creates an error",
+  Reflect.construct(BaseError, ["m"], SmokeBoundTarget.bind(undefined))
+    .message === "m",
+);
+
 // Totality: a hostile cause must not break the log path.
 const hostile = new Error("hostile");
 Object.defineProperty(hostile, "stack", {

@@ -3,7 +3,7 @@
  *
  * The bundler rewrites a class into a renamed binding when its body reads its
  * own statics (`var _BaseError = class _BaseError ...`). Without a guard,
- * `constructor.name`, the fallback for `name`/`_tag`, reports that binding.
+ * `new.target.name`, the fallback for `name`/`_tag`, reports that binding.
  * This check fails the build when a bundle leaks a mangled name.
  *
  * Coverage is derived in both directions. Every export whose prototype chain
