@@ -54,7 +54,7 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **The stack of a catalog error starts at the caller of the factory.** The first frame was the factory inside the package, so every catalog error showed the same line of the package, and the factory took one frame of `Error.stackTraceLimit`. The capture now starts at the caller, also for the result of `toStructuredError`. An engine without `Error.captureStackTrace` keeps that frame.
 
-- **A stack without a header keeps its first frame.** The stack filter dropped the first line as the header, also when `Error.prepareStackTrace` wrote no header. That line held the caller of the error. The filter now recognizes a frame in the `at` format and in the `fn@file` format.
+- **A stack without a header keeps its first frame.** The stack filter dropped the first line as the header, also when `Error.prepareStackTrace` wrote no header. That line held the caller of the error, for example with `(_, frames) => frames.join("\n")`. The filter now drops the first line only when it has a known form of the raw header. Any other first line stays.
 
 - **A stack keeps the frame of a consumer that holds a name of the library.** The stack filter dropped each line with a text such as `new BaseError` or `installLazyStack`. A consumer class `BaseErrorMapper` whose constructor creates an error lost the frame `new BaseErrorMapper`, the place where the error started. `Error.captureStackTrace` already removes the frames of the library, so no text match runs after it now. An engine without `Error.captureStackTrace` removes the two top frames by position. This also removes the frame of the `BaseError` constructor in the `fn@file` format.
 
