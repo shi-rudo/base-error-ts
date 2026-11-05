@@ -228,6 +228,13 @@ err.toLogObject().details; // { userId: "1", email: "[REDACTED]", ssn: "[REDACTE
 JSON.stringify(err); // also masked
 ```
 
+A name in the list matches only a key with the same case.
+`redact(["authorization"])` does not mask a key named `Authorization`, so a copy
+of the HTTP headers can leak. List each spelling, or use
+[`redactAllow`](#allow-list-higher-assurance), which masks `Authorization` unless
+you list that spelling. A catalog `redaction` policy matches a key in the same
+way.
+
 The policy travels with the error. When another error carries it as `cause`
 (or as a member of an aggregate), the cause node in the outer log object is
 masked by the cause's own policy first, over the node and everything beneath
@@ -284,6 +291,10 @@ partial masking or type preservation:
 err.redact(["card"], { mask: (v) => "****" + String(v).slice(-4) }); // ****6789
 err.redact(["age"], { mask: () => 0 }); // keep the type
 ```
+
+A function that returns `undefined` leaves the key with the value `undefined` in
+the log object. `JSON.stringify` drops such a key, so a JSON log line does not
+show it.
 
 For the common "show _which_ secret it was without exposing it" case, use the
 built-in `partialMask`, which reveals a prefix/suffix and masks the rest, and
@@ -478,7 +489,9 @@ It is for reconstruction **within one trust/bounded-context boundary**:
   `structuredClone`; `fromJSON` restores the typed error. `structuredClone` also
   **drops an `AggregateError`'s members** and degrades the class to a plain
   `Error` (measured on Node, Bun, Deno and workerd), so for aggregates this
-  round-trip is the only lossless way across the boundary.
+  round-trip is the only lossless way across the boundary. It also drops the
+  `code` and the `details` of a `StructuredError`. Node 24 keeps the `cause`, and
+  Bun 1.4 drops it.
 - **Job queues / durable storage**: reconstruct an error parked by the same
   system.
 - **Log replay / forensics**: parse a logged error JSON back into an object.

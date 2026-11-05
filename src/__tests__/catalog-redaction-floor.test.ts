@@ -54,6 +54,29 @@ function profileFailed() {
 }
 
 describe("a catalog redaction policy as a floor", () => {
+  it("masks only the spelling of a key that the catalog denies", () => {
+    const HeaderErrors = defineErrors({
+      HEADERS_REJECTED: {
+        category: "AUTH",
+        retryable: false,
+        details: detailsType<{
+          authorization: string;
+          Authorization: string;
+        }>(),
+        redaction: { mode: "deny", keys: ["authorization"] },
+      },
+    });
+
+    const error = HeaderErrors.create.HEADERS_REJECTED("headers rejected", {
+      details: { authorization: "lower", Authorization: "upper" },
+    });
+
+    expect(error.toLogObject().details).toEqual({
+      authorization: "[REDACTED]",
+      Authorization: "upper",
+    });
+  });
+
   it("keeps a catalog deny-list when an instance denies one more key", () => {
     const error = loginFailed().redact(["email"]);
 

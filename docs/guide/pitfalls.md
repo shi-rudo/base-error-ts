@@ -225,6 +225,10 @@ Treat the output of every console as raw.
 of every cause and aggregate member below it, as the log object does. It does
 not apply `redactWith`, and it renders no `details`.
 
+A deny-list matches only a key with the same case. `redact(["authorization"])`
+does not mask `Authorization`. See
+[Observability](./observability#redacting-pii-from-logs).
+
 When redaction matters, log `logObjectOf(err)`, or use a logger setup that calls
 it, such as the [pino setup](./logging-with-pino). A plain pino logger reads the
 error itself, so `logger.error({ err })` leaks there too. Do not pass the error
