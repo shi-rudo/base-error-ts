@@ -208,21 +208,62 @@ describe("the consumer frames of an error", () => {
     })[0] as Error;
   }
 
+  // Each function has the same name, so the comparison also holds the top frame:
+  // the function that creates the error.
   const ways: ReadonlyArray<readonly [string, CreateError]> = [
-    ["new BaseError", () => new LibraryBaseError("m")],
-    ["new StructuredError", () => new StructuredError(STRUCTURED_FIELDS)],
-    ["a default constructor", () => new SubclassWithDefaultConstructor("m")],
-    ["an own constructor", () => new SubclassWithOwnConstructor("m")],
-    ["a catalog factory", () => Errors.create.MAPPING_FAILED("m")],
-    ["toStructuredError on a string", () => toStructuredError("m")],
-    ["toStructuredError on an error", () => toStructuredError(new Error("m"))],
+    [
+      "new BaseError",
+      function consumerCreate() {
+        return new LibraryBaseError("m");
+      },
+    ],
+    [
+      "new StructuredError",
+      function consumerCreate() {
+        return new StructuredError(STRUCTURED_FIELDS);
+      },
+    ],
+    [
+      "a default constructor",
+      function consumerCreate() {
+        return new SubclassWithDefaultConstructor("m");
+      },
+    ],
+    [
+      "an own constructor",
+      function consumerCreate() {
+        return new SubclassWithOwnConstructor("m");
+      },
+    ],
+    [
+      "a catalog factory",
+      function consumerCreate() {
+        return Errors.create.MAPPING_FAILED("m");
+      },
+    ],
+    [
+      "toStructuredError on a string",
+      function consumerCreate() {
+        return toStructuredError("m");
+      },
+    ],
+    [
+      "toStructuredError on an error",
+      function consumerCreate() {
+        return toStructuredError(new Error("m"));
+      },
+    ],
     [
       "Reflect.construct with an unrelated class",
-      () => Reflect.construct(LibraryBaseError, ["m"], Object) as Error,
+      function consumerCreate() {
+        return Reflect.construct(LibraryBaseError, ["m"], Object) as Error;
+      },
     ],
     [
       "a proxied class",
-      () => new new Proxy(SubclassWithDefaultConstructor, {})("m"),
+      function consumerCreate() {
+        return new new Proxy(SubclassWithDefaultConstructor, {})("m");
+      },
     ],
   ];
   const callPatterns: ReadonlyArray<
@@ -234,27 +275,60 @@ describe("the consumer frames of an error", () => {
     ["an await chain", consumerAsyncOuter],
     ["an array callback", consumerCallback],
   ];
+  const stackFormats: ReadonlyArray<
+    readonly [string, typeof Error.prepareStackTrace]
+  > = [
+    ["the default format", Error.prepareStackTrace],
+    ["the call site format", (_error, frames) => frames.join("\n")],
+    [
+      "the function name format",
+      (_error, frames) =>
+        frames.map((frame) => frame.getFunctionName()).join("\n"),
+    ],
+    [
+      "the fn@file format",
+      (_error, frames) =>
+        frames.map((frame) => `${frame.getFunctionName()}@a.js:1:1`).join("\n"),
+    ],
+  ];
 
-  function consumerFramesOf(error: Error): string[] {
-    return String(error.stack)
-      .split("\n")
-      .flatMap((line) => line.match(/\b(?:new )?consumer\w*/i)?.[0] ?? []);
+  async function framesIn(
+    format: typeof Error.prepareStackTrace,
+    run: () => Error | Promise<Error>,
+  ): Promise<string[]> {
+    const original = Error.prepareStackTrace;
+    Error.prepareStackTrace = format;
+    try {
+      const error = await run();
+      return String(error.stack)
+        .split("\n")
+        .flatMap((line) => line.match(/\b(?:new )?consumer\w*/i)?.[0] ?? []);
+    } finally {
+      Error.prepareStackTrace = original;
+    }
   }
 
   it.each(
     ways.flatMap(([way, create]) =>
-      callPatterns.map(
-        ([callPattern, run]) => [way, callPattern, create, run] as const,
+      callPatterns.flatMap(([callPattern, run]) =>
+        stackFormats.map(
+          ([formatName, format]) =>
+            [way, callPattern, formatName, create, run, format] as const,
+        ),
       ),
     ),
   )(
-    "%s keeps every consumer frame of new Error in %s",
-    async (_way, _callPattern, create, run) => {
-      const baseline = consumerFramesOf(await run(() => new Error("m")));
+    "%s keeps every consumer frame of new Error in %s, in %s",
+    async (_way, _callPattern, _formatName, create, run, format) => {
+      const baseline = await framesIn(format, () =>
+        run(function consumerCreate() {
+          return new Error("m");
+        }),
+      );
 
-      const frames = consumerFramesOf(await run(create));
+      const frames = await framesIn(format, () => run(create));
 
-      expect(baseline.length).toBeGreaterThan(0);
+      expect(baseline[0]).toBe("consumerCreate");
       expect(frames).toEqual(baseline);
     },
   );
