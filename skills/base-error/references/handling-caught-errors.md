@@ -96,6 +96,9 @@ gives; a single `StructuredError<"A" | "B", string>` narrows only the code.
   takes no table on TypeScript 5.4 and later. To name handlers, assign the error
   to a variable typed with its codes or with `StructuredError<string, string>`,
   and match that variable.
+- An error whose code is only a branded string names no code. A named handler
+  that reads its parameter does not compile (TS7006). Annotate the parameter, or
+  assign the error to a variable typed `StructuredError<string, string>`.
 - In a function generic over the error (`E extends A | B`), `matchErrorCode`
   checks the table against the codes of the constraint, and each handler
   receives the error narrowed to its case. For a union of classes, the parameter

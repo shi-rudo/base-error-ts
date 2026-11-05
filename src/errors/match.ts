@@ -9,7 +9,9 @@ import type { StructuredError } from "./StructuredError.js";
  * type. When `E` is a single `StructuredError<"A" | "B", string>`, there is
  * nothing to narrow, so it stays `E`. `K` can be wider than a code, because a
  * branded code names every string. The type distributes over `E`, so an `E`
- * typed by a type parameter narrows through its constraint.
+ * typed by a type parameter narrows through a constraint that is a union of
+ * `StructuredError` types. A constraint that is a union of classes does not
+ * narrow: a handler then reads only `StructuredError<string, string>`.
  */
 type CaseArg<
   E extends StructuredError<string, string>,
@@ -323,11 +325,11 @@ type LiteralCodeHandlers<
  * codes. A union with the code `_` cannot name a handler next to `_`, because
  * `_` is the catch-all. Each handler receives the error narrowed to its case,
  * so `details` is the precise per-code type. In a function generic over a union
- * of classes, a handler receives only `StructuredError`. The `_` catch-all
- * receives the members of the union whose code has no handler. The return type
- * is the union of the handler return types. Only an own property of the table
- * counts as a handler. The compiler accepts a class instance as a table, and the
- * call throws at runtime.
+ * of classes, a handler receives only `StructuredError<string, string>`. The `_`
+ * catch-all receives the members of the union whose code has no handler. The
+ * return type is the union of the handler return types. Only an own property of
+ * the table counts as a handler. The compiler accepts a class instance as a
+ * table, and the call throws at runtime.
  *
  * Narrow an error caught as `unknown` first (e.g. with `isStructuredError`),
  * and annotate it as the expected union. The compiler cannot derive
