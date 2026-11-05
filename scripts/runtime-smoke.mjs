@@ -118,6 +118,24 @@ check(
   ) === true,
 );
 
+const ProxiedSmokeError = new Proxy(SmokeError, {});
+function callerOfTheProxiedClass() {
+  return new ProxiedSmokeError({
+    code: "SMOKE_FAILED",
+    category: "SMOKE",
+    retryable: false,
+    message: "m",
+  });
+}
+// JavaScriptCore writes a frame for the proxy above the caller.
+check(
+  "a stack of a proxied class holds no frame of the package above the caller",
+  callerOfTheProxiedClass()
+    .stack?.split("\n")
+    .slice(1, 3)
+    .some((line) => line.includes("callerOfTheProxiedClass")) === true,
+);
+
 // Totality: a hostile cause must not break the log path.
 const hostile = new Error("hostile");
 Object.defineProperty(hostile, "stack", {

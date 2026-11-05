@@ -345,6 +345,11 @@ describe("the stack of an error whose class constructor did not run", () => {
   );
   class SubclassBehindProxy extends LibraryBaseError<string> {}
   const ProxiedSubclass = new Proxy(SubclassBehindProxy, {});
+  class StructuredSubclassBehindProxy extends StructuredError<string, string> {}
+  const ProxiedStructuredSubclass = new Proxy(
+    StructuredSubclassBehindProxy,
+    {},
+  );
   const STRUCTURED_FIELDS = {
     code: "MAPPING_FAILED",
     category: "INTERNAL",
@@ -381,11 +386,28 @@ describe("the stack of an error whose class constructor did not run", () => {
     expect(String(error.stack)).toContain("callerOfTheCreation");
   });
 
-  it("leaves out the frames of the library for a proxied class", () => {
-    const error = new ProxiedSubclass("m");
+  it("starts at the caller of a proxied subclass of BaseError", () => {
+    function callerOfTheProxiedClass() {
+      return new ProxiedSubclass("m");
+    }
 
-    expect(String(error.stack)).not.toContain("installLazyStack");
-    expect(String(error.stack)).not.toContain("new BaseError");
+    const error = callerOfTheProxiedClass();
+
+    expect(String(error.stack).split("\n")[1]).toContain(
+      "callerOfTheProxiedClass",
+    );
+  });
+
+  it("starts at the caller of a proxied subclass of StructuredError", () => {
+    function callerOfTheProxiedClass() {
+      return new ProxiedStructuredSubclass(STRUCTURED_FIELDS);
+    }
+
+    const error = callerOfTheProxiedClass();
+
+    expect(String(error.stack).split("\n")[1]).toContain(
+      "callerOfTheProxiedClass",
+    );
   });
 
   it("leaves out the frame of the BaseError constructor after Reflect.construct", () => {
