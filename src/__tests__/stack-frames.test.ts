@@ -208,14 +208,63 @@ describe("the consumer frames of an error", () => {
     })[0] as Error;
   }
 
+  // Each function has the same name, so the comparison also holds the top frame:
+  // the function that creates the error.
   const ways: ReadonlyArray<readonly [string, CreateError]> = [
-    ["new BaseError", () => new LibraryBaseError("m")],
-    ["new StructuredError", () => new StructuredError(STRUCTURED_FIELDS)],
-    ["a default constructor", () => new SubclassWithDefaultConstructor("m")],
-    ["an own constructor", () => new SubclassWithOwnConstructor("m")],
-    ["a catalog factory", () => Errors.create.MAPPING_FAILED("m")],
-    ["toStructuredError on a string", () => toStructuredError("m")],
-    ["toStructuredError on an error", () => toStructuredError(new Error("m"))],
+    [
+      "new BaseError",
+      function consumerCreate() {
+        return new LibraryBaseError("m");
+      },
+    ],
+    [
+      "new StructuredError",
+      function consumerCreate() {
+        return new StructuredError(STRUCTURED_FIELDS);
+      },
+    ],
+    [
+      "a default constructor",
+      function consumerCreate() {
+        return new SubclassWithDefaultConstructor("m");
+      },
+    ],
+    [
+      "an own constructor",
+      function consumerCreate() {
+        return new SubclassWithOwnConstructor("m");
+      },
+    ],
+    [
+      "a catalog factory",
+      function consumerCreate() {
+        return Errors.create.MAPPING_FAILED("m");
+      },
+    ],
+    [
+      "toStructuredError on a string",
+      function consumerCreate() {
+        return toStructuredError("m");
+      },
+    ],
+    [
+      "toStructuredError on an error",
+      function consumerCreate() {
+        return toStructuredError(new Error("m"));
+      },
+    ],
+    [
+      "Reflect.construct with an unrelated class",
+      function consumerCreate() {
+        return Reflect.construct(LibraryBaseError, ["m"], Object) as Error;
+      },
+    ],
+    [
+      "a proxied class",
+      function consumerCreate() {
+        return new new Proxy(SubclassWithDefaultConstructor, {})("m");
+      },
+    ],
   ];
   const callPatterns: ReadonlyArray<
     readonly [string, (create: CreateError) => Error | Promise<Error>]
@@ -226,28 +275,149 @@ describe("the consumer frames of an error", () => {
     ["an await chain", consumerAsyncOuter],
     ["an array callback", consumerCallback],
   ];
+  const stackFormats: ReadonlyArray<
+    readonly [string, typeof Error.prepareStackTrace]
+  > = [
+    ["the default format", Error.prepareStackTrace],
+    ["the call site format", (_error, frames) => frames.join("\n")],
+    [
+      "the function name format",
+      (_error, frames) =>
+        frames.map((frame) => frame.getFunctionName()).join("\n"),
+    ],
+    [
+      "the fn@file format",
+      (_error, frames) =>
+        frames.map((frame) => `${frame.getFunctionName()}@a.js:1:1`).join("\n"),
+    ],
+  ];
 
-  function consumerFramesOf(error: Error): string[] {
-    return String(error.stack)
-      .split("\n")
-      .flatMap((line) => line.match(/\b(?:new )?consumer\w*/i)?.[0] ?? []);
+  async function framesIn(
+    format: typeof Error.prepareStackTrace,
+    run: () => Error | Promise<Error>,
+  ): Promise<string[]> {
+    const original = Error.prepareStackTrace;
+    Error.prepareStackTrace = format;
+    try {
+      const error = await run();
+      return String(error.stack)
+        .split("\n")
+        .flatMap((line) => line.match(/\b(?:new )?consumer\w*/i)?.[0] ?? []);
+    } finally {
+      Error.prepareStackTrace = original;
+    }
   }
 
   it.each(
     ways.flatMap(([way, create]) =>
-      callPatterns.map(
-        ([callPattern, run]) => [way, callPattern, create, run] as const,
+      callPatterns.flatMap(([callPattern, run]) =>
+        stackFormats.map(
+          ([formatName, format]) =>
+            [way, callPattern, formatName, create, run, format] as const,
+        ),
       ),
     ),
   )(
-    "%s keeps every consumer frame of new Error in %s",
-    async (_way, _callPattern, create, run) => {
-      const baseline = consumerFramesOf(await run(() => new Error("m")));
+    "%s keeps every consumer frame of new Error in %s, in %s",
+    async (_way, _callPattern, _formatName, create, run, format) => {
+      const baseline = await framesIn(format, () =>
+        run(function consumerCreate() {
+          return new Error("m");
+        }),
+      );
 
-      const frames = consumerFramesOf(await run(create));
+      const frames = await framesIn(format, () => run(create));
 
-      expect(baseline.length).toBeGreaterThan(0);
+      expect(baseline[0]).toBe("consumerCreate");
       expect(frames).toEqual(baseline);
     },
   );
+});
+
+describe("the stack of an error whose class constructor did not run", () => {
+  class UnrelatedClass {}
+  class OtherClass {}
+  class SubclassWithOverwrittenConstructor extends LibraryBaseError<string> {}
+  Object.defineProperty(
+    SubclassWithOverwrittenConstructor.prototype,
+    "constructor",
+    { value: OtherClass },
+  );
+  class SubclassBehindProxy extends LibraryBaseError<string> {}
+  const ProxiedSubclass = new Proxy(SubclassBehindProxy, {});
+  class StructuredSubclassBehindProxy extends StructuredError<string, string> {}
+  const ProxiedStructuredSubclass = new Proxy(
+    StructuredSubclassBehindProxy,
+    {},
+  );
+  const STRUCTURED_FIELDS = {
+    code: "MAPPING_FAILED",
+    category: "INTERNAL",
+    retryable: false,
+    message: "no mapping",
+  };
+
+  it.each<readonly [string, () => Error]>([
+    [
+      "Reflect.construct with an unrelated class",
+      () => Reflect.construct(LibraryBaseError, ["m"], UnrelatedClass) as Error,
+    ],
+    [
+      "Reflect.construct of a subclass with an unrelated class",
+      () =>
+        Reflect.construct(
+          StructuredError,
+          [STRUCTURED_FIELDS],
+          UnrelatedClass,
+        ) as Error,
+    ],
+    [
+      "an overwritten prototype constructor",
+      () => new SubclassWithOverwrittenConstructor("m"),
+    ],
+    ["a proxied class", () => new ProxiedSubclass("m")],
+  ])("holds the caller after %s", (_name, create) => {
+    function callerOfTheCreation() {
+      return create();
+    }
+
+    const error = callerOfTheCreation();
+
+    expect(String(error.stack)).toContain("callerOfTheCreation");
+  });
+
+  it("starts at the caller of a proxied subclass of BaseError", () => {
+    function callerOfTheProxiedClass() {
+      return new ProxiedSubclass("m");
+    }
+
+    const error = callerOfTheProxiedClass();
+
+    expect(String(error.stack).split("\n")[1]).toContain(
+      "callerOfTheProxiedClass",
+    );
+  });
+
+  it("starts at the caller of a proxied subclass of StructuredError", () => {
+    function callerOfTheProxiedClass() {
+      return new ProxiedStructuredSubclass(STRUCTURED_FIELDS);
+    }
+
+    const error = callerOfTheProxiedClass();
+
+    expect(String(error.stack).split("\n")[1]).toContain(
+      "callerOfTheProxiedClass",
+    );
+  });
+
+  it("leaves out the frame of the BaseError constructor after Reflect.construct", () => {
+    const error = Reflect.construct(
+      LibraryBaseError,
+      ["m"],
+      UnrelatedClass,
+    ) as Error;
+
+    expect(String(error.stack)).not.toContain("new BaseError");
+    expect(String(error.stack)).not.toContain("installLazyStack");
+  });
 });
