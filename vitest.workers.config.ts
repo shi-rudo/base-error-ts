@@ -2,13 +2,14 @@ import { defineConfig } from "vitest/config";
 import { cloudflareTest } from "@cloudflare/vitest-pool-workers";
 
 // Runs the runtime-pure test suite on the real Workers runtime (workerd via
-// miniflare), to catch edge incompatibilities that Node accepts. Four files
+// miniflare), to catch edge incompatibilities that Node accepts. Five files
 // stay on Node, because the Workers runtime has no child_process, no node:vm,
 // no Node logger and no file system for the compiler:
 // - examples.test.ts shells out through child_process and fs.
 // - cross-realm.test.ts builds a second realm with node:vm.
 // - pino-setup.test.ts runs pino, a Node logger.
 // - compiler-message.test.ts runs the TypeScript compiler.
+// - verify-tag-is-main-tip.test.ts runs git through child_process.
 export default defineConfig({
   plugins: [cloudflareTest({ miniflare: { compatibilityDate: "2024-09-01" } })],
   test: {
@@ -18,6 +19,7 @@ export default defineConfig({
       "src/__tests__/cross-realm.test.ts",
       "src/__tests__/pino-setup.test.ts",
       "src/__tests__/compiler-message.test.ts",
+      "src/__tests__/verify-tag-is-main-tip.test.ts",
     ],
   },
 });
