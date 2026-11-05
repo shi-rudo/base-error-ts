@@ -52,6 +52,10 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Fixed
 
+- **The stack of a catalog error starts at the caller of the factory.** The first frame was the factory inside the package, so every catalog error showed the same line of the package, and the factory took one frame of `Error.stackTraceLimit`. The capture now starts at the caller. An engine without `Error.captureStackTrace` keeps that frame.
+
+- **A stack without a header keeps its first frame.** The stack filter dropped the first line as the header, also when `Error.prepareStackTrace` wrote no header. That line held the caller of the error. The filter now recognizes a frame in the `at` format and in the `fn@file` format.
+
 - **A frozen or sealed `BaseError` reads its stack.** The lazy getter of `stack` memoized the formatted stack with `Object.defineProperty`, which fails on a frozen or sealed object. So `err.stack` threw `TypeError: Cannot redefine property: stack`, and the log object of such an error had no `stack`. Now the getter keeps the value itself when it cannot redefine the property. An assignment to `stack` on a sealed error works as well.
 
 - **`toJSON()` does not throw when `toLogObject` throws.** `toJSON()` called `toLogObject()` through the instance. A subclass override that threw, or an own property `toLogObject` that was no function, made `JSON.stringify(err)` throw. A logger that serializes an error in a `catch` block then replaced the original error with that exception. Now the triage record takes its place, as for a custom policy that throws: `name`, `code`, `category`, `retryable` and the timestamps, with `[log redaction failed]` as the message. The full log object would be fail-open, because the override can be the step that scrubs a field. `logObjectOf` does the same for a `BaseError`.

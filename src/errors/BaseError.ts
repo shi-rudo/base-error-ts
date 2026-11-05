@@ -47,13 +47,18 @@ import {
   MAX_OWN_LOG_FIELDS_READ,
 } from "./walker-bounds.js";
 
+type StackStart = (...args: never[]) => unknown;
+
 // This avoids polluting the global scope
 interface V8ErrorConstructor {
-  captureStackTrace?(
-    targetObject: object,
-    constructorOpt?: (...args: unknown[]) => unknown,
-  ): void;
+  captureStackTrace?(targetObject: object, constructorOpt?: StackStart): void;
 }
+
+/**
+ * The function whose caller starts the stack of the next error. The constructor
+ * reads and clears it before any code of the consumer can run.
+ */
+let nextStackStart: StackStart | undefined;
 
 export type BaseErrorOptions = {
   /** Override the runtime error name. Intended for framework errors with stable codes. */
@@ -198,6 +203,11 @@ export class BaseError<T extends string> extends Error {
     cause?: unknown,
     options: BaseErrorOptions = {},
   ) {
+    // `super` converts the message, and that can run code of the consumer,
+    // which can create another error.
+    const stackStart = nextStackStart;
+    nextStackStart = undefined;
+
     // Always call super with just message for TypeScript compatibility
     super(message);
 
@@ -231,7 +241,7 @@ export class BaseError<T extends string> extends Error {
 
     // Cross-runtime best-effort stack collection, deferred: capturing is
     // cheap, symbolizing/filtering is not, so both happen on first read.
-    this.#installLazyStack();
+    this.#installLazyStack(stackStart);
   }
 
   /**
@@ -1173,7 +1183,7 @@ export class BaseError<T extends string> extends Error {
    * first capture costs ~1 microsecond. The `delete` of the own `stack` in
    * this method discards it unformatted.
    */
-  /*#__PURE__*/ #installLazyStack(): void {
+  /*#__PURE__*/ #installLazyStack(stackStart: StackStart | undefined): void {
     // Cast Error to our local interface for type-safe access.
     const V8Error = Error as V8ErrorConstructor;
 
@@ -1185,7 +1195,7 @@ export class BaseError<T extends string> extends Error {
       const holder: { stack?: string } = {};
       V8Error.captureStackTrace(
         holder,
-        this.constructor as (...args: unknown[]) => unknown,
+        stackStart ?? (this.constructor as StackStart),
       );
       readRawStack = () => holder.stack;
     } else {
@@ -1257,8 +1267,13 @@ export class BaseError<T extends string> extends Error {
       `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
     );
 
+    // A custom `Error.prepareStackTrace` can write no header, and neither does
+    // the `fn@file` format. The raw header holds no message, because the capture
+    // has none, so no text of the consumer can look like a frame here.
+    const firstFrame = /^\s*at\s|@/.test(lines[0] ?? "") ? 0 : 1;
+
     // Filter out internal frames
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = firstFrame; i < lines.length; i++) {
       const line = lines[i];
 
       // Skip undefined lines (shouldn't happen, but satisfy TypeScript)
@@ -1336,4 +1351,26 @@ export function setRedactionFloor(
   floor: RedactionFloor,
 ): void {
   installRedactionFloor(error, floor);
+}
+
+/**
+ * Creates an error whose stack starts at the caller of `factory`. The
+ * constructor trims only the frames of the class, so the frame of a function
+ * that creates the error stays on top otherwise. On an engine without
+ * `Error.captureStackTrace`, that frame stays. No entry point exports it.
+ */
+export function constructAtCallerOf<Fields, E>(
+  factory: StackStart,
+  ErrorClass: new (fields: Fields) => E,
+  fields: Fields,
+): E {
+  nextStackStart = factory;
+  try {
+    return new ErrorClass(fields);
+  } finally {
+    // A stack overflow can stop the constructor before it reads the start. The
+    // next error would then capture below a function that is not on its stack,
+    // and the engine leaves out every frame.
+    nextStackStart = undefined;
+  }
 }
