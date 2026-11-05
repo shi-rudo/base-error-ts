@@ -398,3 +398,75 @@ describe("totality in catch paths: a bigint cause", () => {
     expect(error.toLogObject().cause).toBe(42);
   });
 });
+
+describe("totality in catch paths: a custom Error.prepareStackTrace", () => {
+  function withPrepareStackTrace<T>(
+    prepare: (error: Error, frames: NodeJS.CallSite[]) => unknown,
+    run: () => T,
+  ): T {
+    const original = Error.prepareStackTrace;
+    Error.prepareStackTrace = prepare;
+    try {
+      return run();
+    } finally {
+      Error.prepareStackTrace = original;
+    }
+  }
+
+  const returnsTheFrames = (_error: Error, frames: NodeJS.CallSite[]) => frames;
+  const throws = () => {
+    throw new Error("prepareStackTrace failed");
+  };
+
+  it.each([
+    ["returns no string", returnsTheFrames],
+    ["throws", throws],
+  ])("reads stack as undefined when it %s", (_name, prepare) => {
+    const stack = withPrepareStackTrace(
+      prepare,
+      () => new BaseError("m").stack,
+    );
+
+    expect(stack).toBeUndefined();
+  });
+
+  it.each([
+    ["returns no string", returnsTheFrames],
+    ["throws", throws],
+  ])("keeps the log object without a stack when it %s", (_name, prepare) => {
+    const log = withPrepareStackTrace(prepare, () =>
+      new BaseError("m").toLogObject(),
+    );
+
+    expect(log.message).toBe("m");
+    expect(log.stack).toBeUndefined();
+  });
+
+  it("keeps the undefined stack after the hook is gone", () => {
+    const error = new BaseError("m");
+
+    withPrepareStackTrace(throws, () => error.stack);
+
+    expect(error.stack).toBeUndefined();
+  });
+
+  it("creates an error when it throws on an engine without captureStackTrace", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(
+      Error,
+      "captureStackTrace",
+    );
+    delete (Error as unknown as Record<string, unknown>).captureStackTrace;
+    try {
+      const stack = withPrepareStackTrace(
+        throws,
+        () => new BaseError("m").stack,
+      );
+
+      expect(stack).toBeUndefined();
+    } finally {
+      if (descriptor) {
+        Object.defineProperty(Error, "captureStackTrace", descriptor);
+      }
+    }
+  });
+});

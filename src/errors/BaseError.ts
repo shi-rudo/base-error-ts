@@ -1187,7 +1187,9 @@ export class BaseError<T extends string> extends Error {
     // Cast Error to our local interface for type-safe access.
     const V8Error = Error as V8ErrorConstructor;
 
-    let readRawStack: () => string | undefined;
+    // A read of the raw stack runs `Error.prepareStackTrace`, which can throw
+    // or return a value that is no string.
+    let readRawStack: () => unknown;
     if (typeof V8Error.captureStackTrace === "function") {
       // V8: capture onto a plain holder, not `this`, so the engine-lazy stack
       // stays unformatted until our getter reads it. The holder's own header
@@ -1197,16 +1199,15 @@ export class BaseError<T extends string> extends Error {
         holder,
         stackStart ?? (this.constructor as StackStart),
       );
-      readRawStack = () => holder.stack;
+      readRawStack = () => readProperty(holder, "stack");
     } else {
       // Non-V8 engines build the stack string eagerly at throw; only the
       // filtering is deferrable here.
-      let tempStack: string | undefined;
+      let tempStack: unknown;
       try {
         throw new Error();
       } catch (e) {
-        const thrown = e as Error;
-        tempStack = thrown.stack;
+        tempStack = readProperty(e, "stack");
       }
       readRawStack = () => tempStack;
     }
@@ -1252,10 +1253,8 @@ export class BaseError<T extends string> extends Error {
    * Filters out internal BaseError frames and updates the error header.
    * This provides cleaner stack traces by removing implementation details.
    */
-  /*#__PURE__*/ #filterInternalFrames(
-    stack: string | undefined,
-  ): string | undefined {
-    if (!stack) {
+  /*#__PURE__*/ #filterInternalFrames(stack: unknown): string | undefined {
+    if (typeof stack !== "string" || !stack) {
       return undefined;
     }
 
