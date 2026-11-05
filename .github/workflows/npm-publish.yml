@@ -9,7 +9,7 @@ name: Publish
 # Release flow:
 #   1. commit the version bump (package.json, jsr.json, the library_version
 #      of skills/base-error/SKILL.md, CHANGELOG.md) to main
-#   2. git tag v8.2.0 && git push --tags
+#   2. git tag v8.2.0 && git push --tags, on the tip of main
 #
 # Tags only, never a branch push: otherwise every documentation commit on main
 # would attempt a publish of a version that is already on the registry. A
@@ -45,6 +45,11 @@ jobs:
         with:
           node-version: 24.x
           registry-url: https://registry.npmjs.org
+
+      # If a pull request reaches main after the tag, this step fails and the
+      # job publishes nothing. Set the tag again on the new tip.
+      - name: Check that the tag is the tip of main
+        run: node scripts/verify-tag-is-main-tip.mjs
 
       # Trusted Publishing needs npm 11.5.1 or later. The step does not rely
       # on the npm that the Node.js release bundles.
