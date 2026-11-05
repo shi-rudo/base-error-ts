@@ -267,7 +267,7 @@ describe("BaseError", () => {
     });
   });
 
-  describe("Stack Trace Filtering", () => {
+  describe("Stack Trace Frames", () => {
     it("should not include internal BaseError frames in stack trace", () => {
       function createError() {
         return new TestError("Test error message");
@@ -284,8 +284,7 @@ describe("BaseError", () => {
 
       if (error.stack) {
         // Should not contain internal method names
-        expect(error.stack).not.toContain("#captureStack");
-        expect(error.stack).not.toContain("#filterInternalFrames");
+        expect(error.stack).not.toContain("installLazyStack");
         expect(error.stack).not.toContain("BaseError.constructor");
 
         // Should contain the proper error header
@@ -310,8 +309,7 @@ describe("BaseError", () => {
 
         if (error.stack) {
           expect(error.stack).toContain("TestError: Fallback test");
-          expect(error.stack).not.toContain("#captureStack");
-          expect(error.stack).not.toContain("#filterInternalFrames");
+          expect(error.stack).not.toContain("installLazyStack");
         }
       } finally {
         // Restore the original function
@@ -329,8 +327,7 @@ describe("BaseError", () => {
 
       if (error.stack) {
         expect(error.stack).toContain("AutoNamedError: Auto named test");
-        expect(error.stack).not.toContain("#captureStack");
-        expect(error.stack).not.toContain("#filterInternalFrames");
+        expect(error.stack).not.toContain("installLazyStack");
       }
     });
 

@@ -165,7 +165,7 @@ export class BaseError<T extends string> extends Error {
    */
   public readonly timestamp: number = Date.now();
 
-  /** Rich, filtered stack where the host supports it. */
+  /** The stack from the caller of the constructor, where the host has one. */
   public override readonly stack?: string;
 
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
@@ -240,7 +240,7 @@ export class BaseError<T extends string> extends Error {
     }
 
     // Cross-runtime best-effort stack collection, deferred: capturing is
-    // cheap, symbolizing/filtering is not, so both happen on first read.
+    // cheap, symbolizing/formatting is not, so both happen on first read.
     this.#installLazyStack(stackStart);
   }
 
@@ -1162,14 +1162,14 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Captures the stack now but defers symbolization and filtering to the
+   * Captures the stack now but defers symbolization and formatting to the
    * first read. V8 formats stacks lazily (via `Error.prepareStackTrace`), only
    * when code reads `stack`. A read in the constructor would force that work
    * for every error, including errors that are caught and never logged. So
    * the raw capture lands on a side holder, and `this.stack` becomes a
-   * memoizing accessor. The first get symbolizes, filters, and replaces
+   * memoizing accessor. The first get symbolizes, formats, and replaces
    * itself with a plain writable data property. A set before the first get
-   * (a rehydrated or user-assigned stack) wins unfiltered.
+   * (a rehydrated or user-assigned stack) wins unformatted.
    *
    * This capture duplicates the one `super()` already performed, and that is
    * deliberate: both remedies measure or behave worse. If `super()` runs with
@@ -1190,19 +1190,21 @@ export class BaseError<T extends string> extends Error {
     // A read of the raw stack runs `Error.prepareStackTrace`, which can throw
     // or return a value that is no string.
     let readRawStack: () => unknown;
+    let internalFrameCount: number;
     if (typeof V8Error.captureStackTrace === "function") {
       // V8: capture onto a plain holder, not `this`, so the engine-lazy stack
       // stays unformatted until our getter reads it. The holder's own header
-      // is discarded by #filterInternalFrames, which writes `name: message`.
+      // is discarded by #formatStack, which writes `name: message`.
       const holder: { stack?: string } = {};
       V8Error.captureStackTrace(
         holder,
         stackStart ?? (this.constructor as StackStart),
       );
       readRawStack = () => readProperty(holder, "stack");
+      internalFrameCount = 0;
     } else {
       // Non-V8 engines build the stack string eagerly at throw; only the
-      // filtering is deferrable here.
+      // formatting is deferrable here.
       let tempStack: unknown;
       try {
         throw new Error();
@@ -1210,6 +1212,8 @@ export class BaseError<T extends string> extends Error {
         tempStack = readProperty(e, "stack");
       }
       readRawStack = () => tempStack;
+      // This method and the constructor of `BaseError`.
+      internalFrameCount = 2;
     }
 
     // A frozen or sealed error cannot take the memoized data property, so the
@@ -1241,64 +1245,41 @@ export class BaseError<T extends string> extends Error {
       enumerable: false,
       get: (): string | undefined => {
         if (kept !== undefined) return kept.value;
-        const filtered = this.#filterInternalFrames(readRawStack());
-        install(filtered);
-        return filtered;
+        const formatted = this.#formatStack(readRawStack(), internalFrameCount);
+        install(formatted);
+        return formatted;
       },
       set: install,
     });
   }
 
   /**
-   * Filters out internal BaseError frames and updates the error header.
-   * This provides cleaner stack traces by removing implementation details.
+   * Writes the header `name: message` and removes the internal frames at the
+   * top of the stack. It removes by position, because a frame of the consumer
+   * can hold the same text as an internal frame, for example
+   * `new BaseErrorMapper`.
    */
-  /*#__PURE__*/ #filterInternalFrames(stack: unknown): string | undefined {
+  /*#__PURE__*/ #formatStack(
+    stack: unknown,
+    internalFrameCount: number,
+  ): string | undefined {
     if (typeof stack !== "string" || !stack) {
       return undefined;
     }
 
     const lines = stack.split("\n");
-    const filteredLines: string[] = [];
-
-    // Update the header with proper error name and message
-    filteredLines.push(
-      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
-    );
 
     // A custom `Error.prepareStackTrace` can write no header, and neither does
     // the `fn@file` format. The raw header holds no message, because the capture
     // has none, so no text of the consumer can look like a frame here.
     const firstFrame = /^\s*at\s|@/.test(lines[0] ?? "") ? 0 : 1;
 
-    // Filter out internal frames
-    for (let i = firstFrame; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Skip undefined lines (shouldn't happen, but satisfy TypeScript)
-      if (!line) {
-        continue;
-      }
-
-      // Skip internal BaseError frames
-      if (
-        line.includes("#installLazyStack") ||
-        line.includes("#filterInternalFrames") ||
-        line.includes("BaseError.constructor") ||
-        line.includes("new BaseError") ||
-        line.includes("installLazyStack_fn") || // Compiled private method name
-        line.includes("filterInternalFrames_fn") || // Compiled private method name
-        // Skip the temporary error creation frame
-        (line.includes("Object.<anonymous>") &&
-          line.includes("installLazyStack"))
-      ) {
-        continue;
-      }
-
-      filteredLines.push(line);
-    }
-
-    return filteredLines.join("\n");
+    return [
+      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
+      ...lines
+        .slice(firstFrame + internalFrameCount)
+        .filter((line) => line !== ""),
+    ].join("\n");
   }
 }
 
