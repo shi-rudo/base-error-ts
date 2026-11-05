@@ -1190,6 +1190,7 @@ export class BaseError<T extends string> extends Error {
     // A read of the raw stack runs `Error.prepareStackTrace`, which can throw
     // or return a value that is no string.
     let readRawStack: () => unknown;
+    let internalFrames: number;
     if (typeof V8Error.captureStackTrace === "function") {
       // V8: capture onto a plain holder, not `this`, so the engine-lazy stack
       // stays unformatted until our getter reads it. The holder's own header
@@ -1200,6 +1201,7 @@ export class BaseError<T extends string> extends Error {
         stackStart ?? (this.constructor as StackStart),
       );
       readRawStack = () => readProperty(holder, "stack");
+      internalFrames = 0;
     } else {
       // Non-V8 engines build the stack string eagerly at throw; only the
       // filtering is deferrable here.
@@ -1210,6 +1212,8 @@ export class BaseError<T extends string> extends Error {
         tempStack = readProperty(e, "stack");
       }
       readRawStack = () => tempStack;
+      // This method and the constructor of `BaseError`.
+      internalFrames = 2;
     }
 
     // A frozen or sealed error cannot take the memoized data property, so the
@@ -1241,7 +1245,10 @@ export class BaseError<T extends string> extends Error {
       enumerable: false,
       get: (): string | undefined => {
         if (kept !== undefined) return kept.value;
-        const filtered = this.#filterInternalFrames(readRawStack());
+        const filtered = this.#filterInternalFrames(
+          readRawStack(),
+          internalFrames,
+        );
         install(filtered);
         return filtered;
       },
@@ -1250,55 +1257,29 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Filters out internal BaseError frames and updates the error header.
-   * This provides cleaner stack traces by removing implementation details.
+   * Removes the internal frames at the top of the stack and updates the error
+   * header. It removes by position, because a frame of the consumer can hold
+   * the same text as an internal frame, for example `new BaseErrorMapper`.
    */
-  /*#__PURE__*/ #filterInternalFrames(stack: unknown): string | undefined {
+  /*#__PURE__*/ #filterInternalFrames(
+    stack: unknown,
+    internalFrames: number,
+  ): string | undefined {
     if (typeof stack !== "string" || !stack) {
       return undefined;
     }
 
     const lines = stack.split("\n");
-    const filteredLines: string[] = [];
-
-    // Update the header with proper error name and message
-    filteredLines.push(
-      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
-    );
 
     // A custom `Error.prepareStackTrace` can write no header, and neither does
     // the `fn@file` format. The raw header holds no message, because the capture
     // has none, so no text of the consumer can look like a frame here.
     const firstFrame = /^\s*at\s|@/.test(lines[0] ?? "") ? 0 : 1;
 
-    // Filter out internal frames
-    for (let i = firstFrame; i < lines.length; i++) {
-      const line = lines[i];
-
-      // Skip undefined lines (shouldn't happen, but satisfy TypeScript)
-      if (!line) {
-        continue;
-      }
-
-      // Skip internal BaseError frames
-      if (
-        line.includes("#installLazyStack") ||
-        line.includes("#filterInternalFrames") ||
-        line.includes("BaseError.constructor") ||
-        line.includes("new BaseError") ||
-        line.includes("installLazyStack_fn") || // Compiled private method name
-        line.includes("filterInternalFrames_fn") || // Compiled private method name
-        // Skip the temporary error creation frame
-        (line.includes("Object.<anonymous>") &&
-          line.includes("installLazyStack"))
-      ) {
-        continue;
-      }
-
-      filteredLines.push(line);
-    }
-
-    return filteredLines.join("\n");
+    return [
+      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
+      ...lines.slice(firstFrame + internalFrames).filter((line) => line !== ""),
+    ].join("\n");
   }
 }
 

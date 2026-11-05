@@ -52,6 +52,36 @@ check(
     .stack.split("\n")[1]
     ?.includes("callerOfTheCoercion") === true,
 );
+// The capture of the engine removes the frames of the library. No text match
+// runs after it, so the frame of a consumer with a similar name stays.
+class SmokeError extends StructuredError {}
+function callerOfTheConstructor() {
+  return [
+    new SmokeError({
+      code: "SMOKE_FAILED",
+      category: "SMOKE",
+      retryable: false,
+      message: "m",
+    }),
+  ];
+}
+check(
+  "constructed error stack starts at the caller of the constructor",
+  callerOfTheConstructor()[0]
+    .stack.split("\n")[1]
+    ?.includes("callerOfTheConstructor") === true,
+);
+class BaseErrorMapper {
+  constructor() {
+    this.error = new BaseError("m");
+  }
+}
+check(
+  "the stack keeps a frame of the consumer whose name starts with BaseError",
+  new BaseErrorMapper().error.stack
+    .split("\n")[1]
+    ?.includes("BaseErrorMapper") === true,
+);
 
 // Totality: a hostile cause must not break the log path.
 const hostile = new Error("hostile");

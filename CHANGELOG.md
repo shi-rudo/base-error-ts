@@ -56,6 +56,8 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 - **A stack without a header keeps its first frame.** The stack filter dropped the first line as the header, also when `Error.prepareStackTrace` wrote no header. That line held the caller of the error. The filter now recognizes a frame in the `at` format and in the `fn@file` format.
 
+- **A stack keeps the frame of a consumer that holds a name of the library.** The stack filter dropped each line with a text such as `new BaseError` or `installLazyStack`. A consumer class `BaseErrorMapper` whose constructor creates an error lost the frame `new BaseErrorMapper`, the place where the error started. `Error.captureStackTrace` already removes the frames of the library, so no text match runs after it now. An engine without `Error.captureStackTrace` removes the two top frames by position. This also removes the frame of the `BaseError` constructor in the `fn@file` format.
+
 - **A frozen or sealed `BaseError` reads its stack.** The lazy getter of `stack` memoized the formatted stack with `Object.defineProperty`, which fails on a frozen or sealed object. So `err.stack` threw `TypeError: Cannot redefine property: stack`, and the log object of such an error had no `stack`. Now the getter keeps the value itself when it cannot redefine the property. An assignment to `stack` on a sealed error works as well.
 
 - **`err.stack` does not throw when `Error.prepareStackTrace` fails.** A custom `Error.prepareStackTrace` that returned no string made `err.stack` throw `TypeError: stack.split is not a function`, and one that threw made `err.stack` throw too. A `catch` block that read the stack lost the original error. `err.stack` now reads as `undefined` in both cases.
