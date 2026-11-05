@@ -165,7 +165,7 @@ export class BaseError<T extends string> extends Error {
    */
   public readonly timestamp: number = Date.now();
 
-  /** Rich, filtered stack where the host supports it. */
+  /** The stack from the caller of the constructor, where the host has one. */
   public override readonly stack?: string;
 
   #redactor?: (log: Record<string, unknown>) => Record<string, unknown>;
@@ -1162,14 +1162,14 @@ export class BaseError<T extends string> extends Error {
   }
 
   /**
-   * Captures the stack now but defers symbolization and filtering to the
+   * Captures the stack now but defers symbolization and formatting to the
    * first read. V8 formats stacks lazily (via `Error.prepareStackTrace`), only
    * when code reads `stack`. A read in the constructor would force that work
    * for every error, including errors that are caught and never logged. So
    * the raw capture lands on a side holder, and `this.stack` becomes a
-   * memoizing accessor. The first get symbolizes, filters, and replaces
+   * memoizing accessor. The first get symbolizes, formats, and replaces
    * itself with a plain writable data property. A set before the first get
-   * (a rehydrated or user-assigned stack) wins unfiltered.
+   * (a rehydrated or user-assigned stack) wins unformatted.
    *
    * This capture duplicates the one `super()` already performed, and that is
    * deliberate: both remedies measure or behave worse. If `super()` runs with
