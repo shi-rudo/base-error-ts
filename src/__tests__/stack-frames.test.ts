@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { BaseError as LibraryBaseError, StructuredError } from "../index.js";
+import {
+  BaseError as LibraryBaseError,
+  defineErrors,
+  StructuredError,
+  toStructuredError,
+} from "../index.js";
 
 function stackLinesOf(error: Error): string[] {
   return String(error.stack).split("\n");
@@ -142,4 +147,107 @@ describe("the stack of an error on an engine without captureStackTrace", () => {
 
     expect(stackLinesOf(error)[1]).toContain("new BaseError");
   });
+});
+
+describe("the consumer frames of an error", () => {
+  type CreateError = () => Error;
+
+  const Errors = defineErrors({
+    MAPPING_FAILED: { category: "INTERNAL", retryable: false },
+  });
+  const STRUCTURED_FIELDS = {
+    code: "MAPPING_FAILED",
+    category: "INTERNAL",
+    retryable: false,
+    message: "no mapping",
+  };
+  class SubclassWithDefaultConstructor extends LibraryBaseError<string> {}
+  class SubclassWithOwnConstructor extends LibraryBaseError<string> {
+    readonly extra: number;
+
+    constructor(message: string) {
+      super(message);
+      this.extra = 1;
+    }
+  }
+
+  function consumerInner(create: CreateError) {
+    return create();
+  }
+  function consumerOuter(create: CreateError) {
+    return consumerInner(create);
+  }
+  class ConsumerService {
+    readonly error: Error;
+
+    constructor(create: CreateError) {
+      this.error = create();
+    }
+  }
+  function consumerThrower(create: CreateError): never {
+    throw create();
+  }
+  function consumerCatcher(create: CreateError) {
+    try {
+      return consumerThrower(create);
+    } catch (error) {
+      return error as Error;
+    }
+  }
+  async function consumerAsyncInner(create: CreateError) {
+    await null;
+    return create();
+  }
+  async function consumerAsyncOuter(create: CreateError) {
+    const error = await consumerAsyncInner(create);
+    return error;
+  }
+  function consumerCallback(create: CreateError) {
+    return [0].map(function consumerHandler() {
+      return create();
+    })[0] as Error;
+  }
+
+  const ways: ReadonlyArray<readonly [string, CreateError]> = [
+    ["new BaseError", () => new LibraryBaseError("m")],
+    ["new StructuredError", () => new StructuredError(STRUCTURED_FIELDS)],
+    ["a default constructor", () => new SubclassWithDefaultConstructor("m")],
+    ["an own constructor", () => new SubclassWithOwnConstructor("m")],
+    ["a catalog factory", () => Errors.create.MAPPING_FAILED("m")],
+    ["toStructuredError on a string", () => toStructuredError("m")],
+    ["toStructuredError on an error", () => toStructuredError(new Error("m"))],
+  ];
+  const callPatterns: ReadonlyArray<
+    readonly [string, (create: CreateError) => Error | Promise<Error>]
+  > = [
+    ["a call chain", consumerOuter],
+    ["a consumer constructor", (create) => new ConsumerService(create).error],
+    ["a throw and a catch", consumerCatcher],
+    ["an await chain", consumerAsyncOuter],
+    ["an array callback", consumerCallback],
+  ];
+
+  function consumerFramesOf(error: Error): string[] {
+    return String(error.stack)
+      .split("\n")
+      .flatMap((line) => line.match(/\b(?:new )?consumer\w*/i)?.[0] ?? []);
+  }
+
+  it.each(
+    ways.flatMap(([way, create]) =>
+      callPatterns.map(
+        ([callPattern, run]) => [way, callPattern, create, run] as const,
+      ),
+    ),
+  )(
+    "%s keeps every consumer frame of new Error in %s",
+    async (_way, _callPattern, create, run) => {
+      const baseline = consumerFramesOf(await run(() => new Error("m")));
+
+      const frames = consumerFramesOf(await run(create));
+
+      expect(baseline.length).toBeGreaterThan(0);
+      expect(frames).toEqual(baseline);
+    },
+  );
 });

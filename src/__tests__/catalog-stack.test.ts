@@ -20,6 +20,15 @@ function callerOfTheConstructor() {
   });
 }
 
+function ErrorReporter() {
+  return new StructuredError({
+    code: "USER_NOT_FOUND",
+    category: "NOT_FOUND",
+    retryable: false,
+    message: "no user",
+  });
+}
+
 function stackLinesOf(error: Error): string[] {
   return String(error.stack).split("\n");
 }
@@ -163,6 +172,10 @@ describe("a stack without a header", () => {
     frames.map((frame) => `    at ${frame.getFunctionName()}`).join("\n");
   const atSignFormat: typeof Error.prepareStackTrace = (_error, frames) =>
     frames.map((frame) => `${frame.getFunctionName()}@a.js:1:1`).join("\n");
+  const callSiteFormat: typeof Error.prepareStackTrace = (_error, frames) =>
+    frames.join("\n");
+  const functionNameFormat: typeof Error.prepareStackTrace = (_error, frames) =>
+    frames.map((frame) => frame.getFunctionName()).join("\n");
 
   function stackLinesWith(
     format: typeof Error.prepareStackTrace,
@@ -180,6 +193,8 @@ describe("a stack without a header", () => {
   it.each([
     ["the at format", atFormat],
     ["the fn@file format", atSignFormat],
+    ["the call site format", callSiteFormat],
+    ["the function name format", functionNameFormat],
   ])("keeps the caller of a catalog error in %s", (_name, format) => {
     const lines = stackLinesWith(format, () => callerOfTheFactory());
 
@@ -190,6 +205,8 @@ describe("a stack without a header", () => {
   it.each([
     ["the at format", atFormat],
     ["the fn@file format", atSignFormat],
+    ["the call site format", callSiteFormat],
+    ["the function name format", functionNameFormat],
   ])(
     "keeps the caller of a directly constructed error in %s",
     (_name, format) => {
@@ -199,4 +216,55 @@ describe("a stack without a header", () => {
       expect(lines[1]).toContain("callerOfTheConstructor");
     },
   );
+
+  it.each([
+    "Error",
+    "Error: ",
+    "[object Object]",
+    "undefined",
+    "undefined: undefined",
+  ])("replaces the header %j of a custom format", (rawHeader) => {
+    const format: typeof Error.prepareStackTrace = (_error, frames) =>
+      `${rawHeader}\n${frames.map((frame) => `    at ${frame}`).join("\n")}`;
+
+    const lines = stackLinesWith(format, () => callerOfTheConstructor());
+
+    expect(lines[0]).toBe("USER_NOT_FOUND: no user");
+    expect(lines[1]).toContain("callerOfTheConstructor");
+  });
+
+  it.each([
+    ["the call site format", callSiteFormat],
+    ["the function name format", functionNameFormat],
+  ])(
+    "keeps a first frame whose function name starts with Error in %s",
+    (_name, format) => {
+      const lines = stackLinesWith(format, ErrorReporter);
+
+      expect(lines[1]).toContain("ErrorReporter");
+    },
+  );
+
+  it.each(["undefined:1", "Error:1:2"])(
+    "keeps the first line %j, because it holds a location",
+    (firstLine) => {
+      const format: typeof Error.prepareStackTrace = (_error, frames) =>
+        `${firstLine}\n${frames.map((frame) => `    at ${frame}`).join("\n")}`;
+
+      const lines = stackLinesWith(format, () => callerOfTheConstructor());
+
+      expect(lines[1]).toBe(firstLine);
+    },
+  );
+
+  it("keeps an unknown first line, because a frame costs more to lose", () => {
+    const format: typeof Error.prepareStackTrace = (_error, frames) =>
+      `custom text\n${frames.map((frame) => `    at ${frame}`).join("\n")}`;
+
+    const lines = stackLinesWith(format, () => callerOfTheConstructor());
+
+    expect(lines[0]).toBe("USER_NOT_FOUND: no user");
+    expect(lines[1]).toBe("custom text");
+    expect(lines[2]).toContain("callerOfTheConstructor");
+  });
 });

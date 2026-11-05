@@ -81,6 +81,32 @@ check(
     ?.includes("BaseErrorMapper") === true,
 );
 
+const originalPrepareStackTrace = Error.prepareStackTrace;
+Error.prepareStackTrace = (_error, frames) => frames.join("\n");
+try {
+  check(
+    "a stack format without a header keeps the first frame",
+    callerOfTheConstructor()
+      .stack?.split("\n")[1]
+      ?.includes("callerOfTheConstructor") === true,
+  );
+} finally {
+  Error.prepareStackTrace = originalPrepareStackTrace;
+}
+function callerWithThrowingName() {
+  const error = new BaseError("m");
+  Object.defineProperty(error, "name", {
+    get() {
+      throw new Error("name getter");
+    },
+  });
+  return error;
+}
+check(
+  "a throwing name leaves the stack and its frames readable",
+  callerWithThrowingName().stack?.includes("callerWithThrowingName") === true,
+);
+
 // Totality: a hostile cause must not break the log path.
 const hostile = new Error("hostile");
 Object.defineProperty(hostile, "stack", {

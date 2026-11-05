@@ -1270,12 +1270,20 @@ export class BaseError<T extends string> extends Error {
     const lines = stack.split("\n");
 
     // A custom `Error.prepareStackTrace` can write no header, and neither does
-    // the `fn@file` format. The raw header holds no message, because the capture
-    // has none, so no text of the consumer can look like a frame here.
-    const firstFrame = /^\s*at\s|@/.test(lines[0] ?? "") ? 0 : 1;
+    // the `fn@file` format. The capture has no message, so the raw header has
+    // one of these forms. Any other first line stays, because a line too many
+    // costs less than a lost frame.
+    const firstFrame = /^(?:Error|\[object Object\]|undefined)(?::\s|:?$)/.test(
+      lines[0] ?? "",
+    )
+      ? 1
+      : 0;
+
+    const name = renderValue(readProperty(this, "name") ?? "Error", "Error");
+    const message = renderValue(readProperty(this, "message") ?? "", "");
 
     return [
-      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
+      `${name}: ${message}`,
       ...lines
         .slice(firstFrame + internalFrameCount)
         .filter((line) => line !== ""),
