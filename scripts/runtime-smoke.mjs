@@ -4,7 +4,7 @@
  * load-bearing behaviors to runtimes the suite cannot reach (Bun, Deno).
  * Run `npx tsup` first, then run this file with the target runtime.
  */
-import { BaseError, StructuredError } from "../dist/index.js";
+import { BaseError, StructuredError, defineErrors } from "../dist/index.js";
 import {
   definePublicErrors,
   project,
@@ -22,6 +22,20 @@ function check(name, ok) {
 const base = new BaseError("m");
 check("BaseError name", base.name === "BaseError");
 check("lazy stack reads as a string", typeof base.stack === "string");
+
+// The stack of a catalog error starts at the caller of the factory. The array
+// keeps the call out of tail position, where JavaScriptCore drops the frame of
+// the caller.
+const SmokeErrors = defineErrors({
+  SMOKE_FAILED: { category: "SMOKE", retryable: false },
+});
+function callerOfTheFactory() {
+  return [SmokeErrors.create.SMOKE_FAILED("m")];
+}
+check(
+  "catalog error stack starts at the caller of the factory",
+  callerOfTheFactory()[0].stack.split("\n")[1].includes("callerOfTheFactory"),
+);
 
 // Totality: a hostile cause must not break the log path.
 const hostile = new Error("hostile");

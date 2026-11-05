@@ -1,6 +1,10 @@
 import { StructuredError, rebuildFromJSON } from "./StructuredError.js";
 import type { AnyStructuredError } from "./StructuredError.js";
-import { createRedactionFloor, setRedactionFloor } from "./BaseError.js";
+import {
+  createRedactionFloor,
+  omitFactoryFrame,
+  setRedactionFloor,
+} from "./BaseError.js";
 import type { BuiltInRedactionPolicy, RedactionFloor } from "./BaseError.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { isArrayValue, isInstanceOf, readProperty } from "./guarded-read.js";
@@ -730,6 +734,7 @@ export function defineErrors(
         ...(options?.details !== undefined && { details: options.details }),
         ...(options?.cause !== undefined && { cause: options.cause }),
       });
+      omitFactoryFrame(error);
       if (spec.floor !== undefined) {
         setRedactionFloor(error, spec.floor);
       }

@@ -107,6 +107,8 @@ let installRedactionFloor: (
   floor: RedactionFloor,
 ) => void;
 
+let markFactoryFrame: (error: BaseError<string>) => void;
+
 /**
  * Application-specific base error that works across full Node.js, isolate "edge"
  * runtimes (Cloudflare Workers, Deno Deploy, Vercel Edge Functions) and modern
@@ -184,6 +186,12 @@ export class BaseError<T extends string> extends Error {
    * the floor. No public method sets, reads or clears it.
    */
   #floor?: RedactionFloor;
+
+  /**
+   * The first frame of the stack belongs to a function of this library that
+   * creates the error, not to its caller. {@link omitFactoryFrame} sets this.
+   */
+  #topFrameIsFactory?: boolean;
 
   /**
    * Creates a new BaseError instance with automatic name inference.
@@ -629,6 +637,9 @@ export class BaseError<T extends string> extends Error {
     };
     installRedactionFloor = (error, floor) => {
       error.#floor = floor;
+    };
+    markFactoryFrame = (error) => {
+      error.#topFrameIsFactory = true;
     };
   }
 
@@ -1257,8 +1268,15 @@ export class BaseError<T extends string> extends Error {
       `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
     );
 
+    // The position of a factory frame holds only for the format of V8 and Bun,
+    // whose frames start with `at`, below a header. A second capture with the
+    // factory as `constructorOpt` also removes the frame, but a measurement on
+    // Node 24 showed each catalog error about 40% slower to create.
+    const firstFrame =
+      this.#topFrameIsFactory && /^\s*at /.test(lines[1] ?? "") ? 2 : 1;
+
     // Filter out internal frames
-    for (let i = 1; i < lines.length; i++) {
+    for (let i = firstFrame; i < lines.length; i++) {
       const line = lines[i];
 
       // Skip undefined lines (shouldn't happen, but satisfy TypeScript)
@@ -1336,4 +1354,14 @@ export function setRedactionFloor(
   floor: RedactionFloor,
 ): void {
   installRedactionFloor(error, floor);
+}
+
+/**
+ * Leaves the first frame out of the stack of `error`. The constructor trims
+ * only the frames of the class, so the frame of a function that creates the
+ * error stays on top. `defineErrors` calls this for each error that it creates.
+ * No entry point exports it.
+ */
+export function omitFactoryFrame(error: BaseError<string>): void {
+  markFactoryFrame(error);
 }
