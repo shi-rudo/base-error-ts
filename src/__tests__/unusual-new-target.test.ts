@@ -41,6 +41,37 @@ describe("the identity of an error of an unusual target", () => {
     expect(error.name).toBe("SubclassBehindProxy");
   });
 
+  it("names an anonymous class from a mixin BaseError", () => {
+    function classFromMixin() {
+      return class extends BaseError<string> {};
+    }
+    const MixedError = classFromMixin();
+
+    const error = new MixedError("m");
+
+    expect(MixedError.name).toBe("");
+    expect(error.name).toBe("BaseError");
+    expect(error._tag).toBe("BaseError");
+    expect(String(error.stack).split("\n")[0]).toBe("BaseError: m");
+  });
+
+  it("names a class with a name that is no string BaseError", () => {
+    class ClassWithNumericName extends BaseError<string> {}
+    Object.defineProperty(ClassWithNumericName, "name", { value: 42 });
+
+    const error = new ClassWithNumericName("m");
+
+    expect(error.name).toBe("BaseError");
+  });
+
+  it("names BaseError behind a proxy BaseError", () => {
+    const ProxiedBaseError = new Proxy(BaseError, {});
+
+    const error = new ProxiedBaseError("m");
+
+    expect(error.name).toBe("BaseError");
+  });
+
   it("creates an error for a target whose prototype has no constructor", () => {
     function NullPrototypeTarget() {}
     NullPrototypeTarget.prototype = Object.create(null);

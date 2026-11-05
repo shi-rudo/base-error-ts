@@ -19,7 +19,6 @@ import {
 import { rootCauseWalk, type CauseWalk } from "./cause-walk.js";
 import { isNativeError } from "./native-error.js";
 import {
-  isObjectLike,
   readMembers,
   readOwnEnumerableKeys,
   readOwnProperty,
@@ -143,7 +142,7 @@ export class BaseError<T extends string> extends Error {
    * (an explicit `name` option, otherwise the constructor name), so it never
    * diverges from {@link name}.
    *
-   * Because the fallback is `constructor.name`, a build that minifies class
+   * Because the fallback is `new.target.name`, a build that minifies class
    * names will mangle it. For a stable discriminant either pass an explicit
    * `name`, or override `_tag` with a literal, which also narrows the
    * type:
@@ -216,14 +215,20 @@ export class BaseError<T extends string> extends Error {
     // otherwise fall back to the constructor name. Both `name` and `_tag`
     // derive from it so they can never diverge. Passing an explicit
     // `name` stabilizes the discriminant under class-name minification.
-    // A direct `new BaseError(...)` uses the literal instead of inference.
-    // The bundler rewrites this class into a renamed binding, because its
-    // body reads its own statics. Without the literal, `constructor.name`
-    // reports that binding (`_BaseError`). verify-dist.mjs guards this on
-    // every build.
+    // An error of this class, also behind a proxy, uses the literal instead of
+    // inference. The bundler rewrites this class into a renamed binding, because
+    // its body reads its own statics. Without the literal, `new.target.name`
+    // reports that binding (`_BaseError`). verify-dist.mjs guards this on every
+    // build. A class without a usable name, such as an anonymous class from a
+    // mixin, uses the literal too.
+    const inferredName: unknown = new.target.name;
     const resolvedName =
       options.name ??
-      (new.target === BaseError ? "BaseError" : new.target.name);
+      (typeof inferredName === "string" &&
+      inferredName !== "" &&
+      inferredName !== BaseError.name
+        ? inferredName
+        : "BaseError");
     this.name = resolvedName as T;
     this._tag = resolvedName;
 
@@ -240,10 +245,11 @@ export class BaseError<T extends string> extends Error {
     // as a plain `Error` does.
     const targetPrototype: unknown = new.target.prototype;
     if (
-      isObjectLike(targetPrototype) &&
+      typeof targetPrototype === "object" &&
+      targetPrototype !== null &&
       Object.getPrototypeOf(this) !== targetPrototype
     ) {
-      Object.setPrototypeOf(this, targetPrototype as object);
+      Object.setPrototypeOf(this, targetPrototype);
     }
 
     // Cross-runtime best-effort stack collection, deferred: capturing is

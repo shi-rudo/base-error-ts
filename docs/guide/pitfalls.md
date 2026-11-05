@@ -180,7 +180,7 @@ unmapped error class shows up as a metric rather than a generic 500.
 
 ## 5. Class-name minification and the `_tag` discriminant
 
-`_tag` (and an inferred `name`) fall back to `this.constructor.name`, which most
+`_tag` (and an inferred `name`) fall back to `new.target.name`, which most
 production minifiers mangle by default (esbuild `keepNames: false`, terser/swc
 `keep_classnames: false`). This only affects the **inference fallback**:
 
