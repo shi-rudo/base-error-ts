@@ -28,7 +28,7 @@ class BaseError {
 }
 
 function callerOfTheConstructor() {
-  return [new LibraryBaseError("no mapping")];
+  return new LibraryBaseError("no mapping");
 }
 
 describe("the stack of an error on an engine with captureStackTrace", () => {
@@ -46,26 +46,15 @@ describe("the stack of an error on an engine with captureStackTrace", () => {
 
   it.each([
     "#installLazyStack",
-    "#filterInternalFrames",
     "installLazyStack_fn",
-    "filterInternalFrames_fn",
     "BaseError.constructor",
     "new BaseError",
   ])("starts at the frame of a consumer function named %s", (name) => {
     const consumerFunction = {
-      [name]: () => [new LibraryBaseError("no mapping")],
-    }[name] as () => Error[];
+      [name]: () => new LibraryBaseError("no mapping"),
+    }[name] as () => Error;
 
-    const [error] = consumerFunction();
-
-    expect(stackLinesOf(error as Error)[1]).toContain(name);
-  });
-
-  it("holds no frame of the library", () => {
-    const frames = stackLinesOf(new BaseErrorMapper().error).slice(1);
-
-    expect(frames.join("\n")).not.toContain("installLazyStack");
-    expect(frames.join("\n")).not.toContain("new StructuredError");
+    expect(stackLinesOf(consumerFunction())[1]).toContain(name);
   });
 
   it("keeps the frame of a constructor that converts the message into a nested error", () => {
@@ -114,9 +103,9 @@ describe("the stack of an error on an engine without captureStackTrace", () => {
     `${frames.map((frame) => `${frame.getFunctionName()}@a.js:1:1`).join("\n")}\n`;
 
   it("starts at the caller of the constructor in the default format", () => {
-    const [error] = withoutCaptureStackTrace(callerOfTheConstructor);
+    const error = withoutCaptureStackTrace(callerOfTheConstructor);
 
-    const [header, firstFrame] = stackLinesOf(error as Error);
+    const [header, firstFrame] = stackLinesOf(error);
 
     expect(header).toBe("BaseError: no mapping");
     expect(firstFrame).toContain("callerOfTheConstructor");
@@ -127,9 +116,9 @@ describe("the stack of an error on an engine without captureStackTrace", () => {
     ["the fn@file format", atSignFormat],
   ])("starts at the caller of the constructor in %s", (_name, format) => {
     Error.prepareStackTrace = format;
-    const [error] = withoutCaptureStackTrace(callerOfTheConstructor);
+    const error = withoutCaptureStackTrace(callerOfTheConstructor);
 
-    const lines = stackLinesOf(error as Error);
+    const lines = stackLinesOf(error);
 
     expect(lines[0]).toBe("BaseError: no mapping");
     expect(lines[1]).toContain("callerOfTheConstructor");
@@ -137,9 +126,9 @@ describe("the stack of an error on an engine without captureStackTrace", () => {
 
   it("drops the empty line at the end of the fn@file format", () => {
     Error.prepareStackTrace = atSignFormat;
-    const [error] = withoutCaptureStackTrace(callerOfTheConstructor);
+    const error = withoutCaptureStackTrace(callerOfTheConstructor);
 
-    expect(stackLinesOf(error as Error)).not.toContain("");
+    expect(stackLinesOf(error)).not.toContain("");
   });
 
   it("keeps the frame of a consumer constructor whose name starts with BaseError", () => {

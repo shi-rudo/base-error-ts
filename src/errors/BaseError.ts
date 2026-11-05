@@ -240,7 +240,7 @@ export class BaseError<T extends string> extends Error {
     }
 
     // Cross-runtime best-effort stack collection, deferred: capturing is
-    // cheap, symbolizing/filtering is not, so both happen on first read.
+    // cheap, symbolizing/formatting is not, so both happen on first read.
     this.#installLazyStack(stackStart);
   }
 
@@ -1190,21 +1190,21 @@ export class BaseError<T extends string> extends Error {
     // A read of the raw stack runs `Error.prepareStackTrace`, which can throw
     // or return a value that is no string.
     let readRawStack: () => unknown;
-    let internalFrames: number;
+    let internalFrameCount: number;
     if (typeof V8Error.captureStackTrace === "function") {
       // V8: capture onto a plain holder, not `this`, so the engine-lazy stack
       // stays unformatted until our getter reads it. The holder's own header
-      // is discarded by #filterInternalFrames, which writes `name: message`.
+      // is discarded by #formatStack, which writes `name: message`.
       const holder: { stack?: string } = {};
       V8Error.captureStackTrace(
         holder,
         stackStart ?? (this.constructor as StackStart),
       );
       readRawStack = () => readProperty(holder, "stack");
-      internalFrames = 0;
+      internalFrameCount = 0;
     } else {
       // Non-V8 engines build the stack string eagerly at throw; only the
-      // filtering is deferrable here.
+      // formatting is deferrable here.
       let tempStack: unknown;
       try {
         throw new Error();
@@ -1213,7 +1213,7 @@ export class BaseError<T extends string> extends Error {
       }
       readRawStack = () => tempStack;
       // This method and the constructor of `BaseError`.
-      internalFrames = 2;
+      internalFrameCount = 2;
     }
 
     // A frozen or sealed error cannot take the memoized data property, so the
@@ -1245,25 +1245,23 @@ export class BaseError<T extends string> extends Error {
       enumerable: false,
       get: (): string | undefined => {
         if (kept !== undefined) return kept.value;
-        const filtered = this.#filterInternalFrames(
-          readRawStack(),
-          internalFrames,
-        );
-        install(filtered);
-        return filtered;
+        const formatted = this.#formatStack(readRawStack(), internalFrameCount);
+        install(formatted);
+        return formatted;
       },
       set: install,
     });
   }
 
   /**
-   * Removes the internal frames at the top of the stack and updates the error
-   * header. It removes by position, because a frame of the consumer can hold
-   * the same text as an internal frame, for example `new BaseErrorMapper`.
+   * Writes the header `name: message` and removes the internal frames at the
+   * top of the stack. It removes by position, because a frame of the consumer
+   * can hold the same text as an internal frame, for example
+   * `new BaseErrorMapper`.
    */
-  /*#__PURE__*/ #filterInternalFrames(
+  /*#__PURE__*/ #formatStack(
     stack: unknown,
-    internalFrames: number,
+    internalFrameCount: number,
   ): string | undefined {
     if (typeof stack !== "string" || !stack) {
       return undefined;
@@ -1278,7 +1276,9 @@ export class BaseError<T extends string> extends Error {
 
     return [
       `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
-      ...lines.slice(firstFrame + internalFrames).filter((line) => line !== ""),
+      ...lines
+        .slice(firstFrame + internalFrameCount)
+        .filter((line) => line !== ""),
     ].join("\n");
   }
 }

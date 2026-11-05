@@ -52,22 +52,20 @@ check(
     .stack.split("\n")[1]
     ?.includes("callerOfTheCoercion") === true,
 );
-// The capture of the engine removes the frames of the library. No text match
-// runs after it, so the frame of a consumer with a similar name stays.
+// The capture of the engine removes the frames of the library, so the frame of
+// a consumer with a similar name stays.
 class SmokeError extends StructuredError {}
 function callerOfTheConstructor() {
-  return [
-    new SmokeError({
-      code: "SMOKE_FAILED",
-      category: "SMOKE",
-      retryable: false,
-      message: "m",
-    }),
-  ];
+  return new SmokeError({
+    code: "SMOKE_FAILED",
+    category: "SMOKE",
+    retryable: false,
+    message: "m",
+  });
 }
 check(
   "constructed error stack starts at the caller of the constructor",
-  callerOfTheConstructor()[0]
+  callerOfTheConstructor()
     .stack.split("\n")[1]
     ?.includes("callerOfTheConstructor") === true,
 );
