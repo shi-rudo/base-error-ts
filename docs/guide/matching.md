@@ -213,6 +213,10 @@ The compiler checks names only against known codes:
   `StructuredError<string, string>`.
 - A union with the code `_` cannot name a handler next to `_`, because `_` is
   the catch-all. Rename the code.
+- An error whose code is only a branded string names no code. A `_` handler can
+  read its parameter. A named handler that reads its parameter does not compile
+  (TS7006). Annotate the parameter, or assign the error to a variable typed
+  `StructuredError<string, string>`.
 - In a union of a branded code and literal codes, every literal code needs a
   handler, but the compiler does not check the branded code. A table without a
   handler for it compiles, and that error throws at runtime, so give such a table
@@ -259,8 +263,8 @@ type RateLimited = StructuredError<
 type AppError = UserNotFound | RateLimited;
 
 matchErrorCode(err as AppError, {
-  USER_NOT_FOUND: (e) => e.details?.userId, // { userId: string } | undefined
-  RATE_LIMITED: (e) => e.details?.retryAfter, // { retryAfter: number } | undefined
+  USER_NOT_FOUND: (e) => e.details?.userId, // string | undefined
+  RATE_LIMITED: (e) => e.details?.retryAfter, // number | undefined
 });
 ```
 

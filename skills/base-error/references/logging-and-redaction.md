@@ -96,6 +96,11 @@ const failure = AccountErrors.create.PROFILE_UPDATE_FAILED("update failed", {
   `redactWith` replace the per-instance policy that the error had, and a
   second `redact` call replaces the first. To extend a per-instance policy,
   list every key in one call: `.redact(["email", "taxId", "iban"])`.
+- A name in a policy matches only a key with the same case.
+  `.redact(["authorization"])` does not mask `Authorization`. For a copy of the
+  HTTP headers, list each spelling or use `redactAllow`.
+- A function mask that returns `undefined` leaves the key with the value
+  `undefined`, and `JSON.stringify` drops such a key.
 - The policy travels with the error. As a `cause`, its node is masked by its
   own policy first, then by the outer error's policy.
 - Redaction selects keys, not values. To hide the time, deny both `timestamp`

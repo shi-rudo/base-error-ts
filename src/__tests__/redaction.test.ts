@@ -330,6 +330,54 @@ describe("log redaction", () => {
       expect(details.keep).toBe("ok");
       expect(details.secret).toBe(6);
     });
+
+    it("leaves the key with undefined when the mask returns undefined, and JSON.stringify drops it", () => {
+      const error = makeWith({ token: "abc", other: 1 }).redact(["token"], {
+        mask: () => undefined,
+      });
+
+      const details = error.toLogObject().details as Record<string, unknown>;
+      const parsed = JSON.parse(JSON.stringify(error)) as {
+        details: Record<string, unknown>;
+      };
+
+      expect(Object.keys(details)).toEqual(["token", "other"]);
+      expect(details.token).toBeUndefined();
+      expect(parsed.details).toEqual({ other: 1 });
+    });
+  });
+
+  describe("the case of a key", () => {
+    const makeWithBothSpellings = () =>
+      new StructuredError({
+        code: "X",
+        category: "Y",
+        retryable: false,
+        message: "m",
+        details: { authorization: "lower", Authorization: "upper" },
+      });
+
+    it("a deny-list masks only the spelling that it names", () => {
+      const log = makeWithBothSpellings()
+        .redact(["authorization"])
+        .toLogObject();
+
+      expect(log.details).toEqual({
+        authorization: "[REDACTED]",
+        Authorization: "upper",
+      });
+    });
+
+    it("an allow-list masks every spelling that it does not name", () => {
+      const log = makeWithBothSpellings()
+        .redactAllow(["authorization"])
+        .toLogObject();
+
+      expect(log.details).toEqual({
+        authorization: "lower",
+        Authorization: "[REDACTED]",
+      });
+    });
   });
 
   describe("walker correctness (review #1, #2)", () => {

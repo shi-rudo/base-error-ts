@@ -73,7 +73,9 @@ export type OwnLogFields = Readonly<Record<string, JsonSafeValue>>;
 /**
  * Replacement used by {@link BaseError.redact}/{@link BaseError.redactAllow}.
  * Either a fixed value, or a function of the original `(value, key)`: useful
- * for partial masking (`****6789`) or preserving the value's type.
+ * for partial masking (`****6789`) or preserving the value's type. A function
+ * that returns `undefined` leaves the key with the value `undefined`, and
+ * `JSON.stringify` drops such a key.
  */
 export type RedactMask = string | ((value: unknown, key: string) => unknown);
 
@@ -260,6 +262,8 @@ export class BaseError<T extends string> extends Error {
    * string.
    *
    * @param keys - Property names to mask wherever they appear in the log object.
+   *   A name matches only a key with the same case: `authorization` does not
+   *   mask `Authorization`.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
    *   result of a function mask as log data.
    */
@@ -330,7 +334,8 @@ export class BaseError<T extends string> extends Error {
    * `console.log(err)` prints the error itself, not the log object, so it
    * shows every own field with its raw value, `details` among them.
    *
-   * @param keys - Data leaf keys allowed to survive in the log.
+   * @param keys - Data leaf keys allowed to survive in the log. A name matches
+   *   only a key with the same case: `userId` does not keep `UserId`.
    * @param options - `mask` defaults to `"[REDACTED]"`. The log copies the
    *   result of a function mask as log data.
    */
