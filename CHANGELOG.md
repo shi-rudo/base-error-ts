@@ -52,7 +52,7 @@ Major release. The package ships one ES module build, so `import` and `require` 
 
 ### Fixed
 
-- **The stack of a catalog error starts at the caller of the factory.** The first frame was the factory inside the package, so every catalog error showed the same line of the package, and the factory took one frame of `Error.stackTraceLimit`. The capture now starts at the caller. An engine without `Error.captureStackTrace` keeps that frame.
+- **The stack of a catalog error starts at the caller of the factory.** The first frame was the factory inside the package, so every catalog error showed the same line of the package, and the factory took one frame of `Error.stackTraceLimit`. The capture now starts at the caller, also for the result of `toStructuredError`. An engine without `Error.captureStackTrace` keeps that frame.
 
 - **A stack without a header keeps its first frame.** The stack filter dropped the first line as the header, also when `Error.prepareStackTrace` wrote no header. That line held the caller of the error. The filter now recognizes a frame in the `at` format and in the `fn@file` format.
 

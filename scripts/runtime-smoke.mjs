@@ -4,7 +4,12 @@
  * load-bearing behaviors to runtimes the suite cannot reach (Bun, Deno).
  * Run `npx tsup` first, then run this file with the target runtime.
  */
-import { BaseError, StructuredError, defineErrors } from "../dist/index.js";
+import {
+  BaseError,
+  StructuredError,
+  defineErrors,
+  toStructuredError,
+} from "../dist/index.js";
 import {
   definePublicErrors,
   project,
@@ -37,6 +42,15 @@ check(
   callerOfTheFactory()[0]
     .stack.split("\n")[1]
     ?.includes("callerOfTheFactory") === true,
+);
+function callerOfTheCoercion() {
+  return [toStructuredError("m")];
+}
+check(
+  "coerced error stack starts at the caller of toStructuredError",
+  callerOfTheCoercion()[0]
+    .stack.split("\n")[1]
+    ?.includes("callerOfTheCoercion") === true,
 );
 
 // Totality: a hostile cause must not break the log path.

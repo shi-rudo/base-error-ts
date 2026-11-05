@@ -1353,10 +1353,21 @@ export function setRedactionFloor(
 }
 
 /**
+ * Sets the function whose caller starts the stack of the next error, or clears
+ * it. Call `new` directly after this, and clear it in a `finally`. No entry
+ * point exports it.
+ */
+export function setNextStackStart(start: StackStart | undefined): void {
+  nextStackStart = start;
+}
+
+/**
  * Creates an error whose stack starts at the caller of `factory`. The
  * constructor trims only the frames of the class, so the frame of a function
  * that creates the error stays on top otherwise. On an engine without
- * `Error.captureStackTrace`, that frame stays. No entry point exports it.
+ * `Error.captureStackTrace`, that frame stays. `factory` must stay on the
+ * stack, so do not call this in tail position: see {@link setNextStackStart}.
+ * No entry point exports it.
  */
 export function constructAtCallerOf<Fields, E>(
   factory: StackStart,
