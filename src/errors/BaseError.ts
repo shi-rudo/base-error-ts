@@ -239,9 +239,19 @@ export class BaseError<T extends string> extends Error {
       Object.setPrototypeOf(this, new.target.prototype);
     }
 
+    // `Error.captureStackTrace` leaves out every frame when its start is not on
+    // the stack. `Reflect.construct` can name a class whose constructor never
+    // runs, and `prototype.constructor` can name any function. In these cases
+    // the stack starts below this constructor, because a frame too many costs
+    // less than no frame.
+    const classStackStart: unknown =
+      this.constructor === new.target && this instanceof BaseError
+        ? new.target
+        : BaseError;
+
     // Cross-runtime best-effort stack collection, deferred: capturing is
     // cheap, symbolizing/formatting is not, so both happen on first read.
-    this.#installLazyStack(stackStart);
+    this.#installLazyStack(stackStart ?? (classStackStart as StackStart));
   }
 
   /**
@@ -1183,7 +1193,7 @@ export class BaseError<T extends string> extends Error {
    * first capture costs ~1 microsecond. The `delete` of the own `stack` in
    * this method discards it unformatted.
    */
-  /*#__PURE__*/ #installLazyStack(stackStart: StackStart | undefined): void {
+  /*#__PURE__*/ #installLazyStack(stackStart: StackStart): void {
     // Cast Error to our local interface for type-safe access.
     const V8Error = Error as V8ErrorConstructor;
 
@@ -1196,10 +1206,7 @@ export class BaseError<T extends string> extends Error {
       // stays unformatted until our getter reads it. The holder's own header
       // is discarded by #formatStack, which writes `name: message`.
       const holder: { stack?: string } = {};
-      V8Error.captureStackTrace(
-        holder,
-        stackStart ?? (this.constructor as StackStart),
-      );
+      V8Error.captureStackTrace(holder, stackStart);
       readRawStack = () => readProperty(holder, "stack");
       internalFrameCount = 0;
     } else {

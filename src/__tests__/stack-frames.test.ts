@@ -216,6 +216,14 @@ describe("the consumer frames of an error", () => {
     ["a catalog factory", () => Errors.create.MAPPING_FAILED("m")],
     ["toStructuredError on a string", () => toStructuredError("m")],
     ["toStructuredError on an error", () => toStructuredError(new Error("m"))],
+    [
+      "Reflect.construct with an unrelated class",
+      () => Reflect.construct(LibraryBaseError, ["m"], Object) as Error,
+    ],
+    [
+      "a proxied class",
+      () => new new Proxy(SubclassWithDefaultConstructor, {})("m"),
+    ],
   ];
   const callPatterns: ReadonlyArray<
     readonly [string, (create: CreateError) => Error | Promise<Error>]
@@ -250,4 +258,70 @@ describe("the consumer frames of an error", () => {
       expect(frames).toEqual(baseline);
     },
   );
+});
+
+describe("the stack of an error whose class constructor did not run", () => {
+  class UnrelatedClass {}
+  class OtherClass {}
+  class SubclassWithOverwrittenConstructor extends LibraryBaseError<string> {}
+  Object.defineProperty(
+    SubclassWithOverwrittenConstructor.prototype,
+    "constructor",
+    { value: OtherClass },
+  );
+  class SubclassBehindProxy extends LibraryBaseError<string> {}
+  const ProxiedSubclass = new Proxy(SubclassBehindProxy, {});
+  const STRUCTURED_FIELDS = {
+    code: "MAPPING_FAILED",
+    category: "INTERNAL",
+    retryable: false,
+    message: "no mapping",
+  };
+
+  it.each<readonly [string, () => Error]>([
+    [
+      "Reflect.construct with an unrelated class",
+      () => Reflect.construct(LibraryBaseError, ["m"], UnrelatedClass) as Error,
+    ],
+    [
+      "Reflect.construct of a subclass with an unrelated class",
+      () =>
+        Reflect.construct(
+          StructuredError,
+          [STRUCTURED_FIELDS],
+          UnrelatedClass,
+        ) as Error,
+    ],
+    [
+      "an overwritten prototype constructor",
+      () => new SubclassWithOverwrittenConstructor("m"),
+    ],
+    ["a proxied class", () => new ProxiedSubclass("m")],
+  ])("holds the caller after %s", (_name, create) => {
+    function callerOfTheCreation() {
+      return create();
+    }
+
+    const error = callerOfTheCreation();
+
+    expect(String(error.stack)).toContain("callerOfTheCreation");
+  });
+
+  it("leaves out the frames of the library for a proxied class", () => {
+    const error = new ProxiedSubclass("m");
+
+    expect(String(error.stack)).not.toContain("installLazyStack");
+    expect(String(error.stack)).not.toContain("new BaseError");
+  });
+
+  it("leaves out the frame of the BaseError constructor after Reflect.construct", () => {
+    const error = Reflect.construct(
+      LibraryBaseError,
+      ["m"],
+      UnrelatedClass,
+    ) as Error;
+
+    expect(String(error.stack)).not.toContain("new BaseError");
+    expect(String(error.stack)).not.toContain("installLazyStack");
+  });
 });

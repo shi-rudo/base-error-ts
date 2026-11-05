@@ -107,6 +107,17 @@ check(
   callerWithThrowingName().stack?.includes("callerWithThrowingName") === true,
 );
 
+class SmokeUnrelatedClass {}
+function callerOfTheForeignConstruct() {
+  return [Reflect.construct(BaseError, ["m"], SmokeUnrelatedClass)];
+}
+check(
+  "a stack holds the caller when Reflect.construct names an unrelated class",
+  callerOfTheForeignConstruct()[0].stack?.includes(
+    "callerOfTheForeignConstruct",
+  ) === true,
+);
+
 // Totality: a hostile cause must not break the log path.
 const hostile = new Error("hostile");
 Object.defineProperty(hostile, "stack", {
