@@ -83,13 +83,16 @@ check(
 
 const originalPrepareStackTrace = Error.prepareStackTrace;
 Error.prepareStackTrace = (_error, frames) => frames.join("\n");
-check(
-  "a stack format without a header keeps the first frame",
-  callerOfTheConstructor()
-    .stack.split("\n")[1]
-    ?.includes("callerOfTheConstructor") === true,
-);
-Error.prepareStackTrace = originalPrepareStackTrace;
+try {
+  check(
+    "a stack format without a header keeps the first frame",
+    callerOfTheConstructor()
+      .stack?.split("\n")[1]
+      ?.includes("callerOfTheConstructor") === true,
+  );
+} finally {
+  Error.prepareStackTrace = originalPrepareStackTrace;
+}
 function callerWithThrowingName() {
   const error = new BaseError("m");
   Object.defineProperty(error, "name", {

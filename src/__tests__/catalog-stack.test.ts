@@ -245,6 +245,18 @@ describe("a stack without a header", () => {
     },
   );
 
+  it.each(["undefined:1", "Error:1:2"])(
+    "keeps the first line %j, because it holds a location",
+    (firstLine) => {
+      const format: typeof Error.prepareStackTrace = (_error, frames) =>
+        `${firstLine}\n${frames.map((frame) => `    at ${frame}`).join("\n")}`;
+
+      const lines = stackLinesWith(format, () => callerOfTheConstructor());
+
+      expect(lines[1]).toBe(firstLine);
+    },
+  );
+
   it("keeps an unknown first line, because a frame costs more to lose", () => {
     const format: typeof Error.prepareStackTrace = (_error, frames) =>
       `custom text\n${frames.map((frame) => `    at ${frame}`).join("\n")}`;

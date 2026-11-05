@@ -1273,7 +1273,7 @@ export class BaseError<T extends string> extends Error {
     // the `fn@file` format. The capture has no message, so the raw header has
     // one of these forms. Any other first line stays, because a line too many
     // costs less than a lost frame.
-    const firstFrame = /^(?:Error|\[object Object\]|undefined)(?::|$)/.test(
+    const firstFrame = /^(?:Error|\[object Object\]|undefined)(?::\s|:?$)/.test(
       lines[0] ?? "",
     )
       ? 1
