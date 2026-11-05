@@ -34,7 +34,9 @@ function callerOfTheFactory() {
 }
 check(
   "catalog error stack starts at the caller of the factory",
-  callerOfTheFactory()[0].stack.split("\n")[1].includes("callerOfTheFactory"),
+  callerOfTheFactory()[0]
+    .stack.split("\n")[1]
+    ?.includes("callerOfTheFactory") === true,
 );
 
 // Totality: a hostile cause must not break the log path.

@@ -1,8 +1,8 @@
 import { StructuredError, rebuildFromJSON } from "./StructuredError.js";
 import type { AnyStructuredError } from "./StructuredError.js";
 import {
+  constructAtCallerOf,
   createRedactionFloor,
-  omitFactoryFrame,
   setRedactionFloor,
 } from "./BaseError.js";
 import type { BuiltInRedactionPolicy, RedactionFloor } from "./BaseError.js";
@@ -726,7 +726,7 @@ export function defineErrors(
     const spec = snapshot[key] as RuntimeSpec;
     const code = codeByKey[key] as string;
     const factory: RuntimeFactory = (message, options) => {
-      const error = new StructuredError({
+      const error = constructAtCallerOf(factory, StructuredError, {
         code,
         category: spec.category,
         retryable: spec.retryable,
@@ -734,7 +734,6 @@ export function defineErrors(
         ...(options?.details !== undefined && { details: options.details }),
         ...(options?.cause !== undefined && { cause: options.cause }),
       });
-      omitFactoryFrame(error);
       if (spec.floor !== undefined) {
         setRedactionFloor(error, spec.floor);
       }
