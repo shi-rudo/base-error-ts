@@ -129,3 +129,54 @@ describe("toStructuredError", () => {
     expect(err.message).toBe("Database is unavailable");
   });
 });
+
+describe("the stack of a coerced error", () => {
+  function callerOfTheCoercion(value: unknown) {
+    return toStructuredError(value);
+  }
+
+  it.each([
+    ["an error", new Error("raw")],
+    ["a string", "raw"],
+    ["an object", { raw: true }],
+  ])("starts at the caller of toStructuredError for %s", (_name, value) => {
+    const [, firstFrame] = String(callerOfTheCoercion(value).stack).split("\n");
+
+    expect(firstFrame).toContain("callerOfTheCoercion");
+  });
+
+  it("gives every frame of the limit to the caller", () => {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 1;
+    let error: Error;
+    try {
+      error = callerOfTheCoercion("raw");
+    } finally {
+      Error.stackTraceLimit = limit;
+    }
+
+    const frames = String(error.stack).split("\n").slice(1);
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]).toContain("callerOfTheCoercion");
+  });
+
+  it("leaves the stack of an error that is already structured", () => {
+    function callerOfTheConstructor() {
+      return new StructuredError({
+        code: "ALREADY_STRUCTURED",
+        category: "INTERNAL",
+        retryable: false,
+        message: "m",
+      });
+    }
+    const error = callerOfTheConstructor();
+
+    const coerced = callerOfTheCoercion(error);
+
+    expect(coerced).toBe(error);
+    expect(String(coerced.stack).split("\n")[1]).toContain(
+      "callerOfTheConstructor",
+    );
+  });
+});

@@ -1,3 +1,4 @@
+import { setNextStackStart } from "./BaseError.js";
 import { StructuredError } from "./StructuredError.js";
 import { UNKNOWN_ERROR_DEFAULTS } from "./defaults.js";
 import { readProperty } from "./guarded-read.js";
@@ -63,11 +64,19 @@ export function toStructuredError(
     cause = value;
   }
 
-  return new StructuredError<string, string>({
-    code,
-    category,
-    retryable,
-    message,
-    ...(cause !== undefined && { cause }),
-  });
+  // `new` is no tail call. In a tail call, JavaScriptCore drops the frame of this
+  // function, and a capture below a function that is not on the stack holds no
+  // frame at all.
+  setNextStackStart(toStructuredError);
+  try {
+    return new StructuredError<string, string>({
+      code,
+      category,
+      retryable,
+      message,
+      ...(cause !== undefined && { cause }),
+    });
+  } finally {
+    setNextStackStart(undefined);
+  }
 }
