@@ -1274,8 +1274,11 @@ export class BaseError<T extends string> extends Error {
     // has none, so no text of the consumer can look like a frame here.
     const firstFrame = /^\s*at\s|@/.test(lines[0] ?? "") ? 0 : 1;
 
+    const name = renderValue(readProperty(this, "name") ?? "Error", "Error");
+    const message = renderValue(readProperty(this, "message") ?? "", "");
+
     return [
-      `${renderValue(this.name, "Error")}: ${renderValue(this.message, "")}`,
+      `${name}: ${message}`,
       ...lines
         .slice(firstFrame + internalFrameCount)
         .filter((line) => line !== ""),

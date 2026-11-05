@@ -399,6 +399,79 @@ describe("totality in catch paths: a bigint cause", () => {
   });
 });
 
+describe("totality in catch paths: a throwing getter on the error", () => {
+  function callerOfTheConstructor(key: string) {
+    const error = new BaseError("m");
+    Object.defineProperty(error, key, {
+      get() {
+        throw new Error("getter failed");
+      },
+    });
+    return error;
+  }
+
+  it.each(["name", "message"])(
+    "reads the stack with its frames when %s throws",
+    (key) => {
+      const error = callerOfTheConstructor(key);
+
+      expect(error.stack).toContain("callerOfTheConstructor");
+    },
+  );
+
+  it.each(["name", "message"])(
+    "keeps the frames in the log object when %s throws",
+    (key) => {
+      const log = callerOfTheConstructor(key).toLogObject();
+
+      expect(log.stack).toContain("callerOfTheConstructor");
+    },
+  );
+
+  it.each([
+    ["name", "Error: m"],
+    ["message", "BaseError: "],
+  ])("writes the header without the %s that throws", (key, header) => {
+    const error = callerOfTheConstructor(key);
+
+    expect(String(error.stack).split("\n")[0]).toBe(header);
+  });
+
+  it.each([
+    ["a stack read before the policy", true],
+    ["no stack read before the policy", false],
+  ])(
+    "keeps a denied message out of the log when name throws, %s",
+    (_, read) => {
+      const error = new BaseError("secret text");
+      Object.defineProperty(error, "name", {
+        get() {
+          throw new Error("getter failed");
+        },
+      });
+      if (read) void error.stack;
+      error.redact(["message"]);
+
+      expect(JSON.stringify(error.toLogObject())).not.toContain("secret text");
+    },
+  );
+
+  it("keeps a denied name out of the log when message throws", () => {
+    class SecretNameError extends BaseError<string> {}
+    const error = new SecretNameError("m");
+    Object.defineProperty(error, "message", {
+      get() {
+        throw new Error("getter failed");
+      },
+    });
+    error.redact(["name"]);
+
+    expect(JSON.stringify(error.toLogObject())).not.toContain(
+      "SecretNameError",
+    );
+  });
+});
+
 describe("totality in catch paths: a custom Error.prepareStackTrace", () => {
   function withPrepareStackTrace<T>(
     prepare: (error: Error, frames: NodeJS.CallSite[]) => unknown,
